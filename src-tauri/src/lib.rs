@@ -1,7 +1,10 @@
+pub mod pool;
+pub mod ssh;
+
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct DbConfig {
     pub engine: String,
     pub host: String,
@@ -55,103 +58,72 @@ pub struct TableSummary {
 async fn test_connection(config: DbConfig) -> Result<TestConnectionResult, String> {
     let start = Instant::now();
     match config.engine.as_str() {
-        "postgres" => {
-            let user = config.username.unwrap_or_else(|| "postgres".to_string());
-            let pass = config.password.unwrap_or_default();
-            let url = format!(
-                "postgres://{}:{}@{}:{}/{}",
-                user, pass, config.host, config.port, config.database
-            );
-            match sqlx::PgPool::connect(&url).await {
-                Ok(pool) => {
-                    let version_row: Result<(String,), _> =
-                        sqlx::query_as("SELECT version()").fetch_one(&pool).await;
-                    let version = version_row.map(|r| r.0).ok();
-                    let latency = start.elapsed().as_secs_f64() * 1000.0;
-                    Ok(TestConnectionResult {
-                        success: true,
-                        message: "Successfully connected to PostgreSQL!".into(),
-                        latency_ms: (latency * 10.0).round() / 10.0,
-                        version,
-                    })
-                }
-                Err(e) => Ok(TestConnectionResult {
-                    success: false,
-                    message: format!("PostgreSQL connection failed: {}", e),
-                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                    version: None,
-                }),
+        "postgres" => match pool::get_or_create_pg_pool(&config).await {
+            Ok(pool) => {
+                let version_row: Result<(String,), _> =
+                    sqlx::query_as("SELECT version()").fetch_one(&pool).await;
+                let version = version_row.map(|r| r.0).ok();
+                let latency = start.elapsed().as_secs_f64() * 1000.0;
+                Ok(TestConnectionResult {
+                    success: true,
+                    message: "Successfully connected to PostgreSQL!".into(),
+                    latency_ms: (latency * 10.0).round() / 10.0,
+                    version,
+                })
             }
-        }
-        "mysql" => {
-            let user = config.username.unwrap_or_else(|| "root".to_string());
-            let pass = config.password.unwrap_or_default();
-            let url = format!(
-                "mysql://{}:{}@{}:{}/{}",
-                user, pass, config.host, config.port, config.database
-            );
-            match sqlx::MySqlPool::connect(&url).await {
-                Ok(pool) => {
-                    let version_row: Result<(String,), _> =
-                        sqlx::query_as("SELECT VERSION()").fetch_one(&pool).await;
-                    let version = version_row.map(|r| r.0).ok();
-                    let latency = start.elapsed().as_secs_f64() * 1000.0;
-                    Ok(TestConnectionResult {
-                        success: true,
-                        message: "Successfully connected to MySQL!".into(),
-                        latency_ms: (latency * 10.0).round() / 10.0,
-                        version,
-                    })
-                }
-                Err(e) => Ok(TestConnectionResult {
-                    success: false,
-                    message: format!("MySQL connection failed: {}", e),
-                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                    version: None,
-                }),
+            Err(e) => Ok(TestConnectionResult {
+                success: false,
+                message: e,
+                latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                version: None,
+            }),
+        },
+        "mysql" => match pool::get_or_create_mysql_pool(&config).await {
+            Ok(pool) => {
+                let version_row: Result<(String,), _> =
+                    sqlx::query_as("SELECT VERSION()").fetch_one(&pool).await;
+                let version = version_row.map(|r| r.0).ok();
+                let latency = start.elapsed().as_secs_f64() * 1000.0;
+                Ok(TestConnectionResult {
+                    success: true,
+                    message: "Successfully connected to MySQL!".into(),
+                    latency_ms: (latency * 10.0).round() / 10.0,
+                    version,
+                })
             }
-        }
-        "redis" => {
-            let url = if let Some(pass) = config.password.filter(|p| !p.is_empty()) {
-                format!("redis://:{}@{}:{}", pass, config.host, config.port)
-            } else {
-                format!("redis://{}:{}", config.host, config.port)
-            };
-            match redis::Client::open(url) {
-                Ok(client) => match client.get_multiplexed_tokio_connection().await {
-                    Ok(mut con) => {
-                        let pong: Result<String, _> = redis::cmd("PING").query_async(&mut con).await;
-                        let latency = start.elapsed().as_secs_f64() * 1000.0;
-                        match pong {
-                            Ok(_) => Ok(TestConnectionResult {
-                                success: true,
-                                message: "Successfully connected to Redis!".into(),
-                                latency_ms: (latency * 10.0).round() / 10.0,
-                                version: Some("Redis 7.x".into()),
-                            }),
-                            Err(e) => Ok(TestConnectionResult {
-                                success: false,
-                                message: format!("Redis ping failed: {}", e),
-                                latency_ms: latency,
-                                version: None,
-                            }),
-                        }
-                    }
+            Err(e) => Ok(TestConnectionResult {
+                success: false,
+                message: e,
+                latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                version: None,
+            }),
+        },
+        "redis" => match pool::get_or_create_redis_connection(&config).await {
+            Ok(mut con) => {
+                let pong: Result<String, _> = redis::cmd("PING").query_async(&mut con).await;
+                let latency = start.elapsed().as_secs_f64() * 1000.0;
+                match pong {
+                    Ok(_) => Ok(TestConnectionResult {
+                        success: true,
+                        message: "Successfully connected to Redis!".into(),
+                        latency_ms: (latency * 10.0).round() / 10.0,
+                        version: Some("Redis 7.x".into()),
+                    }),
                     Err(e) => Ok(TestConnectionResult {
                         success: false,
-                        message: format!("Redis connection failed: {}", e),
-                        latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                        message: format!("Redis ping failed: {}", e),
+                        latency_ms: latency,
                         version: None,
                     }),
-                },
-                Err(e) => Ok(TestConnectionResult {
-                    success: false,
-                    message: format!("Invalid Redis URL: {}", e),
-                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                    version: None,
-                }),
+                }
             }
-        }
+            Err(e) => Ok(TestConnectionResult {
+                success: false,
+                message: e,
+                latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                version: None,
+            }),
+        },
         _ => Err(format!("Unsupported database engine: {}", config.engine)),
     }
 }
@@ -163,16 +135,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
 
     match config.engine.as_str() {
         "postgres" => {
-            let user = config.username.unwrap_or_else(|| "postgres".to_string());
-            let pass = config.password.unwrap_or_default();
-            let url = format!(
-                "postgres://{}:{}@{}:{}/{}",
-                user, pass, config.host, config.port, config.database
-            );
-
-            let pool = sqlx::PgPool::connect(&url)
-                .await
-                .map_err(|e| format!("Connection error: {}", e))?;
+            let pool = pool::get_or_create_pg_pool(&config).await?;
 
             // Check if query produces rows
             if q_trimmed.to_uppercase().starts_with("SELECT")
@@ -303,16 +266,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
             }
         }
         "mysql" => {
-            let user = config.username.unwrap_or_else(|| "root".to_string());
-            let pass = config.password.unwrap_or_default();
-            let url = format!(
-                "mysql://{}:{}@{}:{}/{}",
-                user, pass, config.host, config.port, config.database
-            );
-
-            let pool = sqlx::MySqlPool::connect(&url)
-                .await
-                .map_err(|e| format!("MySQL connection error: {}", e))?;
+            let pool = pool::get_or_create_mysql_pool(&config).await?;
 
             if q_trimmed.to_uppercase().starts_with("SELECT")
                 || q_trimmed.to_uppercase().starts_with("SHOW")
@@ -396,17 +350,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
             }
         }
         "redis" => {
-            let url = if let Some(pass) = config.password.filter(|p| !p.is_empty()) {
-                format!("redis://:{}@{}:{}", pass, config.host, config.port)
-            } else {
-                format!("redis://{}:{}", config.host, config.port)
-            };
-
-            let client = redis::Client::open(url).map_err(|e| format!("Redis URL error: {}", e))?;
-            let mut con = client
-                .get_multiplexed_tokio_connection()
-                .await
-                .map_err(|e| format!("Redis connection error: {}", e))?;
+            let mut con = pool::get_or_create_redis_connection(&config).await?;
 
             let parts: Vec<&str> = q_trimmed.split_whitespace().collect();
             if parts.is_empty() {
@@ -582,6 +526,7 @@ mod tests {
             database: "ecom_prod_db".into(),
             username: Some("dev_user".into()),
             password: Some("dev_password".into()),
+            ..Default::default()
         };
 
         let conn_res = test_connection(config.clone()).await.unwrap();
@@ -612,6 +557,7 @@ mod tests {
             database: "analytics_staging".into(),
             username: Some("dev_user".into()),
             password: Some("dev_password".into()),
+            ..Default::default()
         };
 
         let conn_res = test_connection(config.clone()).await.unwrap();
@@ -637,6 +583,7 @@ mod tests {
             database: "0".into(),
             username: Some("default".into()),
             password: None,
+            ..Default::default()
         };
 
         let conn_res = test_connection(config.clone()).await.unwrap();
