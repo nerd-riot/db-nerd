@@ -53,6 +53,7 @@ import { getQueryToExecute, extractTableAndPkFromQuery } from '../utils/sqlParse
 import { InlineCellEditor } from './InlineCellEditor';
 import { QueryEditUpdateModal } from './QueryEditUpdateModal';
 import { QueryHistoryPanel } from './QueryHistoryPanel';
+import { QueryChartView } from './QueryChartView';
 import { executeRealQuery } from '../services/dbService';
 import { ColumnDefinition, PendingQueryEdit } from '../types';
 import {
@@ -1411,12 +1412,7 @@ export const SqlEditor: React.FC = () => {
                 onInsertQuery={handleSendToEditor}
               />
             ) : resultsSubTab === 'chart' ? (
-              /* Chart Placeholder */
-              <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-400 select-none">
-                <BarChart2 className="w-10 h-10 mb-2 opacity-50 text-sky-400" />
-                <span className="text-sm font-semibold text-slate-300">Data Visualization & Chart</span>
-                <span className="text-xs text-slate-500 mt-1">Available for numerical aggregation results ({results.length} records)</span>
-              </div>
+              <QueryChartView results={results} columns={columns} />
             ) : (
               /* Data Results Table */
               <div className="w-full h-full overflow-auto text-xs font-mono bg-white dark:bg-transparent">
@@ -1629,13 +1625,14 @@ export const SqlEditor: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setResultsSubTab('chart')}
-                  className={`px-3 py-0.5 rounded-md transition cursor-pointer ${
+                  className={`px-3 py-0.5 rounded-md transition cursor-pointer flex items-center space-x-1.5 ${
                     resultsSubTab === 'chart'
                       ? 'bg-[#007aff] text-white font-semibold shadow-xs'
                       : 'text-slate-600 dark:text-[#9a9b9f] hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Chart
+                  <BarChart2 className="w-3 h-3" />
+                  <span>Chart</span>
                 </button>
               </div>
 
