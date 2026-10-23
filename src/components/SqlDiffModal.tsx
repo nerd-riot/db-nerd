@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { X, Check, Copy, Terminal, Play } from 'lucide-react';
 
 export const SqlDiffModal = () => {
-  const { isSqlDiffModalOpen, setSqlDiffModalOpen, getPendingSQL, commitTransaction, pendingEditsCount, requestSafetyConfirmation } = useAppStore();
+  const { isSqlDiffModalOpen, setSqlDiffModalOpen, getPendingSQL, commitTransaction, pendingEditsCount } = useAppStore();
   const [copied, setCopied] = useState(false);
 
   if (!isSqlDiffModalOpen) return null;
@@ -17,14 +17,6 @@ export const SqlDiffModal = () => {
   };
 
   const handleCommitNow = async () => {
-    const approved = await requestSafetyConfirmation({
-      sqlText,
-      title: 'Confirm Transaction Commit',
-      actionLabel: 'Commit Now (⌘S)',
-      isCommit: true,
-    });
-    if (!approved) return;
-
     const result = await commitTransaction();
     if (result.count > 0) {
       alert(`✅ Transaction Committed Successfully!\n\nExecuted ${result.count} statements.\nAll locks released.`);

@@ -201,7 +201,9 @@ export function App() {
         e.preventDefault();
         if (useAppStore.getState().pendingEditsCount > 0) {
           commitTransaction().then((res) => {
-            alert(`✅ Transaction Committed Successfully!\n\nExecuted ${res.count} change(s)! All locks released.`);
+            if (res.count > 0) {
+              alert(`✅ Transaction Committed Successfully!\n\nExecuted ${res.count} change(s)! All locks released.`);
+            }
           });
         }
       }

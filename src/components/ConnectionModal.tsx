@@ -32,6 +32,7 @@ import {
 import { HeartbeatDot, HeartbeatColor } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
 import { parseConnectionUrl, serializeConnectionUrl } from '../utils/connectionUrl';
+import { parseImportedProfiles } from '../utils/persistence';
 import { testRealConnection } from '../services/dbService';
 import {
   ContextMenuContainer,
@@ -160,6 +161,7 @@ export const ConnectionModal = () => {
 
   // Connection Form state
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importConfigInputRef = useRef<HTMLInputElement>(null);
   const [showSshPassword, setShowSshPassword] = useState(false);
   const [formData, setFormData] = useState<Omit<ConnectionProfile, 'id'>>({
     name: 'new-postgres-connection',
@@ -585,8 +587,40 @@ export const ConnectionModal = () => {
           </div>
 
           <div className="flex items-center space-x-2">
+            <input
+              type="file"
+              ref={importConfigInputRef}
+              accept=".json,.xml"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                  try {
+                    const text = String(reader.result || '');
+                    const defaultGrp = connectionGroups[0]?.id || 'group-local';
+                    const imported = parseImportedProfiles(text, defaultGrp);
+                    let lastId: string | null = null;
+                    imported.forEach((p) => {
+                      const created = addConnection(p);
+                      lastId = created.id;
+                    });
+                    if (lastId) {
+                      setSelectedConnId(lastId);
+                      setIsCreatingNew(false);
+                    }
+                    showToast(`📥 Imported ${imported.length} connection profile(s)`);
+                  } catch (err: any) {
+                    alert(`Failed to import connection file: ${err?.message || err}`);
+                  }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+              }}
+            />
             <button
-              onClick={() => alert("📥 Auto-Discovery:\nScanned local configurations.\nImported all profiles successfully!")}
+              onClick={() => importConfigInputRef.current?.click()}
               className="px-2.5 py-1 bg-purple-50 dark:bg-purple-500/15 hover:bg-purple-100 dark:hover:bg-purple-500/25 border border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-semibold transition active:scale-95 cursor-pointer"
             >
               Import XML / JSON

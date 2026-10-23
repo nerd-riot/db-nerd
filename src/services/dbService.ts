@@ -40,26 +40,38 @@ export interface RealTableSummary {
 }
 
 export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => {
-  // If user has default placeholder password and host is localhost, resolve to docker dev credentials
-  let password = profile.password;
-  if (!password || password === '••••••••••••') {
-    if (profile.engine === 'postgres' || profile.engine === 'mysql') {
-      password = 'dev_password';
-    } else {
-      password = '';
-    }
+  const normalizedHost = (profile.host || '').trim().toLowerCase();
+  const isLocalHost =
+    !profile.useSsh &&
+    (normalizedHost === 'localhost' || normalizedHost === '127.0.0.1');
+  const isBuiltInLocalSeed = ['conn-1', 'conn-4', 'conn-stock'].includes(profile.id);
+
+  let password = profile.password ?? '';
+  if (password === '••••••••••••') {
+    password = isLocalHost && isBuiltInLocalSeed ? 'dev_password' : '';
   }
 
-  let username = profile.username;
-  if (!username) {
-    username = profile.engine === 'postgres' ? 'dev_user' : profile.engine === 'mysql' ? 'dev_user' : 'default';
-  }
+  const username =
+    profile.username ||
+    (isLocalHost && isBuiltInLocalSeed
+      ? profile.engine === 'redis'
+        ? 'default'
+        : 'dev_user'
+      : '');
 
   return {
     engine: profile.engine,
     host: profile.host === '127.0.0.1' ? 'localhost' : (profile.host || 'localhost'),
     port: profile.port,
-    database: profile.database || (profile.engine === 'postgres' ? 'ecom_prod_db' : profile.engine === 'mysql' ? 'analytics_staging' : '0'),
+    database:
+      profile.database ||
+      (isLocalHost && isBuiltInLocalSeed
+        ? profile.engine === 'postgres'
+          ? 'ecom_prod_db'
+          : profile.engine === 'mysql'
+          ? 'analytics_staging'
+          : '0'
+        : ''),
     username,
     password,
     use_ssh: profile.useSsh,

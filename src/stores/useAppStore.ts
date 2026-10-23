@@ -6,6 +6,14 @@ import { heartbeatService } from '../services/heartbeatService';
 import { getThemeDefinition } from '../themes/themeRegistry';
 import { splitSqlStatements } from '../utils/sqlParser';
 import { isReadOnlySql } from '../utils/sqlSafety';
+import {
+  loadPersistedGroups,
+  savePersistedGroups,
+  loadPersistedConnections,
+  savePersistedConnections,
+  loadPersistedHistory,
+  savePersistedHistory,
+} from '../utils/persistence';
 
 interface AppState {
   tabs: TabItem[];
@@ -737,21 +745,25 @@ const resolveTheme = (mode: ThemeMode, appTheme?: AppThemeId): 'dark' | 'light' 
 const INITIAL_SETTINGS = getInitialSettings();
 const INITIAL_RESOLVED_THEME = resolveTheme(INITIAL_SETTINGS.themeMode, INITIAL_SETTINGS.appTheme);
 
+const PERSISTED_GROUPS = loadPersistedGroups(INITIAL_GROUPS);
+const PERSISTED_CONNECTIONS = loadPersistedConnections(INITIAL_CONNECTIONS);
+
 const getInitialConnId = (): string => {
   try {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const urlConn = urlParams.get('conn');
-      if (urlConn && INITIAL_CONNECTIONS.some((c) => c.id === urlConn)) {
+      if (urlConn && PERSISTED_CONNECTIONS.some((c) => c.id === urlConn)) {
         return urlConn;
       }
     }
   } catch {}
-  return 'conn-1';
+  const activeSaved = PERSISTED_CONNECTIONS.find((c) => c.active);
+  return activeSaved?.id || PERSISTED_CONNECTIONS[0]?.id || 'conn-1';
 };
 
 const INITIAL_ACTIVE_CONN_ID = getInitialConnId();
-const INITIAL_ACTIVE_CONN = INITIAL_CONNECTIONS.find((c) => c.id === INITIAL_ACTIVE_CONN_ID) || INITIAL_CONNECTIONS[0];
+const INITIAL_ACTIVE_CONN = PERSISTED_CONNECTIONS.find((c) => c.id === INITIAL_ACTIVE_CONN_ID) || PERSISTED_CONNECTIONS[0];
 const INITIAL_ACTIVE_SESSION = INITIAL_SESSIONS[INITIAL_ACTIVE_CONN.id] || INITIAL_SESSIONS['conn-1'];
 
 const getInitialActiveTabId = () => {
@@ -1275,8 +1287,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (!firstErrorResultId) firstErrorResultId = `q-${i + 1}`;
         }
 
-        set((state) => ({
-          history: [
+        set((state) => {
+          const nextHistory: QueryHistoryItem[] = [
             {
               id: `h-${Date.now()}-${i}`,
               connectionName: activeConn.name,
@@ -1289,8 +1301,10 @@ export const useAppStore = create<AppState>((set, get) => ({
               isFavorite: false,
             },
             ...state.history,
-          ],
-        }));
+          ];
+          savePersistedHistory(nextHistory);
+          return { history: nextHistory };
+        });
       } catch (err: any) {
         const errMsg = String(err?.message || err);
         const duration = +(performance.now() - startMs).toFixed(1);
@@ -1718,8 +1732,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  connectionGroups: INITIAL_GROUPS,
-  connections: INITIAL_CONNECTIONS,
+  connectionGroups: PERSISTED_GROUPS,
+  connections: PERSISTED_CONNECTIONS,
   activeConnection: INITIAL_ACTIVE_CONN,
   setActiveConnection: (conn) => set({ activeConnection: conn }),
 
@@ -1728,21 +1742,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...group,
       id: `group-${Date.now()}`,
     };
-    set((state) => ({ connectionGroups: [...state.connectionGroups, newGroup] }));
+    set((state) => {
+      const nextGroups = [...state.connectionGroups, newGroup];
+      savePersistedGroups(nextGroups);
+      return { connectionGroups: nextGroups };
+    });
     return newGroup;
   },
 
   updateConnectionGroup: (id, updates) => {
-    set((state) => ({
-      connectionGroups: state.connectionGroups.map((g) => (g.id === id ? { ...g, ...updates } : g)),
-    }));
+    set((state) => {
+      const nextGroups = state.connectionGroups.map((g) => (g.id === id ? { ...g, ...updates } : g));
+      savePersistedGroups(nextGroups);
+      return { connectionGroups: nextGroups };
+    });
   },
 
   deleteConnectionGroup: (id) => {
-    set((state) => ({
-      connectionGroups: state.connectionGroups.filter((g) => g.id !== id),
-      connections: state.connections.filter((c) => c.groupId !== id),
-    }));
+    set((state) => {
+      const nextGroups = state.connectionGroups.filter((g) => g.id !== id);
+      const nextConnections = state.connections.filter((c) => c.groupId !== id);
+      savePersistedGroups(nextGroups);
+      savePersistedConnections(nextConnections);
+      return {
+        connectionGroups: nextGroups,
+        connections: nextConnections,
+      };
+    });
   },
 
   addConnection: (profile) => {
@@ -1750,7 +1776,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...profile,
       id: `conn-${Date.now()}`,
     };
-    set((state) => ({ connections: [...state.connections, newConn] }));
+    set((state) => {
+      const nextConnections = [...state.connections, newConn];
+      savePersistedConnections(nextConnections);
+      return { connections: nextConnections };
+    });
     return newConn;
   },
 
@@ -1758,6 +1788,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const nextConnections = state.connections.map((c) => (c.id === id ? { ...c, ...updates } : c));
       const nextActive = state.activeConnection.id === id ? { ...state.activeConnection, ...updates } : state.activeConnection;
+      savePersistedConnections(nextConnections);
       return { connections: nextConnections, activeConnection: nextActive };
     });
   },
@@ -1769,6 +1800,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (state.activeConnection.id === id && nextConnections.length > 0) {
         nextActive = nextConnections[0];
       }
+      savePersistedConnections(nextConnections);
       return { connections: nextConnections, activeConnection: nextActive };
     });
   },
@@ -1786,6 +1818,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         insertIdx += 1;
       }
       groups.splice(insertIdx, 0, movedGroup);
+      savePersistedGroups(groups);
       return { connectionGroups: groups };
     });
   },
@@ -1811,6 +1844,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             insertIdx += 1;
           }
           conns.splice(insertIdx, 0, updatedMoved);
+          savePersistedConnections(conns);
           return { connections: conns, activeConnection: nextActive };
         }
       }
@@ -1827,6 +1861,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         conns.push(updatedMoved);
       }
 
+      savePersistedConnections(conns);
       return { connections: conns, activeConnection: nextActive };
     });
   },
@@ -2049,6 +2084,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         state.activeConnection.id === connId
           ? { ...state.activeConnection, safeMode: mode }
           : state.activeConnection;
+      savePersistedConnections(nextConns);
       return {
         connections: nextConns,
         activeConnection: nextActive,
@@ -2114,12 +2150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           isValid = true;
         }
       } else {
-        if (
-          trimmed.toUpperCase() === 'CONFIRM' ||
-          trimmed.toUpperCase() === 'PROD' ||
-          (activeConnection.username && trimmed.toLowerCase() === activeConnection.username.toLowerCase()) ||
-          trimmed.length >= 4
-        ) {
+        if (trimmed.toUpperCase() === 'CONFIRM') {
           isValid = true;
         }
       }
@@ -2624,12 +2655,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   commitTransaction: async () => {
-    const { rows, getPendingSQL, activeConnection, history, showToast } = get();
+    const { rows, getPendingSQL, activeConnection, history, showToast, requestSafetyConfirmation } = get();
     const sqlText = getPendingSQL();
     const count = get().pendingEditsCount;
 
     if (!sqlText || sqlText.startsWith('--')) {
       showToast('⚠️ No pending changes in active transaction');
+      return { sqlText: '', count: 0 };
+    }
+
+    const approved = await requestSafetyConfirmation({
+      sqlText,
+      title: 'Confirm Transaction Commit',
+      actionLabel: 'Commit Now (⌘S)',
+      isCommit: true,
+    });
+    if (!approved) {
+      showToast('🛑 Transaction commit cancelled by user');
       return { sqlText: '', count: 0 };
     }
 
@@ -2667,13 +2709,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       isFavorite: false,
     };
 
+    const nextHistory = [newHistoryItem, ...history];
+    savePersistedHistory(nextHistory);
+
     set({
       rows: committedRows,
       originalRows: JSON.parse(JSON.stringify(committedRows)),
       pendingEditsCount: 0,
       isTransactionOpen: false,
       isSqlDiffModalOpen: false,
-      history: [newHistoryItem, ...history],
+      history: nextHistory,
     });
 
     showToast(`✅ Successfully committed ${count} change(s)`);
@@ -2743,7 +2788,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       processes: state.processes.filter((p) => p.pid !== pid),
     })),
 
-  history: [
+  history: loadPersistedHistory([
     {
       id: 'h-1',
       connectionName: 'ecom_prod_db',
@@ -2766,7 +2811,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       status: 'success',
       isFavorite: false,
     },
-  ],
+  ]),
 }));
 
 if (typeof window !== 'undefined') {
