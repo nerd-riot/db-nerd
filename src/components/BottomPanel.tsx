@@ -12,7 +12,15 @@ import {
   CheckCircle2,
   AlertTriangle,
   Play,
+  FileCode,
 } from 'lucide-react';
+import {
+  ContextMenuContainer,
+  ContextMenuItem,
+  ContextMenuDivider,
+  ContextMenuHeader,
+  ContextMenuPosition,
+} from './ContextMenu';
 
 export const BottomPanel: React.FC = () => {
   const {
@@ -29,6 +37,8 @@ export const BottomPanel: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMaximized, setIsMaximized] = useState(false);
   const [prevHeight, setPrevHeight] = useState(bottomPanelHeight);
+  const [logContextPos, setLogContextPos] = useState<ContextMenuPosition | null>(null);
+  const [targetLog, setTargetLog] = useState<any | null>(null);
 
   const filteredHistory = history.filter((item) => {
     if (!searchQuery) return true;
@@ -144,7 +154,13 @@ export const BottomPanel: React.FC = () => {
               {filteredHistory.map((item) => (
                 <div
                   key={item.id}
-                  className="px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors flex items-start justify-between group space-x-3"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTargetLog(item);
+                    setLogContextPos({ x: e.clientX, y: e.clientY });
+                  }}
+                  className="px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors flex items-start justify-between group space-x-3 cursor-pointer"
                 >
                   <div className="flex items-start space-x-2.5 min-w-0 flex-1">
                     {/* Status LED */}
@@ -231,6 +247,53 @@ export const BottomPanel: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Console Log Entry Context Menu */}
+      {logContextPos && targetLog && (
+        <ContextMenuContainer
+          position={logContextPos}
+          onClose={() => {
+            setLogContextPos(null);
+            setTargetLog(null);
+          }}
+          width={230}
+        >
+          <ContextMenuHeader title="Console Log Entry" />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy SQL Statement"
+            shortcut="⌘C"
+            onClick={() => {
+              navigator.clipboard.writeText(targetLog.sql);
+              showToast('📋 Copied SQL statement to clipboard');
+              setLogContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Play className="w-3.5 h-3.5 text-emerald-400" />}
+            label="Open in New SQL Tab"
+            shortcut="⌘E"
+            onClick={() => {
+              openNewQueryTab(targetLog.sql);
+              showToast('✨ Opened in new Query Editor');
+              setLogContextPos(null);
+            }}
+          />
+          <ContextMenuDivider />
+          <ContextMenuItem
+            icon={<FileCode className="w-3.5 h-3.5 text-sky-400" />}
+            label="Copy All Console Logs"
+            onClick={() => {
+              const allLogs = filteredHistory
+                .map((h) => `-- [${h.timestamp}] (${h.durationMs || 1.2}ms) @${h.connectionName}\n${h.sql}`)
+                .join('\n\n');
+              navigator.clipboard.writeText(allLogs);
+              showToast(`📋 Copied ${filteredHistory.length} console log entries`);
+              setLogContextPos(null);
+            }}
+          />
+        </ContextMenuContainer>
+      )}
     </div>
   );
 };

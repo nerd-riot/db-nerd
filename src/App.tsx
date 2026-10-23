@@ -23,7 +23,7 @@ import { DisconnectedBanner } from './components/DisconnectedBanner';
 import { DisconnectedModal } from './components/DisconnectedModal';
 import { SafetyVerificationModal } from './components/SafetyVerificationModal';
 import { heartbeatService } from './services/heartbeatService';
-import { Table, Terminal, Activity, FileCode, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info } from 'lucide-react';
+import { Table, Terminal, Activity, FileCode, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info, Scissors, ClipboardPaste, Trash2, Database, SlidersHorizontal, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -34,6 +34,23 @@ import {
 import { getThemeDefinition } from './themes/themeRegistry';
 import { AppThemeId } from './types';
 import './App.css';
+
+const updateReactInputValue = (el: HTMLInputElement | HTMLTextAreaElement, newValue: string) => {
+  const prototype =
+    el instanceof HTMLTextAreaElement
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+  const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(el, newValue);
+  } else {
+    el.value = newValue;
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+const elHasText = (el?: HTMLInputElement | HTMLTextAreaElement | null) =>
+  Boolean(el && el.value && el.value.length > 0);
 
 export function App() {
   const {
@@ -81,10 +98,72 @@ export function App() {
   const [editingTitle, setEditingTitle] = useState('');
   const [tabContextPos, setTabContextPos] = useState<ContextMenuPosition | null>(null);
   const [targetTabId, setTargetTabId] = useState<string | null>(null);
+  const [globalContextMenu, setGlobalContextMenu] = useState<{
+    position: ContextMenuPosition;
+    type: 'input' | 'selection' | 'workspace';
+    inputElement?: HTMLInputElement | HTMLTextAreaElement;
+    selectedText?: string;
+  } | null>(null);
 
   if (typeof window !== 'undefined') {
     (window as any).useAppStore = useAppStore;
   }
+
+  useEffect(() => {
+    const handleGlobalContextMenu = (e: MouseEvent) => {
+      // If a component already handled the right-click and called e.preventDefault(),
+      // close our global fallback menu and do nothing else.
+      if (e.defaultPrevented) {
+        setGlobalContextMenu(null);
+        return;
+      }
+
+      // Always suppress WebKit's native browser context menu ("Reload" / "Inspect Element")
+      e.preventDefault();
+
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // Ignore right-clicks inside an already open custom context menu
+      if (target.closest('[data-context-menu="true"]')) {
+        return;
+      }
+
+      // 1. Check if right-clicked on an input or textarea
+      const inputEl = target.closest('input, textarea') as HTMLInputElement | HTMLTextAreaElement | null;
+      if (inputEl && inputEl.type !== 'checkbox' && inputEl.type !== 'radio' && inputEl.type !== 'file') {
+        inputEl.focus();
+        const selected = inputEl.value.substring(inputEl.selectionStart || 0, inputEl.selectionEnd || 0);
+        setGlobalContextMenu({
+          position: { x: e.clientX, y: e.clientY },
+          type: 'input',
+          inputElement: inputEl,
+          selectedText: selected,
+        });
+        return;
+      }
+
+      // 2. Check if there is non-empty text selection on the page
+      const pageSelection = window.getSelection()?.toString().trim() || '';
+      if (pageSelection) {
+        setGlobalContextMenu({
+          position: { x: e.clientX, y: e.clientY },
+          type: 'selection',
+          selectedText: pageSelection,
+        });
+        return;
+      }
+
+      // 3. Otherwise, show the native-feeling Workspace Context Menu
+      setGlobalContextMenu({
+        position: { x: e.clientX, y: e.clientY },
+        type: 'workspace',
+      });
+    };
+
+    window.addEventListener('contextmenu', handleGlobalContextMenu);
+    return () => window.removeEventListener('contextmenu', handleGlobalContextMenu);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -869,6 +948,208 @@ export function App() {
           </ContextMenuContainer>
         );
       })()}
+
+      {/* Global Context Menu (Input / Selection / Workspace Fallback) */}
+      {globalContextMenu && (
+        <ContextMenuContainer
+          position={globalContextMenu.position}
+          onClose={() => setGlobalContextMenu(null)}
+          width={240}
+        >
+          {globalContextMenu.type === 'input' && globalContextMenu.inputElement ? (
+            <>
+              <ContextMenuHeader title="Edit Field" />
+              <ContextMenuItem
+                icon={<Scissors className="w-3.5 h-3.5 text-slate-400" />}
+                label="Cut"
+                shortcut="⌘X"
+                disabled={!globalContextMenu.selectedText || globalContextMenu.inputElement.readOnly || globalContextMenu.inputElement.disabled}
+                onClick={() => {
+                  const el = globalContextMenu.inputElement!;
+                  const start = el.selectionStart || 0;
+                  const end = el.selectionEnd || 0;
+                  const selected = el.value.substring(start, end);
+                  if (selected) {
+                    navigator.clipboard.writeText(selected);
+                    const nextVal = el.value.substring(0, start) + el.value.substring(end);
+                    updateReactInputValue(el, nextVal);
+                    el.focus();
+                    el.setSelectionRange(start, start);
+                  }
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+                label="Copy"
+                shortcut="⌘C"
+                disabled={!elHasText(globalContextMenu.inputElement)}
+                onClick={() => {
+                  const el = globalContextMenu.inputElement!;
+                  const textToCopy = globalContextMenu.selectedText || el.value;
+                  if (textToCopy) {
+                    navigator.clipboard.writeText(textToCopy);
+                    showToast('📋 Copied to clipboard');
+                  }
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<ClipboardPaste className="w-3.5 h-3.5 text-sky-400" />}
+                label="Paste"
+                shortcut="⌘V"
+                disabled={globalContextMenu.inputElement.readOnly || globalContextMenu.inputElement.disabled}
+                onClick={async () => {
+                  const el = globalContextMenu.inputElement!;
+                  try {
+                    const clip = await navigator.clipboard.readText();
+                    if (clip !== undefined) {
+                      const start = el.selectionStart ?? el.value.length;
+                      const end = el.selectionEnd ?? el.value.length;
+                      const nextVal = el.value.substring(0, start) + clip + el.value.substring(end);
+                      updateReactInputValue(el, nextVal);
+                      el.focus();
+                      const cursor = start + clip.length;
+                      el.setSelectionRange(cursor, cursor);
+                    }
+                  } catch {
+                    showToast('⚠️ Use ⌘V to paste from system clipboard');
+                  }
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<Check className="w-3.5 h-3.5 text-emerald-400" />}
+                label="Select All"
+                shortcut="⌘A"
+                disabled={!elHasText(globalContextMenu.inputElement)}
+                onClick={() => {
+                  const el = globalContextMenu.inputElement!;
+                  el.focus();
+                  el.select();
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuDivider />
+              <ContextMenuItem
+                icon={<Trash2 className="w-3.5 h-3.5 text-rose-400" />}
+                label="Clear Field"
+                danger
+                disabled={!elHasText(globalContextMenu.inputElement) || globalContextMenu.inputElement.readOnly || globalContextMenu.inputElement.disabled}
+                onClick={() => {
+                  const el = globalContextMenu.inputElement!;
+                  updateReactInputValue(el, '');
+                  el.focus();
+                  setGlobalContextMenu(null);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              {globalContextMenu.type === 'selection' && globalContextMenu.selectedText && (
+                <>
+                  <ContextMenuHeader title="Selected Text" />
+                  <ContextMenuItem
+                    icon={<Copy className="w-3.5 h-3.5 text-sky-400" />}
+                    label="Copy Selection"
+                    shortcut="⌘C"
+                    onClick={() => {
+                      navigator.clipboard.writeText(globalContextMenu.selectedText!);
+                      showToast('📋 Copied selection to clipboard');
+                      setGlobalContextMenu(null);
+                    }}
+                  />
+                  <ContextMenuItem
+                    icon={<Terminal className="w-3.5 h-3.5 text-emerald-400" />}
+                    label="Open Selection in SQL Tab"
+                    shortcut="⌘E"
+                    onClick={() => {
+                      openNewQueryTab(globalContextMenu.selectedText!);
+                      setGlobalContextMenu(null);
+                    }}
+                  />
+                  <ContextMenuDivider />
+                </>
+              )}
+              <ContextMenuHeader title="DBNerd Workspace" />
+              <ContextMenuItem
+                icon={<Terminal className="w-3.5 h-3.5 text-amber-400" />}
+                label="New SQL Query Tab"
+                shortcut="⌘T"
+                onClick={() => {
+                  openNewQueryTab();
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<RotateCcw className="w-3.5 h-3.5 text-emerald-400" />}
+                label="Reload Data"
+                shortcut="⌘R"
+                onClick={() => {
+                  reloadData();
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<Database className="w-3.5 h-3.5 text-sky-400" />}
+                label="Switch Database..."
+                shortcut="⌘O"
+                onClick={() => {
+                  setDatabaseModalOpen(true);
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<Plus className="w-3.5 h-3.5 text-indigo-400" />}
+                label="Connection Manager..."
+                shortcut="⌘K"
+                onClick={() => {
+                  setConnectionModalOpen(true);
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuDivider />
+              <ContextMenuItem
+                icon={<PanelLeft className="w-3.5 h-3.5 text-slate-400" />}
+                label={isSidebarOpen ? 'Hide Left Sidebar' : 'Show Left Sidebar'}
+                shortcut="⌘B"
+                onClick={() => {
+                  toggleSidebar();
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<PanelRight className="w-3.5 h-3.5 text-slate-400" />}
+                label={isRightInspectorOpen ? 'Hide Right Inspector' : 'Show Right Inspector'}
+                shortcut="⌘I"
+                onClick={() => {
+                  toggleRightInspector();
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuItem
+                icon={<PanelBottom className="w-3.5 h-3.5 text-slate-400" />}
+                label={isBottomPanelOpen ? 'Hide Bottom Console' : 'Show Bottom Console'}
+                shortcut="⌘J"
+                onClick={() => {
+                  useAppStore.getState().toggleBottomPanel();
+                  setGlobalContextMenu(null);
+                }}
+              />
+              <ContextMenuDivider />
+              <ContextMenuItem
+                icon={<SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />}
+                label="Preferences & Themes..."
+                shortcut="⌘,"
+                onClick={() => {
+                  setSettingsModalOpen(true);
+                  setGlobalContextMenu(null);
+                }}
+              />
+            </>
+          )}
+        </ContextMenuContainer>
+      )}
 
       {/* Global Modals */}
       <ConnectionModal />

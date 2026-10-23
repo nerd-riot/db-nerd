@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { getTableSchema, TABLE_SCHEMAS } from '../data/schemas';
 import {
@@ -19,6 +19,9 @@ import {
   AlertCircle,
   RefreshCw,
   WrapText,
+  Loader2,
+  Settings2,
+  Check,
 } from 'lucide-react';
 import { GridRow, ColumnDefinition } from '../types';
 import { TableContextMenu } from './TableContextMenu';
@@ -35,7 +38,6 @@ import {
   ContextMenuPosition,
 } from './ContextMenu';
 
-const GRID_PAGE_SIZE = 200;
 const INTERNAL_ROW_KEYS = new Set(['isDirty', 'dirtyFields', 'rowState']);
 
 export const TableGrid: React.FC = () => {
@@ -63,6 +65,14 @@ export const TableGrid: React.FC = () => {
     setConnectionModalOpen,
     reconnectActiveConnection,
     showToast,
+    gridPage,
+    gridPageSize,
+    gridTotalCount,
+    gridIsEstimatedCount,
+    gridIsCounting,
+    setGridPageSize,
+    goToGridPage,
+    fetchTableExactCount,
   } = useAppStore();
 
   const schemaInfo = getTableSchema(selectedTable);
@@ -119,13 +129,33 @@ export const TableGrid: React.FC = () => {
   );
   const [wrapText, setWrapText] = useState(false);
   const [sortConfig, setSortConfig] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
-  const [currentPage, setCurrentPage] = useState(0);
+  const [isCountPopoverOpen, setIsCountPopoverOpen] = useState(false);
+  const [includeFilterInCount, setIncludeFilterInCount] = useState(true);
+  const [isPageSizeMenuOpen, setIsPageSizeMenuOpen] = useState(false);
+  const countPopoverRef = useRef<HTMLDivElement>(null);
+  const pageSizeMenuRef = useRef<HTMLDivElement>(null);
 
-  // Sync visible columns and reset pagination when selectedTable or resolvedColumns keys change
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (countPopoverRef.current && !countPopoverRef.current.contains(e.target as Node)) {
+        setIsCountPopoverOpen(false);
+      }
+      if (pageSizeMenuRef.current && !pageSizeMenuRef.current.contains(e.target as Node)) {
+        setIsPageSizeMenuOpen(false);
+      }
+    };
+    if (isCountPopoverOpen || isPageSizeMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isCountPopoverOpen, isPageSizeMenuOpen]);
+
+  // Sync visible columns and reset sort when selectedTable or resolvedColumns keys change
   const resolvedColSignature = useMemo(() => resolvedColumns.map((c) => c.name).join(','), [resolvedColumns]);
-  React.useEffect(() => {
+  useEffect(() => {
     setVisibleColumns(new Set(resolvedColumns.map((c) => c.name)));
-    setCurrentPage(0);
     setSortConfig(null);
   }, [selectedTable, resolvedColSignature]);
 
@@ -209,15 +239,12 @@ export const TableGrid: React.FC = () => {
     return list;
   }, [rows, sortConfig]);
 
-  const totalPages = Math.max(1, Math.ceil(processedRows.length / GRID_PAGE_SIZE));
-  const safePage = Math.min(currentPage, totalPages - 1);
-  const paginatedRows = useMemo(
-    () => processedRows.slice(safePage * GRID_PAGE_SIZE, (safePage + 1) * GRID_PAGE_SIZE),
-    [processedRows, safePage]
-  );
+  const effectiveTotalCount = gridTotalCount !== null ? gridTotalCount : rows.length;
+  const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / gridPageSize));
+  const safePage = Math.min(gridPage, totalPages - 1);
+  const paginatedRows = processedRows;
 
   const handleApplyFilter = () => {
-    setCurrentPage(0);
     const orderMatch = filterOrderByText.trim().match(/^([a-zA-Z0-9_]+)\s*(ASC|DESC)?$/i);
     if (orderMatch) {
       const col = orderMatch[1];
@@ -226,7 +253,7 @@ export const TableGrid: React.FC = () => {
     } else if (!filterOrderByText.trim()) {
       setSortConfig(null);
     }
-    reloadData(selectedTable);
+    goToGridPage(0);
   };
 
   return (
@@ -423,7 +450,7 @@ export const TableGrid: React.FC = () => {
             {/* Rows */}
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800/40 text-[11px]">
               {paginatedRows.map((row, index) => {
-                const absoluteIndex = safePage * GRID_PAGE_SIZE + index;
+                const absoluteIndex = safePage * gridPageSize + index;
                 const isSelected = selectedRowIds.has(row.id) || (selectedRowData && selectedRowData.id === row.id);
                 const isEven = absoluteIndex % 2 === 0;
 
@@ -597,15 +624,74 @@ export const TableGrid: React.FC = () => {
           )}
         </div>
 
-        {/* Center: Row Counter / Stats */}
-        <div className="text-[11px] text-slate-600 dark:text-slate-400 font-mono select-none flex items-center leading-none">
+        {/* Center: Row Counter / Stats with TablePlus-style Clickable Count Popover */}
+        <div className="text-[11px] text-slate-600 dark:text-slate-400 font-mono select-none flex items-center leading-none relative">
           {tableViewMode === 'data' ? (
             selectedRowData || selectedRowIds.size > 0 ? (
-              <span className="text-sky-700 dark:text-sky-300 font-semibold">{`${selectedRowIds.size || 1} of ${processedRows.length} rows selected`}</span>
-            ) : processedRows.length === 0 ? (
+              <span className="text-sky-700 dark:text-sky-300 font-semibold">{`${selectedRowIds.size || 1} of ${effectiveTotalCount.toLocaleString()} rows selected`}</span>
+            ) : rows.length === 0 ? (
               <span>0 rows</span>
             ) : (
-              <span>{`${safePage * GRID_PAGE_SIZE + 1}-${Math.min((safePage + 1) * GRID_PAGE_SIZE, processedRows.length)} of ${processedRows.length} rows`}</span>
+              <div className="relative" ref={countPopoverRef}>
+                <button
+                  onClick={() => setIsCountPopoverOpen((prev) => !prev)}
+                  className="px-2 py-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 transition font-mono font-medium flex items-center space-x-1 cursor-pointer select-none"
+                  title="Click to view row count details or calculate exact count"
+                >
+                  <span>{`${safePage * gridPageSize + 1}-${Math.min((safePage + 1) * gridPageSize, effectiveTotalCount)} of ${gridIsEstimatedCount ? '~' : ''}${effectiveTotalCount.toLocaleString()} rows`}</span>
+                  {gridIsCounting && (
+                    <Loader2 className="w-3 h-3 animate-spin text-amber-500 ml-1 inline-block" />
+                  )}
+                </button>
+
+                {/* TablePlus-style Popover (Images 1 & 3) */}
+                {isCountPopoverOpen && (
+                  <div
+                    className="absolute bottom-8 left-1/2 -translate-x-1/2 w-80 bg-[#252526] dark:bg-slate-900 border border-slate-600/60 dark:border-slate-700/90 rounded-2xl shadow-2xl p-4 z-50 text-xs font-sans text-white animate-in zoom-in-95 duration-100 ring-1 ring-black/40"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Arrow */}
+                    <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#252526] dark:bg-slate-900 border-r border-b border-slate-600/60 dark:border-slate-700/90 rotate-45" />
+
+                    <div className="text-center font-bold text-sm text-slate-100 mb-2 font-mono tracking-tight">
+                      {`${safePage * gridPageSize + 1}-${Math.min((safePage + 1) * gridPageSize, effectiveTotalCount)} of ${gridIsEstimatedCount ? '~' : ''}${effectiveTotalCount.toLocaleString()} rows`}
+                    </div>
+
+                    <p className="text-[11px] text-[#f97316] leading-relaxed text-center mb-3">
+                      {gridIsEstimatedCount
+                        ? 'This is the estimated value, click "Count" to retrieve the exact value. It may affect your server performance'
+                        : '✓ Exact row count retrieved from server.'}
+                    </p>
+
+                    <label className="flex items-center space-x-2 text-[11px] text-slate-300 mb-3.5 px-1 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={includeFilterInCount}
+                        onChange={(e) => setIncludeFilterInCount(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 text-sky-500 focus:ring-0 cursor-pointer"
+                      />
+                      <span>Include current filter conditions</span>
+                    </label>
+
+                    <button
+                      onClick={async () => {
+                        await fetchTableExactCount(selectedTable, includeFilterInCount);
+                      }}
+                      disabled={gridIsCounting}
+                      className="w-full py-1.5 px-3 bg-[#333333] hover:bg-[#444444] active:scale-[0.98] border border-slate-600/80 text-slate-100 rounded-lg font-semibold text-xs transition flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {gridIsCounting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                          <span>Counting server records...</span>
+                        </>
+                      ) : (
+                        <span>Count</span>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
             )
           ) : tableViewMode === 'structure' ? (
             <span>{`${resolvedColumns.length} columns, ${schemaInfo.indexes.length} indexes`}</span>
@@ -653,28 +739,68 @@ export const TableGrid: React.FC = () => {
                 <span>{wrapText ? 'Wrap: On' : 'Wrap'}</span>
               </button>
 
-              <div className="flex items-center space-x-0.5 pl-1 h-6">
+              <div className="flex items-center space-x-0.5 pl-1 h-6 relative" ref={pageSizeMenuRef}>
                 <button
-                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                  disabled={safePage <= 0}
-                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
+                  onClick={() => goToGridPage(safePage - 1)}
+                  disabled={safePage <= 0 || isReloading}
+                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"
                   title="Previous Page"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
                 {totalPages > 1 && (
-                  <span className="text-[10px] font-mono text-slate-500 px-1">
-                    {safePage + 1}/{totalPages}
+                  <span className="text-[10px] font-mono text-slate-500 px-1 select-none">
+                    {safePage + 1}/{totalPages.toLocaleString()}
                   </span>
                 )}
                 <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-                  disabled={safePage >= totalPages - 1}
-                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
+                  onClick={() => goToGridPage(safePage + 1)}
+                  disabled={safePage >= totalPages - 1 || rows.length < gridPageSize || isReloading}
+                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"
                   title="Next Page"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
+
+                {/* TablePlus Page Size Gear */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsPageSizeMenuOpen((prev) => !prev)}
+                    className="h-6 w-6 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded cursor-pointer transition ml-0.5"
+                    title={`Page size: ${gridPageSize} rows`}
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {isPageSizeMenuOpen && (
+                    <div
+                      className="absolute bottom-8 right-0 w-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-1 z-50 text-xs font-sans ring-1 ring-black/5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="px-2 py-1 text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                        Rows Per Page
+                      </div>
+                      {[100, 200, 300, 500, 1000].map((sz) => (
+                        <button
+                          key={sz}
+                          onClick={() => {
+                            setGridPageSize(sz);
+                            setIsPageSizeMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between cursor-pointer transition ${
+                            gridPageSize === sz
+                              ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 font-semibold'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <span>{sz} rows</span>
+                          {sz === 300 && <span className="text-[9px] text-slate-400 font-mono">(default)</span>}
+                          {gridPageSize === sz && <Check className="w-3 h-3 text-sky-500" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}

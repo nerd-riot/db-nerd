@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { getTableSchema } from '../data/schemas';
-import { Search, Key } from 'lucide-react';
+import { Search, Key, Copy, Code, Filter, Terminal } from 'lucide-react';
 import { ColumnDefinition } from '../types';
 import { ColumnTypeIcon } from './ColumnTypeIcon';
+import {
+  ContextMenuContainer,
+  ContextMenuItem,
+  ContextMenuDivider,
+  ContextMenuHeader,
+  ContextMenuPosition,
+} from './ContextMenu';
 
 const DATA_TYPES = [
   'int4',
@@ -28,11 +35,19 @@ export const TableStructureView: React.FC = () => {
     setStructureSearchColumn,
     selectedStructureColumn,
     setSelectedStructureColumn,
+    setTableViewMode,
+    isFilterBarOpen,
+    toggleFilterBar,
+    setFilterWhereText,
+    openNewQueryTab,
+    showToast,
   } = useAppStore();
   const schemaInfo = getTableSchema(selectedTable);
 
   const [columns, setColumns] = useState<ColumnDefinition[]>(schemaInfo.columns);
   const [tableNameInput, setTableNameInput] = useState(selectedTable);
+  const [colContextPos, setColContextPos] = useState<ContextMenuPosition | null>(null);
+  const [targetCol, setTargetCol] = useState<ColumnDefinition | null>(null);
 
   // Sync columns if selectedTable changes
   React.useEffect(() => {
@@ -124,6 +139,13 @@ export const TableStructureView: React.FC = () => {
                 <tr
                   key={col.name + idx}
                   onClick={() => setSelectedStructureColumn(col)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedStructureColumn(col);
+                    setTargetCol(col);
+                    setColContextPos({ x: e.clientX, y: e.clientY });
+                  }}
                   className={`cursor-pointer transition-colors ${
                     isSelected
                       ? 'bg-[#eff6ff] dark:bg-sky-500/20 text-[#1d4ed8] dark:text-white font-semibold shadow-2xs border-l-2 border-l-sky-500'
@@ -223,9 +245,72 @@ export const TableStructureView: React.FC = () => {
               );
             })}
 
-            </tbody>
+          </tbody>
         </table>
       </div>
+
+      {/* Column Structure Context Menu */}
+      {colContextPos && targetCol && (
+        <ContextMenuContainer
+          position={colContextPos}
+          onClose={() => {
+            setColContextPos(null);
+            setTargetCol(null);
+          }}
+          width={240}
+        >
+          <ContextMenuHeader title={`Column: ${targetCol.name}`} />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy Column Name"
+            onClick={() => {
+              navigator.clipboard.writeText(targetCol.name);
+              showToast(`📋 Copied "${targetCol.name}"`);
+              setColContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label={`Copy Type (${targetCol.type})`}
+            onClick={() => {
+              navigator.clipboard.writeText(targetCol.type);
+              showToast(`📋 Copied type "${targetCol.type}"`);
+              setColContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Code className="w-3.5 h-3.5 text-sky-400" />}
+            label="Copy Column DDL"
+            onClick={() => {
+              const ddl = `"${targetCol.name}" ${targetCol.type.toUpperCase()}${targetCol.isPrimaryKey ? ' PRIMARY KEY' : ''}${targetCol.isNullable ? '' : ' NOT NULL'}${targetCol.defaultValue && targetCol.defaultValue !== 'NULL' ? ` DEFAULT ${targetCol.defaultValue}` : ''}`;
+              navigator.clipboard.writeText(ddl);
+              showToast(`📋 Copied DDL for "${targetCol.name}"`);
+              setColContextPos(null);
+            }}
+          />
+          <ContextMenuDivider />
+          <ContextMenuItem
+            icon={<Filter className="w-3.5 h-3.5 text-emerald-400" />}
+            label="Filter by Column in Data Grid"
+            onClick={() => {
+              setTableViewMode('data');
+              if (!isFilterBarOpen) {
+                toggleFilterBar();
+              }
+              setFilterWhereText(`"${targetCol.name}" = `);
+              setColContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Terminal className="w-3.5 h-3.5 text-amber-400" />}
+            label="Query Distinct Values in SQL Tab"
+            onClick={() => {
+              openNewQueryTab(`SELECT "${targetCol.name}", COUNT(*) AS count\nFROM "${selectedTable}"\nGROUP BY "${targetCol.name}"\nORDER BY count DESC\nLIMIT 100;`);
+              setColContextPos(null);
+            }}
+          />
+        </ContextMenuContainer>
+      )}
     </div>
   );
 };

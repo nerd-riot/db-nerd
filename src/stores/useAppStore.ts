@@ -217,7 +217,16 @@ interface AppState {
   } | null;
   toastMessage: string | null;
   showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info', durationMs?: number) => void;
-  reloadData: (tableName?: string) => Promise<void>;
+  gridPage: number;
+  gridPageSize: number;
+  gridTotalCount: number | null;
+  gridIsEstimatedCount: boolean;
+  gridIsCounting: boolean;
+  setGridPage: (page: number) => void;
+  setGridPageSize: (pageSize: number) => void;
+  goToGridPage: (page: number) => Promise<void>;
+  fetchTableExactCount: (tableName?: string, includeFilter?: boolean) => Promise<void>;
+  reloadData: (tableName?: string, pageOverride?: number, pageSizeOverride?: number) => Promise<void>;
 }
 
 const INITIAL_ROWS: GridRow[] = [
@@ -2501,17 +2510,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setSelectedTable: (tbl) => {
-    const { truncatedTables } = get();
+    const { truncatedTables, selectedTable, liveTables, activeConnection } = get();
     const targetRows = getDefaultRowsForTable(tbl, truncatedTables[tbl]);
+    const liveSummary = liveTables[activeConnection.id]?.find((t) => t.name === tbl);
+    const initialEst = liveSummary?.estimated_rows && liveSummary.estimated_rows > 0 ? liveSummary.estimated_rows : null;
+
     set({
       selectedTable: tbl,
       selectedRowData: null,
+      gridPage: tbl !== selectedTable ? 0 : get().gridPage,
+      gridTotalCount: initialEst,
+      gridIsEstimatedCount: true,
       rows: JSON.parse(JSON.stringify(targetRows)),
       originalRows: JSON.parse(JSON.stringify(targetRows)),
       pendingEditsCount: 0,
     });
     // Asynchronously fetch live rows & schema metadata from database
-    get().reloadData(tbl);
+    get().reloadData(tbl, tbl !== selectedTable ? 0 : get().gridPage);
     get().fetchLiveTableSchema(tbl);
   },
 
@@ -2562,7 +2577,59 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearHistory: () => {
     set({ history: [] });
   },
-  reloadData: async (tableName?: string) => {
+  gridPage: 0,
+  gridPageSize: 300,
+  gridTotalCount: null,
+  gridIsEstimatedCount: true,
+  gridIsCounting: false,
+
+  setGridPage: (page: number) => set({ gridPage: Math.max(0, page) }),
+
+  setGridPageSize: async (pageSize: number) => {
+    const { selectedTable } = get();
+    set({ gridPageSize: pageSize, gridPage: 0 });
+    await get().reloadData(selectedTable, 0, pageSize);
+  },
+
+  goToGridPage: async (page: number) => {
+    const { selectedTable, isReloading, gridTotalCount, gridPageSize } = get();
+    if (isReloading) return;
+    const maxPages = gridTotalCount ? Math.max(1, Math.ceil(gridTotalCount / gridPageSize)) : 999999;
+    const clampedPage = Math.max(0, Math.min(page, maxPages - 1));
+    set({ gridPage: clampedPage });
+    await get().reloadData(selectedTable, clampedPage);
+  },
+
+  fetchTableExactCount: async (tableName?: string, includeFilter = true) => {
+    const { activeConnection, selectedTable, filterWhereText, isFilterBarOpen, showToast } = get();
+    const targetTable = tableName || selectedTable;
+    if (!activeConnection?.id || !targetTable) return;
+
+    set({ gridIsCounting: true });
+    try {
+      const quote = activeConnection.engine === 'mysql' ? '`' : '"';
+      const whereClause = (includeFilter && isFilterBarOpen && filterWhereText.trim())
+        ? ` WHERE ${filterWhereText.trim()}`
+        : '';
+      const countSql = `SELECT COUNT(*) AS total_count FROM ${quote}${targetTable}${quote}${whereClause};`;
+      const res = await executeRealQuery(activeConnection, countSql);
+      if (res.success && res.rows && res.rows.length > 0) {
+        const exactVal = Number(res.rows[0]?.total_count ?? Object.values(res.rows[0])[0] ?? 0);
+        set({
+          gridTotalCount: exactVal,
+          gridIsEstimatedCount: false,
+          gridIsCounting: false,
+        });
+        showToast(`⚡ Retrieved exact count: ${exactVal.toLocaleString()} rows (${res.duration_ms}ms)`);
+        return;
+      }
+    } catch (e: any) {
+      showToast(`❌ Failed to count rows: ${e?.message || e}`, 'error');
+    }
+    set({ gridIsCounting: false });
+  },
+
+  reloadData: async (tableName?: string, pageOverride?: number, pageSizeOverride?: number) => {
     const {
       activeTabId,
       tabs,
@@ -2574,6 +2641,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       isFilterBarOpen,
       filterWhereText,
       filterOrderByText,
+      gridPage,
+      gridPageSize,
+      liveTables,
     } = get();
     const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -2586,35 +2656,57 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const targetTable = tableName || (activeTab?.type === 'grid' && activeTab.tableName) || selectedTable;
+    if (!targetTable) {
+      set({ isReloading: false });
+      return;
+    }
+
+    const currentPage = pageOverride !== undefined ? pageOverride : gridPage;
+    const currentPageSize = pageSizeOverride !== undefined ? pageSizeOverride : gridPageSize;
+    const offset = Math.max(0, currentPage * currentPageSize);
 
     try {
       const quote = activeConnection.engine === 'mysql' ? '`' : '"';
-      const baseSql = activeConnection.engine === 'redis'
-        ? `KEYS *`
-        : `SELECT * FROM ${quote}${targetTable}${quote} LIMIT 500;`;
-
-      let sql = baseSql;
+      let sql: string;
       const hasCustomFilter = isFilterBarOpen && (Boolean(filterWhereText.trim()) || Boolean(filterOrderByText.trim()));
-      if (hasCustomFilter && activeConnection.engine !== 'redis') {
-        const whereClause = filterWhereText.trim() ? ` WHERE ${filterWhereText.trim()}` : '';
-        const orderClause = filterOrderByText.trim() ? ` ORDER BY ${filterOrderByText.trim()}` : '';
-        sql = `SELECT * FROM ${quote}${targetTable}${quote}${whereClause}${orderClause} LIMIT 500;`;
+      
+      if (activeConnection.engine === 'redis') {
+        sql = `KEYS *`;
+      } else {
+        const whereClause = (hasCustomFilter && filterWhereText.trim()) ? ` WHERE ${filterWhereText.trim()}` : '';
+        const orderClause = (hasCustomFilter && filterOrderByText.trim()) ? ` ORDER BY ${filterOrderByText.trim()}` : '';
+        sql = `SELECT * FROM ${quote}${targetTable}${quote}${whereClause}${orderClause} LIMIT ${currentPageSize} OFFSET ${offset};`;
       }
 
       let res = await executeRealQuery(activeConnection, sql);
-      // If custom filter referenced columns from a different table, fall back to base query
-      if (!res.success && hasCustomFilter && sql !== baseSql) {
-        res = await executeRealQuery(activeConnection, baseSql);
+      // Fallback if custom filter failed
+      if (!res.success && hasCustomFilter && activeConnection.engine !== 'redis') {
+        const fallbackSql = `SELECT * FROM ${quote}${targetTable}${quote} LIMIT ${currentPageSize} OFFSET ${offset};`;
+        res = await executeRealQuery(activeConnection, fallbackSql);
       }
 
-      if (res.success && Array.isArray(res.rows) && res.rows.length > 0) {
+      if (res.success && Array.isArray(res.rows)) {
         const liveRows: GridRow[] = res.rows.map((r, idx) => ({
           ...r,
-          id: r.id !== undefined ? r.id : idx + 1,
+          id: r.id !== undefined ? r.id : offset + idx + 1,
           isDirty: false,
           dirtyFields: {},
           rowState: 'clean',
         }));
+
+        let totalCount = get().gridTotalCount;
+        let isEstimated = get().gridIsEstimatedCount;
+
+        if (currentPage === 0 && liveRows.length < currentPageSize && !hasCustomFilter) {
+          totalCount = liveRows.length;
+          isEstimated = false;
+        } else if (totalCount === null || totalCount === 0 || isEstimated) {
+          const summary = liveTables[activeConnection.id]?.find((t) => t.name === targetTable);
+          if (summary?.estimated_rows && summary.estimated_rows > 0) {
+            totalCount = summary.estimated_rows;
+            isEstimated = true;
+          }
+        }
 
         set({
           selectedTable: targetTable,
@@ -2622,10 +2714,38 @@ export const useAppStore = create<AppState>((set, get) => ({
           rows: liveRows,
           originalRows: JSON.parse(JSON.stringify(liveRows)),
           pendingEditsCount: 0,
+          gridPage: currentPage,
+          gridPageSize: currentPageSize,
+          gridTotalCount: totalCount,
+          gridIsEstimatedCount: isEstimated,
           isReloading: false,
         });
 
-        showToast(`⚡ Refreshed table '${targetTable}' (${liveRows.length} live records • ${res.duration_ms}ms)`);
+        // Asynchronously check table estimate if not yet set
+        if (totalCount === null || totalCount === 0) {
+          (async () => {
+            try {
+              let estSql = '';
+              if (activeConnection.engine === 'postgres') {
+                estSql = `SELECT GREATEST(CASE WHEN c.reltuples > 0 THEN c.reltuples::bigint WHEN COALESCE(s.n_live_tup, 0) > 0 THEN s.n_live_tup ELSE 0 END, 0)::bigint AS estimated_rows FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid WHERE (n.nspname = 'public' OR n.nspname = current_schema()) AND c.relname = '${targetTable.replace(/'/g, "''")}' LIMIT 1;`;
+              } else if (activeConnection.engine === 'mysql') {
+                estSql = `SELECT COALESCE(TABLE_ROWS, 0) AS estimated_rows FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${targetTable.replace(/'/g, "''")}' LIMIT 1;`;
+              }
+              if (estSql) {
+                const estRes = await executeRealQuery(activeConnection, estSql);
+                if (estRes.success && estRes.rows && estRes.rows.length > 0) {
+                  const estVal = Number(estRes.rows[0]?.estimated_rows ?? Object.values(estRes.rows[0])[0] ?? 0);
+                  if (estVal > 0) {
+                    set({ gridTotalCount: estVal, gridIsEstimatedCount: true });
+                  }
+                }
+              }
+            } catch {}
+          })();
+        }
+
+        const countLabel = totalCount !== null ? ` of ${isEstimated ? '~' : ''}${totalCount.toLocaleString()}` : '';
+        showToast(`⚡ Loaded rows ${offset + 1}-${offset + liveRows.length}${countLabel} (${res.duration_ms}ms)`);
         return;
       }
     } catch (e) {
@@ -2641,6 +2761,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       rows: JSON.parse(JSON.stringify(targetRows)),
       originalRows: JSON.parse(JSON.stringify(targetRows)),
       pendingEditsCount: 0,
+      gridPage: 0,
+      gridTotalCount: targetRows.length,
+      gridIsEstimatedCount: false,
       isReloading: false,
     });
 

@@ -38,9 +38,11 @@ export const ContextMenuContainer: React.FC<ContextMenuContainerProps> = ({
     };
 
     window.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('contextmenu', handleOutsideClick, true);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('contextmenu', handleOutsideClick, true);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [onClose]);
@@ -67,9 +69,14 @@ export const ContextMenuContainer: React.FC<ContextMenuContainerProps> = ({
     <ContextMenuCloseContext.Provider value={onClose}>
       <div
         ref={menuRef}
+        data-context-menu="true"
         style={{ left: `${left}px`, top: `${top}px`, width: `${menuWidth}px` }}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
         className={`fixed z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-300 dark:border-slate-700/80 rounded-xl shadow-2xl p-1 text-xs select-none ring-1 ring-slate-900/5 dark:ring-white/10 animate-in fade-in zoom-in-95 duration-100 font-sans ${className}`}
       >
         {children}

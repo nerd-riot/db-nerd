@@ -18,8 +18,16 @@ import {
   Activity,
   Zap,
   ShieldCheck,
+  FileCode,
 } from 'lucide-react';
 import { ColumnTypeIcon } from './ColumnTypeIcon';
+import {
+  ContextMenuContainer,
+  ContextMenuItem,
+  ContextMenuDivider,
+  ContextMenuHeader,
+  ContextMenuPosition,
+} from './ContextMenu';
 
 // 2026 Best of Color: Soft Digital Pastel type badges
 const getTypeBadgeClass = (type: string) => {
@@ -56,11 +64,14 @@ export const RightInspector: React.FC = () => {
     selectedStructureColumn,
     activeConnection,
     liveTables,
+    showToast,
   } = useAppStore();
 
   const [searchField, setSearchField] = useState('');
   const [copied, setCopied] = useState(false);
   const [sqlInspectorTab, setSqlInspectorTab] = useState<'table' | 'metrics'>('table');
+  const [fieldContextPos, setFieldContextPos] = useState<ContextMenuPosition | null>(null);
+  const [targetField, setTargetField] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedTable) {
@@ -313,7 +324,16 @@ export const RightInspector: React.FC = () => {
                 const isExpanded = !!expandedFields[field];
 
                 return (
-                  <div key={field} className="space-y-1 group">
+                  <div
+                    key={field}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTargetField(field);
+                      setFieldContextPos({ x: e.clientX, y: e.clientY });
+                    }}
+                    className="space-y-1 group"
+                  >
                     {/* Field Header: Name, Type Badge, and Collapse/Expand Caret */}
                     <div
                       onClick={() => toggleFieldExpand(field)}
@@ -842,6 +862,77 @@ export const RightInspector: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Field Context Menu */}
+      {fieldContextPos && targetField && selectedRowData && (
+        <ContextMenuContainer
+          position={fieldContextPos}
+          onClose={() => {
+            setFieldContextPos(null);
+            setTargetField(null);
+          }}
+          width={230}
+        >
+          <ContextMenuHeader title={`Field: ${targetField}`} />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy Field Value"
+            shortcut="⌘C"
+            onClick={() => {
+              const rawVal = selectedRowData[targetField];
+              const strVal =
+                rawVal === null || rawVal === undefined
+                  ? 'NULL'
+                  : typeof rawVal === 'object'
+                  ? JSON.stringify(rawVal, null, 2)
+                  : String(rawVal);
+              navigator.clipboard.writeText(strVal);
+              showToast(`📋 Copied value of "${targetField}"`);
+              setFieldContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy Field Name"
+            onClick={() => {
+              navigator.clipboard.writeText(targetField);
+              showToast(`📋 Copied field name "${targetField}"`);
+              setFieldContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<FileCode className="w-3.5 h-3.5 text-sky-400" />}
+            label="Copy as JSON Key-Value"
+            onClick={() => {
+              const pair = JSON.stringify({ [targetField]: selectedRowData[targetField] }, null, 2);
+              navigator.clipboard.writeText(pair);
+              showToast(`📋 Copied "${targetField}" as JSON`);
+              setFieldContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<FileCode className="w-3.5 h-3.5 text-emerald-400" />}
+            label="Copy Entire Row JSON"
+            onClick={() => {
+              const cleanRow = { ...selectedRowData };
+              delete cleanRow.dirtyFields;
+              delete cleanRow.isNewRow;
+              navigator.clipboard.writeText(JSON.stringify(cleanRow, null, 2));
+              showToast('📋 Copied entire row as JSON');
+              setFieldContextPos(null);
+            }}
+          />
+          <ContextMenuDivider />
+          <ContextMenuItem
+            icon={expandedFields[targetField] ? <Minimize2 className="w-3.5 h-3.5 text-slate-400" /> : <Maximize2 className="w-3.5 h-3.5 text-slate-400" />}
+            label={expandedFields[targetField] ? 'Collapse Multiline View' : 'Expand Multiline View'}
+            onClick={() => {
+              toggleFieldExpand(targetField);
+              setFieldContextPos(null);
+            }}
+          />
+        </ContextMenuContainer>
+      )}
     </aside>
   );
 };

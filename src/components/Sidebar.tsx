@@ -109,6 +109,9 @@ export const Sidebar = () => {
   const [queryContextPos, setQueryContextPos] = useState<ContextMenuPosition | null>(null);
   const [targetQuery, setTargetQuery] = useState<{ id: string; title?: string; sql: string } | null>(null);
 
+  const [functionContextPos, setFunctionContextPos] = useState<ContextMenuPosition | null>(null);
+  const [targetFunction, setTargetFunction] = useState<any | null>(null);
+
   useEffect(() => {
     if (activeConnection?.id) {
       fetchLiveTables(activeConnection);
@@ -320,7 +323,13 @@ export const Sidebar = () => {
                         onDoubleClick={() => {
                           openAllFunctionsTab();
                         }}
-                        title="Click to select • Double-click to open in new tab"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setFunctionContextPos({ x: e.clientX, y: e.clientY });
+                          setTargetFunction(fn);
+                        }}
+                        title="Click to select • Double-click to open in new tab • Right-click for options"
                         className="flex items-center justify-between px-2.5 py-1 rounded cursor-pointer text-xs font-mono transition-colors group hover:bg-slate-200/80 dark:hover:bg-slate-900/70 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                       >
                         <div className="flex items-center space-x-2 truncate">
@@ -805,6 +814,66 @@ export const Sidebar = () => {
                 showToast('📋 Copied SQL to clipboard');
               }
               setQueryContextPos(null);
+            }}
+          />
+        </ContextMenuContainer>
+      )}
+
+      {/* Function Context Menu */}
+      {functionContextPos && targetFunction && (
+        <ContextMenuContainer
+          position={functionContextPos}
+          onClose={() => {
+            setFunctionContextPos(null);
+            setTargetFunction(null);
+          }}
+          width={230}
+        >
+          <ContextMenuHeader title={`Function: ${targetFunction.name}`} />
+          <ContextMenuItem
+            icon={<Code className="w-3.5 h-3.5 text-amber-400" />}
+            label="Inspect Function"
+            onClick={() => {
+              setSelectedRowData(targetFunction);
+              setFunctionContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<FileCode className="w-3.5 h-3.5 text-sky-400" />}
+            label="Open All Functions Overview"
+            onClick={() => {
+              openAllFunctionsTab();
+              setFunctionContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Terminal className="w-3.5 h-3.5 text-emerald-400" />}
+            label="Open in SQL Editor"
+            shortcut="⌘E"
+            onClick={() => {
+              const sql = targetFunction.definition || `SELECT ${targetFunction.name}();`;
+              openNewQueryTab(sql);
+              setFunctionContextPos(null);
+            }}
+          />
+          <ContextMenuDivider />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy Function Name"
+            onClick={() => {
+              navigator.clipboard.writeText(targetFunction.name);
+              showToast(`📋 Copied "${targetFunction.name}"`);
+              setFunctionContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy SELECT Call"
+            onClick={() => {
+              const callSql = `SELECT ${targetFunction.name}();`;
+              navigator.clipboard.writeText(callSql);
+              showToast(`📋 Copied "${callSql}"`);
+              setFunctionContextPos(null);
             }}
           />
         </ContextMenuContainer>

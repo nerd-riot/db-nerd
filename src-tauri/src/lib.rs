@@ -619,8 +619,11 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                         WHEN 'm' THEN 'MAT VIEW'
                         ELSE 'TABLE'
                     END AS kind,
-                    pg_catalog.pg_get_userbyid(c.relowner) AS owner,
-                    GREATEST(COALESCE(s.n_live_tup, c.reltuples::bigint, 0), 0)::bigint AS estimated_rows,
+                    CASE
+                        WHEN c.reltuples > 0 THEN c.reltuples::bigint
+                        WHEN COALESCE(s.n_live_tup, 0) > 0 THEN s.n_live_tup
+                        ELSE 0
+                    END AS estimated_rows,
                     pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
                     pg_size_pretty(pg_relation_size(c.oid)) AS data_size,
                     pg_size_pretty(pg_indexes_size(c.oid)) AS index_size,

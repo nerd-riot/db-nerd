@@ -1,12 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { getTableSchema } from '../data/schemas';
-import { Key } from 'lucide-react';
+import { Key, Copy, Code, Terminal } from 'lucide-react';
+import { TableIndexDefinition } from '../types';
+import {
+  ContextMenuContainer,
+  ContextMenuItem,
+  ContextMenuDivider,
+  ContextMenuHeader,
+  ContextMenuPosition,
+} from './ContextMenu';
 
 export const TableIndexesView: React.FC = () => {
-  const { selectedTable } = useAppStore();
+  const { selectedTable, openNewQueryTab, showToast } = useAppStore();
   const schemaInfo = getTableSchema(selectedTable);
 
+  const [idxContextPos, setIdxContextPos] = useState<ContextMenuPosition | null>(null);
+  const [targetIdx, setTargetIdx] = useState<TableIndexDefinition | null>(null);
 
   return (
     <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900/90 text-xs font-mono overflow-hidden select-none">
@@ -43,7 +53,13 @@ export const TableIndexesView: React.FC = () => {
               return (
                 <tr
                   key={idx.name}
-                  className={`hover:bg-[#f0f7ff] dark:hover:bg-slate-800/40 transition-colors ${
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTargetIdx(idx);
+                    setIdxContextPos({ x: e.clientX, y: e.clientY });
+                  }}
+                  className={`hover:bg-[#f0f7ff] dark:hover:bg-slate-800/40 transition-colors cursor-pointer ${
                     isEven ? 'bg-[#fcfdfd] dark:bg-slate-900/40' : 'bg-white dark:bg-slate-950/60'
                   }`}
                 >
@@ -86,6 +102,59 @@ export const TableIndexesView: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Index Context Menu */}
+      {idxContextPos && targetIdx && (
+        <ContextMenuContainer
+          position={idxContextPos}
+          onClose={() => {
+            setIdxContextPos(null);
+            setTargetIdx(null);
+          }}
+          width={240}
+        >
+          <ContextMenuHeader title={`Index: ${targetIdx.name}`} />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy Index Name"
+            onClick={() => {
+              navigator.clipboard.writeText(targetIdx.name);
+              showToast(`📋 Copied "${targetIdx.name}"`);
+              setIdxContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+            label="Copy Indexed Columns"
+            onClick={() => {
+              const cols = targetIdx.columns.join(', ');
+              navigator.clipboard.writeText(cols);
+              showToast(`📋 Copied columns "${cols}"`);
+              setIdxContextPos(null);
+            }}
+          />
+          <ContextMenuItem
+            icon={<Code className="w-3.5 h-3.5 text-sky-400" />}
+            label="Copy CREATE INDEX SQL"
+            onClick={() => {
+              const sql = `CREATE ${targetIdx.isUnique ? 'UNIQUE ' : ''}INDEX "${targetIdx.name}" ON "${selectedTable}" USING ${(targetIdx.type || 'btree').toLowerCase()} (${targetIdx.columns.map((c) => `"${c}"`).join(', ')});`;
+              navigator.clipboard.writeText(sql);
+              showToast(`📋 Copied CREATE INDEX DDL`);
+              setIdxContextPos(null);
+            }}
+          />
+          <ContextMenuDivider />
+          <ContextMenuItem
+            icon={<Terminal className="w-3.5 h-3.5 text-emerald-400" />}
+            label="Open in SQL Editor"
+            onClick={() => {
+              const sql = `CREATE ${targetIdx.isUnique ? 'UNIQUE ' : ''}INDEX "${targetIdx.name}" ON "${selectedTable}" USING ${(targetIdx.type || 'btree').toLowerCase()} (${targetIdx.columns.map((c) => `"${c}"`).join(', ')});`;
+              openNewQueryTab(sql);
+              setIdxContextPos(null);
+            }}
+          />
+        </ContextMenuContainer>
+      )}
     </div>
   );
 };
