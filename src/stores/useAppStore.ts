@@ -6,6 +6,7 @@ import { heartbeatService } from '../services/heartbeatService';
 import { getThemeDefinition } from '../themes/themeRegistry';
 import { splitSqlStatements } from '../utils/sqlParser';
 import { isReadOnlySql } from '../utils/sqlSafety';
+import { buildPendingTransactionSql } from '../utils/gridDataUtils';
 
 interface AppState {
   tabs: TabItem[];
@@ -2681,32 +2682,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   getPendingSQL: () => {
-    const { rows, selectedTable } = get();
-    const sqlStatements: string[] = [];
-
-    rows.forEach((r) => {
-      if (r.rowState === 'inserted') {
-        sqlStatements.push(
-          `INSERT INTO ${selectedTable} (id, user_id, customer_name, product_sku, total_amount, status, created_at) VALUES (${r.id}, ${r.user_id}, '${r.customer_name}', '${r.product_sku}', ${r.total_amount}, '${r.status}', '${r.created_at}');`
-        );
-      } else if (r.rowState === 'deleted') {
-        sqlStatements.push(`DELETE FROM ${selectedTable} WHERE id = ${r.id};`);
-      } else if (r.dirtyFields && Object.keys(r.dirtyFields).length > 0) {
-        const setClauses = Object.keys(r.dirtyFields).map((field) => {
-          const val = (r as any)[field];
-          if (typeof val === 'number') return `${field} = ${val}`;
-          if (typeof val === 'object') return `${field} = '${JSON.stringify(val)}'::jsonb`;
-          return `${field} = '${String(val).replace(/'/g, "''")}'`;
-        });
-        sqlStatements.push(`UPDATE ${selectedTable} SET ${setClauses.join(', ')} WHERE id = ${r.id};`);
-      }
-    });
-
-    if (sqlStatements.length === 0) {
-      return '-- No pending changes in active transaction';
-    }
-
-    return `BEGIN TRANSACTION;\n\n${sqlStatements.join('\n')}\n\nCOMMIT;`;
+    const { rows, selectedTable, activeConnection } = get();
+    return buildPendingTransactionSql(rows, selectedTable, activeConnection?.engine || 'postgres');
   },
 
   processes: [

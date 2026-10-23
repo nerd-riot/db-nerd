@@ -24,12 +24,14 @@ const DATA_TYPES = [
 export const TableStructureView: React.FC = () => {
   const {
     selectedTable,
+    rows,
+    activeConnection,
     structureSearchColumn,
     setStructureSearchColumn,
     selectedStructureColumn,
     setSelectedStructureColumn,
   } = useAppStore();
-  const schemaInfo = getTableSchema(selectedTable);
+  const schemaInfo = getTableSchema(selectedTable, rows, activeConnection?.engine);
 
   const [columns, setColumns] = useState<ColumnDefinition[]>(schemaInfo.columns);
   const [tableNameInput, setTableNameInput] = useState(selectedTable);

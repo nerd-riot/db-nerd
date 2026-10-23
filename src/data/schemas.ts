@@ -608,8 +608,38 @@ export const getTablesForConnection = (connName: string, engine: string = 'postg
   ];
 };
 
-export const getTableSchema = (tableName: string): TableSchemaInfo => {
-  return TABLE_SCHEMAS[tableName] || TABLE_SCHEMAS.user_orders;
+export const getTableSchema = (tableName: string, sampleRows: any[] = [], engine: string = 'postgres'): TableSchemaInfo => {
+  if (TABLE_SCHEMAS[tableName]) {
+    return TABLE_SCHEMAS[tableName];
+  }
+  const firstRow = sampleRows[0];
+  if (firstRow && typeof firstRow === 'object') {
+    const keys = Object.keys(firstRow).filter((k) => !['isDirty', 'dirtyFields', 'rowState'].includes(k));
+    const pkName =
+      keys.find((k) => k.toLowerCase() === 'id') ||
+      keys.find((k) => k.toLowerCase() === 'ulid') ||
+      keys.find((k) => k.toLowerCase().endsWith('_id')) ||
+      keys[0] ||
+      'id';
+    const cols = keys.map((k) => ({
+      name: k,
+      type: typeof firstRow[k] === 'number' ? 'bigint' : typeof firstRow[k] === 'boolean' ? 'boolean' : typeof firstRow[k] === 'object' && firstRow[k] !== null ? 'jsonb' : 'varchar(255)',
+      isNullable: k !== pkName,
+      isPrimaryKey: k === pkName,
+    }));
+    return {
+      tableName,
+      schema: engine === 'mysql' ? 'database' : 'public',
+      engine: engine === 'mysql' ? 'MySQL 8.0 (InnoDB)' : 'PostgreSQL 16 (Heap)',
+      rowCount: `${sampleRows.length} rows`,
+      totalSize: '32 KB (Data: 16 KB, Index: 16 KB)',
+      columns: cols,
+      indexes: [{ name: `${tableName}_pkey`, columns: [pkName], type: 'BTREE', isUnique: true, isPrimary: true, size: '16 KB' }],
+      foreignKeys: [],
+      ddl: `CREATE TABLE "${tableName}" (\n${cols.map((c) => `  "${c.name}" ${c.type}${c.isPrimaryKey ? ' PRIMARY KEY' : ''}`).join(',\n')}\n);`,
+    };
+  }
+  return TABLE_SCHEMAS.user_orders;
 };
 
 export const getFunctionsForConnection = (_connName?: string, engine: string = 'postgres'): FunctionItem[] => {

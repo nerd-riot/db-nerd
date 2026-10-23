@@ -4,8 +4,8 @@ import { getTableSchema } from '../data/schemas';
 import { Key } from 'lucide-react';
 
 export const TableIndexesView: React.FC = () => {
-  const { selectedTable } = useAppStore();
-  const schemaInfo = getTableSchema(selectedTable);
+  const { selectedTable, rows, activeConnection } = useAppStore();
+  const schemaInfo = getTableSchema(selectedTable, rows, activeConnection?.engine);
 
 
   return (
