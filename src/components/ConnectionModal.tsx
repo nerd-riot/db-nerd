@@ -1976,15 +1976,22 @@ export const ConnectionModal = () => {
                         <div className="flex items-center space-x-1">
                           <button
                             type="button"
+                            onClick={() => setFormData({ ...formData, sshKeyPath: '~/.ssh/vigo/id_rsa' })}
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800 hover:text-sky-500 transition-colors cursor-pointer"
+                          >
+                            vigo/id_rsa
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setFormData({ ...formData, sshKeyPath: 'id_rsa' })}
-                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-sky-500 transition-colors"
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-sky-500 transition-colors cursor-pointer"
                           >
                             id_rsa
                           </button>
                           <button
                             type="button"
                             onClick={() => setFormData({ ...formData, sshKeyPath: 'id_ed25519' })}
-                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-sky-500 transition-colors"
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-sky-500 transition-colors cursor-pointer"
                           >
                             id_ed25519
                           </button>

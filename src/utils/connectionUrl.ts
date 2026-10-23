@@ -202,7 +202,7 @@ export function parseConnectionUrl(urlString: string): ParsedConnectionUrl {
   const sshKeyPath =
     queryParams['privateKeyPath'] ||
     queryParams['sshKeyPath'] ||
-    (useSshKey ? 'id_rsa' : undefined);
+    (useSshKey ? (name.toLowerCase().includes('vigo') ? '~/.ssh/vigo/id_rsa' : 'id_rsa') : undefined);
 
   return {
     name,

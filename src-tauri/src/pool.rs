@@ -131,7 +131,10 @@ pub async fn get_or_create_pg_pool(config: &DbConfig) -> Result<PgPool, String> 
         let read_guard = registry().pg_pools.read().await;
         if let Some(pool) = read_guard.get(&key) {
             if !pool.is_closed() {
-                return Ok(pool.clone());
+                if let Ok(conn) = pool.acquire().await {
+                    drop(conn);
+                    return Ok(pool.clone());
+                }
             }
         }
     }
@@ -139,10 +142,16 @@ pub async fn get_or_create_pg_pool(config: &DbConfig) -> Result<PgPool, String> 
     let opts = build_pg_options(config, &host, port);
     let pool = PgPoolOptions::new()
         .max_connections(10)
-        .acquire_timeout(Duration::from_secs(8))
+        .acquire_timeout(Duration::from_secs(6))
         .connect_with(opts)
         .await
         .map_err(|e| format!("PostgreSQL connection failed: {}", e))?;
+
+    let conn = pool
+        .acquire()
+        .await
+        .map_err(|e| format!("PostgreSQL connection failed: {}", e))?;
+    drop(conn);
 
     let mut write_guard = registry().pg_pools.write().await;
     write_guard.insert(key, pool.clone());
@@ -157,7 +166,10 @@ pub async fn get_or_create_mysql_pool(config: &DbConfig) -> Result<MySqlPool, St
         let read_guard = registry().mysql_pools.read().await;
         if let Some(pool) = read_guard.get(&key) {
             if !pool.is_closed() {
-                return Ok(pool.clone());
+                if let Ok(conn) = pool.acquire().await {
+                    drop(conn);
+                    return Ok(pool.clone());
+                }
             }
         }
     }
@@ -165,10 +177,16 @@ pub async fn get_or_create_mysql_pool(config: &DbConfig) -> Result<MySqlPool, St
     let opts = build_mysql_options(config, &host, port);
     let pool = MySqlPoolOptions::new()
         .max_connections(10)
-        .acquire_timeout(Duration::from_secs(8))
+        .acquire_timeout(Duration::from_secs(6))
         .connect_with(opts)
         .await
         .map_err(|e| format!("MySQL connection failed: {}", e))?;
+
+    let conn = pool
+        .acquire()
+        .await
+        .map_err(|e| format!("MySQL connection failed: {}", e))?;
+    drop(conn);
 
     let mut write_guard = registry().mysql_pools.write().await;
     write_guard.insert(key, pool.clone());

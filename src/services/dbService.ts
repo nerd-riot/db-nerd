@@ -40,9 +40,10 @@ export interface RealTableSummary {
 }
 
 export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => {
-  // If user has default placeholder password and host is localhost, resolve to docker dev credentials
+  // If user has default placeholder password and host is localhost without SSH, resolve to docker dev credentials
   let password = profile.password;
-  if (!password || password === '••••••••••••') {
+  const isLocalDocker = !profile.useSsh && (profile.host === 'localhost' || profile.host === '127.0.0.1');
+  if (!password || (password === '••••••••••••' && isLocalDocker)) {
     if (profile.engine === 'postgres' || profile.engine === 'mysql') {
       password = 'dev_password';
     } else {
