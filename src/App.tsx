@@ -23,7 +23,7 @@ import { DisconnectedBanner } from './components/DisconnectedBanner';
 import { DisconnectedModal } from './components/DisconnectedModal';
 import { SafetyVerificationModal } from './components/SafetyVerificationModal';
 import { heartbeatService } from './services/heartbeatService';
-import { Table, Terminal, Activity, FileCode, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code } from 'lucide-react';
+import { Table, Terminal, Activity, FileCode, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -70,6 +70,7 @@ export function App() {
     updateResolvedTheme,
     commitTransaction,
     rollbackTransaction,
+    toast,
     toastMessage,
     showToast,
     reloadData,
@@ -716,15 +717,61 @@ export function App() {
         )}
       </div>
 
-      {/* Global Floating Toast - Sleek, Non-Intrusive Pastel Pill */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-slate-800 dark:text-slate-100 font-medium px-3.5 py-2 rounded-xl shadow-lg border border-slate-200/90 dark:border-slate-800/80 flex items-center space-x-2.5 text-xs animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none select-none ring-1 ring-black/5">
-          <div className="w-4 h-4 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
+      {/* Global Floating Toast - Modern Top-Center Mac Pill */}
+      {(toast || toastMessage) && (() => {
+        const activeToast = toast || {
+          message: toastMessage || '',
+          type: (toastMessage?.includes('❌') || toastMessage?.toLowerCase().includes('fail') || toastMessage?.toLowerCase().includes('error'))
+            ? ('error' as const)
+            : (toastMessage?.includes('⚠️') || toastMessage?.toLowerCase().includes('warn'))
+            ? ('warning' as const)
+            : ('success' as const),
+          id: 0,
+        };
+
+        const isError = activeToast.type === 'error';
+        const isWarning = activeToast.type === 'warning';
+        const isInfo = activeToast.type === 'info';
+
+        return (
+          <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none select-none max-w-[90vw] animate-in fade-in slide-in-from-top-4 duration-150">
+            <div
+              className={`px-4 py-2 rounded-xl shadow-2xl border flex items-center space-x-2.5 text-xs font-medium backdrop-blur-xl ring-1 ${
+                isError
+                  ? 'bg-rose-950/90 dark:bg-rose-950/95 text-rose-100 border-rose-500/50 ring-rose-500/30 shadow-rose-950/40'
+                  : isWarning
+                  ? 'bg-amber-950/90 dark:bg-amber-950/95 text-amber-100 border-amber-500/50 ring-amber-500/30 shadow-amber-950/40'
+                  : isInfo
+                  ? 'bg-sky-950/90 dark:bg-sky-950/95 text-sky-100 border-sky-500/50 ring-sky-500/30 shadow-sky-950/40'
+                  : 'bg-slate-900/90 dark:bg-[#18191c]/95 text-slate-100 border-emerald-500/40 ring-emerald-500/20 shadow-black/40'
+              }`}
+            >
+              <div
+                className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
+                  isError
+                    ? 'bg-rose-500/20 text-rose-400'
+                    : isWarning
+                    ? 'bg-amber-500/20 text-amber-400'
+                    : isInfo
+                    ? 'bg-sky-500/20 text-sky-400'
+                    : 'bg-emerald-500/20 text-emerald-400'
+                }`}
+              >
+                {isError ? (
+                  <AlertCircle className="w-3 h-3 stroke-[2.5]" />
+                ) : isWarning ? (
+                  <AlertTriangle className="w-3 h-3 stroke-[2.5]" />
+                ) : isInfo ? (
+                  <Info className="w-3 h-3 stroke-[2.5]" />
+                ) : (
+                  <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
+                )}
+              </div>
+              <span className="font-sans leading-relaxed text-xs">{activeToast.message}</span>
+            </div>
           </div>
-          <span className="font-sans leading-none">{toastMessage}</span>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Tab Context Menu */}
       {tabContextPos && targetTabId && (() => {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest } from '../types';
+import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag } from '../types';
 import { STOCK_ITEMS_ROWS, WAREHOUSES_ROWS, getTablesForConnection } from '../data/schemas';
 import { executeRealQuery, getRealTables, getRealFunctions, testRealConnection } from '../services/dbService';
 import { heartbeatService } from '../services/heartbeatService';
@@ -30,6 +30,7 @@ interface AppState {
   setActiveQueryResultTab: (tabId: string, resultId: string) => void;
   closeQueryResultTab: (tabId: string, resultId: string) => void;
   togglePinQueryResultTab: (tabId: string, resultId: string) => void;
+  updateSqlTabResults: (tabId: string, updatedResults: any[], statusMessage?: string) => void;
 
   liveTables: Record<string, { name: string; count: string }[]>;
   fetchLiveTables: (conn?: ConnectionProfile) => Promise<void>;
@@ -190,10 +191,26 @@ interface AppState {
   killProcess: (pid: number) => void;
 
   history: QueryHistoryItem[];
+  addHistoryItem: (item: {
+    sql: string;
+    connectionName?: string;
+    env?: EnvironmentTag;
+    durationMs?: number;
+    rowsAffected?: number;
+    status?: 'success' | 'error';
+    errorMessage?: string;
+  }) => void;
+  clearHistory: () => void;
 
   isReloading: boolean;
+  toast: {
+    message: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    durationMs?: number;
+    id: number;
+  } | null;
   toastMessage: string | null;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info', durationMs?: number) => void;
   reloadData: (tableName?: string) => Promise<void>;
 }
 
@@ -1051,6 +1068,38 @@ export const useAppStore = create<AppState>((set, get) => ({
           [tabId]: {
             ...tabState,
             queryResults: updated,
+          },
+        },
+      };
+    });
+  },
+
+  updateSqlTabResults: (tabId, updatedResults, statusMessage) => {
+    set((state) => {
+      const tabState = state.sqlTabStates[tabId];
+      if (!tabState) return state;
+
+      const activeResId = tabState.activeResultId || 'q-1';
+      const updatedQueryResults = (tabState.queryResults || []).map((r) => {
+        if (r.id === activeResId) {
+          return {
+            ...r,
+            results: updatedResults,
+            rowsCount: updatedResults.length,
+            statusMessage: statusMessage || r.statusMessage,
+          };
+        }
+        return r;
+      });
+
+      return {
+        sqlTabStates: {
+          ...state.sqlTabStates,
+          [tabId]: {
+            ...tabState,
+            results: updatedResults,
+            rowsCount: updatedResults.length,
+            queryResults: updatedQueryResults,
           },
         },
       };
@@ -2277,12 +2326,51 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   isReloading: false,
+  toast: null,
   toastMessage: null,
-  showToast: (msg: string) => {
-    set({ toastMessage: msg });
+  showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info', durationMs?: number) => {
+    const inferredType: 'success' | 'error' | 'warning' | 'info' =
+      type ||
+      (msg.includes('❌') || msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error')
+        ? 'error'
+        : msg.includes('⚠️') || msg.toLowerCase().includes('warn')
+        ? 'warning'
+        : 'success');
+    const toastId = Date.now();
+    const duration = durationMs || (inferredType === 'error' ? 4500 : 2600);
+
+    set({
+      toastMessage: msg,
+      toast: {
+        message: msg,
+        type: inferredType,
+        durationMs: duration,
+        id: toastId,
+      },
+    });
+
     setTimeout(() => {
-      set((state) => (state.toastMessage === msg ? { toastMessage: null } : {}));
-    }, 2500);
+      set((state) => (state.toast?.id === toastId ? { toast: null, toastMessage: null } : {}));
+    }, duration);
+  },
+  addHistoryItem: (item) => {
+    const state = get();
+    const newItem: QueryHistoryItem = {
+      id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      connectionName: item.connectionName || state.activeConnection?.name || 'database',
+      env: item.env || state.activeConnection?.env || 'local',
+      sql: item.sql,
+      timestamp: `Today at ${new Date().toTimeString().slice(0, 8)}`,
+      durationMs: item.durationMs || 1.0,
+      rowsAffected: item.rowsAffected || 0,
+      status: item.status || 'success',
+      errorMessage: item.errorMessage,
+      isFavorite: false,
+    };
+    set((s) => ({ history: [newItem, ...s.history] }));
+  },
+  clearHistory: () => {
+    set({ history: [] });
   },
   reloadData: async (tableName?: string) => {
     const { activeTabId, tabs, selectedTable, runSqlQuery, showToast, truncatedTables, activeConnection } = get();

@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { EditorState } from '@codemirror/state';
 import { EditorView, lineNumbers, keymap, highlightActiveLineGutter, highlightActiveLine } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history as cmHistory, historyKeymap } from '@codemirror/commands';
 import { sql, PostgreSQL } from '@codemirror/lang-sql';
 import {
   autocompletion,
@@ -50,6 +50,8 @@ import { format as formatSql } from 'sql-formatter';
 import { getQueryToExecute, extractTableAndPkFromQuery } from '../utils/sqlParser';
 import { InlineCellEditor } from './InlineCellEditor';
 import { QueryEditUpdateModal } from './QueryEditUpdateModal';
+import { QueryHistoryPanel } from './QueryHistoryPanel';
+import { executeRealQuery } from '../services/dbService';
 import { ColumnDefinition, PendingQueryEdit } from '../types';
 import {
   ContextMenuContainer,
@@ -150,6 +152,9 @@ export const SqlEditor: React.FC = () => {
     openNewQueryTab,
     closeTab,
     showToast,
+    history,
+    addHistoryItem,
+    updateSqlTabResults,
   } = useAppStore();
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -165,7 +170,8 @@ export const SqlEditor: React.FC = () => {
   const [enableSyntaxHighlighting, setEnableSyntaxHighlighting] = useState(true);
   const [isConsoleDrawerOpen, setIsConsoleDrawerOpen] = useState(true);
   const [waitingSeconds, setWaitingSeconds] = useState(0);
-  const [resultsSubTab, setResultsSubTab] = useState<'data' | 'message' | 'chart'>('data');
+  const [resultsSubTab, setResultsSubTab] = useState<'data' | 'message' | 'history' | 'chart'>('data');
+  const [isApplyingDirect, setIsApplyingDirect] = useState(false);
 
   const runMenuRef = useRef<HTMLDivElement>(null);
   const limitMenuRef = useRef<HTMLDivElement>(null);
@@ -265,7 +271,7 @@ export const SqlEditor: React.FC = () => {
       } else if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
         if (Object.keys(pendingEditsRef.current).length > 0) {
           e.preventDefault();
-          setIsQueryEditModalOpen(true);
+          handleDirectApplyRef.current();
         }
       }
     };
@@ -353,14 +359,105 @@ export const SqlEditor: React.FC = () => {
     setPendingEdits({});
     setEditedRowOverrides({});
     setEditingCell(null);
-    showToast('↩️ Discarded pending cell modifications');
+    showToast('↩️ Discarded pending cell modifications', 'info');
   };
 
-  const handleApplySuccess = (_executedSql: string, rowsAffected: number) => {
+  const handleApplySuccess = (_executedSql: string, rowsAffected: number, durationMs?: number) => {
     setIsQueryEditModalOpen(false);
+
+    // Commit pending edits permanently into results so grid updates and stays updated
+    const edits = Object.values(pendingEdits);
+    if (edits.length > 0) {
+      const updatedResults = (tabState.results || []).map((row: any) => {
+        let matchingRow = { ...row };
+        edits.forEach((edit) => {
+          const rowPkVal = row[edit.pkColumn] !== undefined ? row[edit.pkColumn] : row.id;
+          if (String(rowPkVal) === String(edit.pkValue)) {
+            matchingRow[edit.field] = edit.newValue;
+          }
+        });
+        return matchingRow;
+      });
+
+      const ms = durationMs || 10;
+      const targetTable = edits[0]?.table || 'table';
+      updateSqlTabResults(
+        activeTabId,
+        updatedResults,
+        `Query 1 OK: ${rowsAffected || edits.length} row(s) updated in ${targetTable} (${ms} ms)`
+      );
+    }
+
     setPendingEdits({});
-    showToast(`✅ Executed UPDATE successfully (${rowsAffected || 1} record(s) updated)`);
+    setEditedRowOverrides({});
+    setEditingCell(null);
   };
+
+  const handleDirectApplyPendingEdits = async () => {
+    const editsList = Object.values(pendingEdits);
+    if (editsList.length === 0) return;
+
+    setIsApplyingDirect(true);
+    const sqlToRun = editsList.map((e) => e.generatedSql).join('\n\n');
+    const startMs = performance.now();
+
+    try {
+      const res = await executeRealQuery(activeConnection, sqlToRun);
+      const durationMs = +(performance.now() - startMs).toFixed(1);
+
+      if (!res.success && res.error) {
+        setIsApplyingDirect(false);
+        addHistoryItem({
+          sql: sqlToRun,
+          connectionName: activeConnection.name,
+          env: activeConnection.env,
+          durationMs,
+          rowsAffected: 0,
+          status: 'error',
+          errorMessage: res.error,
+        });
+        showToast(`❌ Failed to update: ${res.error}`, 'error');
+        // Open review modal so user can see and fix the error
+        setIsQueryEditModalOpen(true);
+        return;
+      }
+
+      setIsApplyingDirect(false);
+      const affected = res.rows_affected || editsList.length || 1;
+
+      addHistoryItem({
+        sql: sqlToRun,
+        connectionName: activeConnection.name,
+        env: activeConnection.env,
+        durationMs,
+        rowsAffected: affected,
+        status: 'success',
+      });
+
+      handleApplySuccess(sqlToRun, affected, durationMs);
+      showToast(`✅ Successfully updated ${affected} record(s) in "${editsList[0]?.table || 'table'}" (${durationMs} ms)`, 'success');
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to execute query';
+      const durationMs = +(performance.now() - startMs).toFixed(1);
+      setIsApplyingDirect(false);
+
+      addHistoryItem({
+        sql: sqlToRun,
+        connectionName: activeConnection.name,
+        env: activeConnection.env,
+        durationMs,
+        rowsAffected: 0,
+        status: 'error',
+        errorMessage: errMsg,
+      });
+
+      showToast(`❌ Failed to update: ${errMsg}`, 'error');
+      setIsQueryEditModalOpen(true);
+    }
+  };
+
+  const handleDirectApplyRef = useRef(handleDirectApplyPendingEdits);
+  handleDirectApplyRef.current = handleDirectApplyPendingEdits;
 
   const handleSendToEditor = (sql: string) => {
     if (viewRef.current) {
@@ -568,7 +665,7 @@ export const SqlEditor: React.FC = () => {
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
-        history(),
+        cmHistory(),
         bracketMatching(),
         closeBrackets(),
         highlightSelectionMatches(),
@@ -861,8 +958,27 @@ export const SqlEditor: React.FC = () => {
             )}
           </div>
 
-          {/* Right: [ No limit ⌵ ] [ Beautify ⌘I ⌵ ] [ Run Current ⌘↵ ⌵ ] */}
+          {/* Right: [ History ] [ No limit ⌵ ] [ Beautify ⌘I ⌵ ] [ Run Current ⌘↵ ⌵ ] */}
           <div className="flex items-center space-x-2">
+            {/* History Toggle Button */}
+            <button
+              onClick={() => setResultsSubTab(resultsSubTab === 'history' ? 'data' : 'history')}
+              className={`h-6.5 px-2.5 rounded-md border text-xs font-medium flex items-center space-x-1.5 transition cursor-pointer shadow-xs ${
+                resultsSubTab === 'history'
+                  ? 'bg-sky-500 text-white border-sky-400 font-semibold'
+                  : 'bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border-slate-300 dark:border-white/10'
+              }`}
+              title="Toggle Query History (⌘H)"
+            >
+              <Clock className="w-3 h-3 text-sky-400" />
+              <span>History</span>
+              {history.length > 0 && (
+                <span className="text-[10px] font-mono px-1 py-0.2 rounded-full bg-black/20 dark:bg-white/15">
+                  {history.length}
+                </span>
+              )}
+            </button>
+
             {/* Limit Selector */}
             <div className="relative" ref={limitMenuRef}>
               <div className="inline-flex items-center bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/10 rounded-md text-xs font-medium transition shadow-xs overflow-hidden h-6.5">
@@ -1242,6 +1358,11 @@ export const SqlEditor: React.FC = () => {
                   </div>
                 )}
               </div>
+            ) : resultsSubTab === 'history' ? (
+              <QueryHistoryPanel
+                onRunQuery={(sql) => runSqlQuery(activeTabId, sql)}
+                onInsertQuery={handleSendToEditor}
+              />
             ) : resultsSubTab === 'chart' ? (
               /* Chart Placeholder */
               <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-400 select-none">
@@ -1454,6 +1575,22 @@ export const SqlEditor: React.FC = () => {
                   {isErrorResult && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
                 </button>
                 <button
+                  onClick={() => setResultsSubTab('history')}
+                  className={`px-3 py-0.5 rounded-md transition cursor-pointer flex items-center space-x-1.5 ${
+                    resultsSubTab === 'history'
+                      ? 'bg-[#007aff] text-white font-semibold shadow-xs'
+                      : 'text-slate-600 dark:text-[#9a9b9f] hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>History</span>
+                  {history.length > 0 && (
+                    <span className="text-[9px] font-mono px-1 py-0.2 rounded-full bg-black/20 dark:bg-white/20">
+                      {history.length}
+                    </span>
+                  )}
+                </button>
+                <button
                   onClick={() => setResultsSubTab('chart')}
                   className={`px-3 py-0.5 rounded-md transition cursor-pointer ${
                     resultsSubTab === 'chart'
@@ -1486,7 +1623,7 @@ export const SqlEditor: React.FC = () => {
                 </div>
               )}
 
-              {/* Pending Inline Edits Indicator Pill (⌘S to review & execute) */}
+              {/* Pending Inline Edits Indicator Pill (⌘S to directly apply or review) */}
               {Object.keys(pendingEdits).length > 0 && (
                 <div className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 font-medium text-[11px] animate-in fade-in duration-150">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -1501,12 +1638,26 @@ export const SqlEditor: React.FC = () => {
                   </button>
                   <span className="text-slate-400">·</span>
                   <button
-                    onClick={() => setIsQueryEditModalOpen(true)}
-                    className="hover:underline font-bold text-amber-700 dark:text-amber-300 flex items-center space-x-1 cursor-pointer"
-                    title="Review & Execute generated UPDATE SQL (⌘S)"
+                    disabled={isApplyingDirect}
+                    onClick={handleDirectApplyPendingEdits}
+                    className="hover:underline font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                    title="Commit & Apply cell changes directly to database (⌘S)"
                   >
-                    <span>Review & Execute SQL</span>
-                    <kbd className="px-1 py-0.2 bg-amber-500/20 rounded text-[9px] font-mono">⌘S</kbd>
+                    {isApplyingDirect ? (
+                      <div className="w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Check className="w-3 h-3 stroke-[2.5]" />
+                    )}
+                    <span>Apply Changes</span>
+                    <kbd className="px-1 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded text-[9px] font-mono">⌘S</kbd>
+                  </button>
+                  <span className="text-slate-400">·</span>
+                  <button
+                    onClick={() => setIsQueryEditModalOpen(true)}
+                    className="hover:underline text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer text-[11px]"
+                    title="Review SQL diff & customize statement"
+                  >
+                    Review SQL...
                   </button>
                 </div>
               )}
