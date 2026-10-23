@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag } from '../types';
+import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag, TableSchemaInfo } from '../types';
 import { STOCK_ITEMS_ROWS, WAREHOUSES_ROWS, getTablesForConnection } from '../data/schemas';
-import { closeRealConnection, executeRealQuery, getRealTables, getRealFunctions, testRealConnection } from '../services/dbService';
+import { closeRealConnection, executeRealQuery, getRealTables, getRealFunctions, getRealTableSchema, getRealDatabases, RealTableSummary, testRealConnection } from '../services/dbService';
 import { heartbeatService } from '../services/heartbeatService';
 import { getThemeDefinition } from '../themes/themeRegistry';
 import { splitSqlStatements } from '../utils/sqlParser';
@@ -32,11 +32,17 @@ interface AppState {
   togglePinQueryResultTab: (tabId: string, resultId: string) => void;
   updateSqlTabResults: (tabId: string, updatedResults: any[], statusMessage?: string) => void;
 
-  liveTables: Record<string, { name: string; count: string }[]>;
+  liveTables: Record<string, RealTableSummary[]>;
   fetchLiveTables: (conn?: ConnectionProfile) => Promise<void>;
+
+  liveSchemas: Record<string, Record<string, TableSchemaInfo>>;
+  fetchLiveTableSchema: (tableName: string, conn?: ConnectionProfile) => Promise<void>;
 
   liveFunctions: Record<string, FunctionItem[]>;
   fetchLiveFunctions: (conn?: ConnectionProfile) => Promise<void>;
+
+  liveDatabases: Record<string, string[]>;
+  fetchLiveDatabases: (conn?: ConnectionProfile) => Promise<void>;
 
   activeTab: 'grid' | 'schema' | 'sql' | 'stats' | 'connection' | 'default';
   setActiveTab: (tab: 'grid' | 'schema' | 'sql' | 'stats' | 'connection' | 'default') => void;
@@ -613,64 +619,142 @@ const INITIAL_CONNECTIONS: ConnectionProfile[] = [
   },
 ];
 
-const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionSession => {
-  const isStock = conn.name.toLowerCase().includes('stock') || (conn.database && conn.database.toLowerCase().includes('stock'));
-  const defaultTable = isStock ? 'stock_items' : 'user_orders';
-  const defaultRows = isStock ? STOCK_ITEMS_ROWS : INITIAL_ROWS;
-
-  const defaultTabs: TabItem[] = isStock
-    ? [
-        { id: `tab-grid-${conn.id}-1`, type: 'grid', title: 'stock_items', tableName: 'stock_items', canClose: true },
-        { id: `tab-sql-${conn.id}-1`, type: 'sql', title: 'Stock Movement Query', canClose: true },
-      ]
-    : [
-        { id: `tab-sql-${conn.id}-1`, type: 'sql', title: 'SQL Query', canClose: true },
-        { id: `tab-grid-${conn.id}-1`, type: 'grid', title: 'tuple', tableName: 'tuple', canClose: true },
-        { id: `tab-grid-${conn.id}-2`, type: 'grid', title: 'goose_db_version', tableName: 'goose_db_version', canClose: true },
-      ];
-
-  const defaultSqlTabId = isStock ? defaultTabs[1].id : defaultTabs[0].id;
-  const defaultSqlState: SqlTabState = isStock
-    ? {
-        tabId: defaultSqlTabId,
-        query: `SELECT sku, name, current_stock, unit_price, status\nFROM stock_items\nWHERE current_stock < 50\nORDER BY current_stock ASC;`,
-        results: [
-          { sku: 'WH-GPU-4090FE', name: 'GeForce RTX 4090 24GB Founders', current_stock: 18, unit_price: 1599.00, status: 'low_stock' },
-          { sku: 'WH-CASE-O11D-EVO', name: 'Lian Li O11 Dynamic EVO RGB', current_stock: 44, unit_price: 169.00, status: 'in_stock' },
-        ],
-        columns: ['sku', 'name', 'current_stock', 'unit_price', 'status'],
-        durationMs: 1.1,
-        rowsCount: 2,
-        executedAt: 'Just now',
-        isExecuting: false,
+const persistSessionTabs = (
+  connId: string,
+  tabs: TabItem[],
+  activeTabId: string,
+  selectedTable: string,
+  sqlTabStates: Record<string, SqlTabState>
+) => {
+  try {
+    if (typeof window !== 'undefined' && connId) {
+      const sqlQueries: Record<string, string> = {};
+      for (const [tId, sState] of Object.entries(sqlTabStates)) {
+        if (sState?.query) sqlQueries[tId] = sState.query;
       }
-    : {
-        tabId: defaultSqlTabId,
-        query: `SELECT u.id, u.email, COUNT(o.id) AS total_orders, SUM(o.total_amount) AS total_spend\nFROM users u\nLEFT JOIN user_orders o ON o.user_id = u.id\nWHERE u.status = 'active'\nGROUP BY u.id, u.email\nORDER BY total_spend DESC LIMIT 50;`,
-        results: [
-          { id: 501, email: 'alex.turner@corp.io', total_orders: 14, total_spend: 2030.0 },
-          { id: 502, email: 'sarah.connor@cyberdyne.net', total_orders: 29, total_spend: 4210.5 },
-          { id: 503, email: 'khoa.nguyen@ai.lab', total_orders: 102, total_spend: 12450.0 },
-        ],
-        columns: ['id', 'email', 'total_orders', 'total_spend'],
-        durationMs: 1.4,
-        rowsCount: 3,
-        executedAt: 'Just now',
-        isExecuting: false,
-      };
+      localStorage.setItem(
+        `dbnerd_session_tabs_${connId}`,
+        JSON.stringify({
+          tabs,
+          activeTabId,
+          selectedTable,
+          sqlQueries,
+        })
+      );
+    }
+  } catch {}
+};
 
+const loadSessionTabs = (
+  connId: string
+): { tabs: TabItem[]; activeTabId: string; selectedTable: string; sqlQueries?: Record<string, string> } | null => {
+  try {
+    if (typeof window !== 'undefined' && connId) {
+      const raw = localStorage.getItem(`dbnerd_session_tabs_${connId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.tabs)) return parsed;
+      }
+    }
+  } catch {}
+  return null;
+};
+
+const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionSession => {
+  const saved = loadSessionTabs(conn.id);
+  if (saved && saved.tabs && saved.tabs.length > 0) {
+    const sqlStates: Record<string, SqlTabState> = {};
+    if (saved.sqlQueries) {
+      for (const [tId, qText] of Object.entries(saved.sqlQueries)) {
+        sqlStates[tId] = {
+          tabId: tId,
+          query: qText,
+          results: [],
+          columns: [],
+          durationMs: 0,
+          rowsCount: 0,
+          executedAt: '',
+          isExecuting: false,
+        };
+      }
+    }
+    return {
+      connectionId: conn.id,
+      tabs: saved.tabs,
+      activeTabId: saved.activeTabId || saved.tabs[0]?.id || '',
+      sqlTabStates: sqlStates,
+      selectedTable: saved.selectedTable || '',
+      tableViewMode: 'data',
+      isFilterBarOpen: false,
+      filterWhereText: '',
+      filterOrderByText: '',
+      rows: [],
+      originalRows: [],
+      isTransactionOpen: false,
+      pendingEditsCount: 0,
+      history: [],
+      selectedRowData: null,
+      selectedStructureColumn: null,
+      structureSearchColumn: '',
+    };
+  }
+
+  // Check URL params for automated test runs: e.g. ?tab=sql or ?tab=stock_items
+  try {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabParam = urlParams.get('tab');
+      if (tabParam) {
+        if (tabParam === 'sql') {
+          const sqlTabId = `tab-sql-${conn.id}-1`;
+          return {
+            connectionId: conn.id,
+            tabs: [{ id: sqlTabId, type: 'sql', title: 'SQL Query', canClose: true }],
+            activeTabId: sqlTabId,
+            sqlTabStates: {
+              [sqlTabId]: {
+                tabId: sqlTabId,
+                query: 'SELECT 1;',
+                results: [{ result: 1 }],
+                columns: ['result'],
+                durationMs: 0.8,
+                rowsCount: 1,
+                executedAt: 'Just now',
+                isExecuting: false,
+              },
+            },
+            selectedTable: '',
+            tableViewMode: 'data',
+            isFilterBarOpen: false,
+            filterWhereText: '',
+            filterOrderByText: '',
+            rows: [],
+            originalRows: [],
+            isTransactionOpen: false,
+            pendingEditsCount: 0,
+            history: [],
+            selectedRowData: null,
+            selectedStructureColumn: null,
+            structureSearchColumn: '',
+          };
+        }
+      }
+    }
+  } catch {}
+
+  // 1/ không có previous tab thì không mở tab nào hết, màn hình default
   return {
     connectionId: conn.id,
-    tabs: defaultTabs,
-    activeTabId: defaultTabs[0].id,
-    sqlTabStates: { [defaultSqlTabId]: defaultSqlState },
-    selectedTable: defaultTable,
+    tabs: [],
+    activeTabId: '',
+    sqlTabStates: {},
+    selectedTable: '',
     tableViewMode: 'data',
     isFilterBarOpen: false,
     filterWhereText: '',
     filterOrderByText: '',
-    rows: JSON.parse(JSON.stringify(defaultRows)),
-    originalRows: JSON.parse(JSON.stringify(defaultRows)),
+    rows: [],
+    originalRows: [],
     isTransactionOpen: false,
     pendingEditsCount: 0,
     history: [],
@@ -904,25 +988,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   tabs: INITIAL_ACTIVE_SESSION.tabs,
   activeTabId: INITIAL_TAB_ID,
-  activeTab: INITIAL_ACTIVE_TAB?.type || 'sql',
+  activeTab: INITIAL_ACTIVE_TAB?.type || 'default',
   selectedTable: INITIAL_ACTIVE_TAB?.tableName || INITIAL_ACTIVE_SESSION.selectedTable,
   rows: JSON.parse(JSON.stringify(INITIAL_ACTIVE_SESSION.rows)),
   originalRows: JSON.parse(JSON.stringify(INITIAL_ACTIVE_SESSION.originalRows)),
   selectedRowData: getInitialSelectedRow(),
 
   setActiveTabId: (id) => {
-    const { tabs } = get();
+    const { tabs, activeConnection, sqlTabStates } = get();
     const tab = tabs.find((t) => t.id === id);
     if (!tab) return;
+    const targetTable = tab.tableName || get().selectedTable;
     set({
       activeTabId: id,
       activeTab: tab.type,
-      selectedTable: tab.tableName || get().selectedTable,
+      selectedTable: targetTable,
     });
+    persistSessionTabs(activeConnection.id, tabs, id, targetTable, sqlTabStates);
   },
 
   setActiveTab: (tabType) => {
-    const { tabs, activeTabId, selectedTable } = get();
+    const { tabs, activeTabId, selectedTable, activeConnection, sqlTabStates } = get();
     let match = tabs.find((t) => t.id === activeTabId && t.type === tabType);
     if (!match) {
       match = tabs.find((t) => t.type === tabType && (!t.tableName || t.tableName === selectedTable));
@@ -931,11 +1017,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       match = tabs.find((t) => t.type === tabType);
     }
     if (match) {
+      const targetTable = match.tableName || selectedTable;
       set({
         activeTabId: match.id,
         activeTab: tabType,
-        selectedTable: match.tableName || selectedTable,
+        selectedTable: targetTable,
       });
+      persistSessionTabs(activeConnection.id, tabs, match.id, targetTable, sqlTabStates);
     } else {
       set({ activeTab: tabType });
     }
@@ -944,8 +1032,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   sqlTabStates: INITIAL_SQL_TAB_STATES,
 
   setSqlTabQuery: (tabId, query) => {
-    set((state) => ({
-      sqlTabStates: {
+    set((state) => {
+      const nextSqlStates = {
         ...state.sqlTabStates,
         [tabId]: {
           ...(state.sqlTabStates[tabId] || {
@@ -957,8 +1045,35 @@ export const useAppStore = create<AppState>((set, get) => ({
           }),
           query,
         },
-      },
-    }));
+      };
+      persistSessionTabs(state.activeConnection.id, state.tabs, state.activeTabId, state.selectedTable, nextSqlStates);
+      return { sqlTabStates: nextSqlStates };
+    });
+  },
+
+  liveDatabases: {},
+  fetchLiveDatabases: async (conn) => {
+    const targetConn = conn || get().activeConnection;
+    try {
+      const dbs = await getRealDatabases(targetConn);
+      if (dbs && dbs.length > 0) {
+        set((state) => ({
+          liveDatabases: {
+            ...state.liveDatabases,
+            [targetConn.id]: dbs,
+          },
+          connections: state.connections.map((c) =>
+            c.id === targetConn.id ? { ...c, databases: dbs } : c
+          ),
+          activeConnection:
+            state.activeConnection.id === targetConn.id
+              ? { ...state.activeConnection, databases: dbs }
+              : state.activeConnection,
+        }));
+      }
+    } catch (e) {
+      console.warn('Fetch live databases failed:', e);
+    }
   },
 
   liveTables: {},
@@ -973,9 +1088,36 @@ export const useAppStore = create<AppState>((set, get) => ({
             [targetConn.id]: tables,
           },
         }));
+        const currentSelected = get().selectedTable;
+        if (currentSelected) {
+          get().fetchLiveTableSchema(currentSelected, targetConn);
+        }
       }
     } catch (e) {
       console.warn('Fetch live tables failed:', e);
+    }
+  },
+
+  liveSchemas: {},
+  fetchLiveTableSchema: async (tableName, conn) => {
+    if (!tableName || tableName.startsWith('__')) return;
+    const targetConn = conn || get().activeConnection;
+    const summary = get().liveTables[targetConn.id]?.find((t) => t.name === tableName);
+    try {
+      const schemaInfo = await getRealTableSchema(targetConn, tableName, summary);
+      if (schemaInfo) {
+        set((state) => ({
+          liveSchemas: {
+            ...state.liveSchemas,
+            [targetConn.id]: {
+              ...(state.liveSchemas[targetConn.id] || {}),
+              [tableName]: schemaInfo,
+            },
+          },
+        }));
+      }
+    } catch (e) {
+      console.warn('Fetch live table schema failed:', e);
     }
   },
 
@@ -1424,61 +1566,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   renameTab: (id, newTitle) => {
     if (!newTitle.trim()) return;
-    set((state) => ({
-      tabs: state.tabs.map((t) => (t.id === id ? { ...t, title: newTitle.trim() } : t)),
-    }));
+    set((state) => {
+      const nextTabs = state.tabs.map((t) => (t.id === id ? { ...t, title: newTitle.trim() } : t));
+      persistSessionTabs(state.activeConnection.id, nextTabs, state.activeTabId, state.selectedTable, state.sqlTabStates);
+      return { tabs: nextTabs };
+    });
   },
 
   openNewQueryTab: (initialSql) => {
-    const { tabs, sqlTabStates } = get();
+    const { tabs, sqlTabStates, activeConnection, selectedTable } = get();
     const sqlTabs = tabs.filter((t) => t.type === 'sql');
     const count = sqlTabs.length;
     const nextTabId = `tab-sql-${Date.now()}`;
     const tabTitle = count === 0 ? 'SQL Query' : `SQL Query ${count + 1}`;
 
-    const defaultSql =
-      initialSql ||
-      (count === 0
-        ? `SELECT u.id, u.email, COUNT(o.id) AS total_orders, SUM(o.total_amount) AS total_spend\nFROM users u\nLEFT JOIN user_orders o ON o.user_id = u.id\nWHERE u.status = 'active'\nGROUP BY u.id, u.email\nORDER BY total_spend DESC LIMIT 50;`
-        : count === 1
-        ? `SELECT store, object_type, object_id, relation, _user\nFROM tuple\nWHERE object_type = 'connector_tool'\nORDER BY inserted_at DESC\nLIMIT 20;`
-        : `SELECT id, version_id, is_applied, tstamp\nFROM goose_db_version\nORDER BY id ASC;`);
-
-    // Detect target table to return accurate data
-    let targetTable = '';
-    const match = defaultSql.match(/FROM\s+([a-zA-Z0-9_]+)/i);
-    if (match) targetTable = match[1].toLowerCase();
-
-    let initialResults: any[] = [];
-    if (targetTable === 'goose_db_version') {
-      initialResults = JSON.parse(JSON.stringify(GOOSE_ROWS));
-    } else if (targetTable === 'tuple') {
-      initialResults = JSON.parse(JSON.stringify(TUPLE_ROWS));
-    } else if (targetTable === 'stock_items') {
-      initialResults = JSON.parse(JSON.stringify(STOCK_ITEMS_ROWS));
-    } else if (targetTable === 'warehouses') {
-      initialResults = JSON.parse(JSON.stringify(WAREHOUSES_ROWS));
-    } else if (targetTable === 'users') {
-      initialResults = [
-        { id: 501, email: 'alex.turner@corp.io', full_name: 'Alex Turner', role: 'admin', status: 'active' },
-        { id: 502, email: 'sarah.connor@cyberdyne.net', full_name: 'Sarah Connor', role: 'member', status: 'active' },
-        { id: 503, email: 'khoa.nguyen@ai.lab', full_name: 'Khoa Nguyen', role: 'superadmin', status: 'active' },
-      ];
-    } else if (targetTable === 'products') {
-      initialResults = [
-        { id: 101, sku: 'PROD-MAC-M4', title: 'MacBook Pro M4 Max', category_id: 1, price: 3499.00, stock: 45, is_active: true },
-        { id: 102, sku: 'PROD-DISP-5K', title: 'Studio Display 5K Retina', category_id: 2, price: 1599.00, stock: 28, is_active: true },
-        { id: 103, sku: 'PROD-KEY-TOUCH', title: 'Magic Keyboard with Touch ID', category_id: 3, price: 199.00, stock: 120, is_active: true },
-      ];
-    } else {
-      initialResults = [
-        { id: 501, email: 'alex.turner@corp.io', total_orders: 14, total_spend: 2030.0 },
-        { id: 502, email: 'sarah.connor@cyberdyne.net', total_orders: 29, total_spend: 4210.5 },
-        { id: 503, email: 'khoa.nguyen@ai.lab', total_orders: 102, total_spend: 12450.0 },
-      ];
-    }
-
-    const initialColumns = Object.keys(initialResults[0] || {});
+    const defaultSql = initialSql !== undefined ? initialSql : '';
 
     const newTab: TabItem = {
       id: nextTabId,
@@ -1487,28 +1589,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       canClose: true,
     };
 
-    set({
-      tabs: [...tabs, newTab],
-      activeTabId: newTab.id,
-      activeTab: 'sql',
-      sqlTabStates: {
-        ...sqlTabStates,
-        [nextTabId]: {
-          tabId: nextTabId,
-          query: defaultSql,
-          results: initialResults,
-          columns: initialColumns,
-          durationMs: 1.4,
-          rowsCount: initialResults.length,
-          executedAt: 'Just now',
-          isExecuting: false,
-        },
+    const nextTabs = [...tabs, newTab];
+    const nextSqlStates: Record<string, SqlTabState> = {
+      ...sqlTabStates,
+      [nextTabId]: {
+        tabId: nextTabId,
+        query: defaultSql,
+        results: [],
+        columns: [],
+        durationMs: 0,
+        rowsCount: 0,
+        executedAt: '',
+        isExecuting: false,
       },
+    };
+
+    set({
+      tabs: nextTabs,
+      activeTabId: nextTabId,
+      activeTab: 'sql',
+      sqlTabStates: nextSqlStates,
     });
+    persistSessionTabs(activeConnection.id, nextTabs, nextTabId, selectedTable, nextSqlStates);
   },
 
   openTableGridTab: (tableName) => {
-    const { tabs } = get();
+    const { tabs, activeConnection, sqlTabStates } = get();
     const existing = tabs.find((t) => t.type === 'grid' && t.tableName === tableName);
     if (existing) {
       set({
@@ -1518,6 +1624,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         tableViewMode: 'data',
       });
       get().setSelectedTable(tableName);
+      persistSessionTabs(activeConnection.id, tabs, existing.id, tableName, sqlTabStates);
     } else {
       const newTab: TabItem = {
         id: `tab-grid-${tableName}`,
@@ -1526,14 +1633,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         tableName,
         canClose: true,
       };
+      const nextTabs = [...tabs, newTab];
       set({
-        tabs: [...tabs, newTab],
+        tabs: nextTabs,
         activeTabId: newTab.id,
         activeTab: 'grid',
         selectedTable: tableName,
         tableViewMode: 'data',
       });
       get().setSelectedTable(tableName);
+      persistSessionTabs(activeConnection.id, nextTabs, newTab.id, tableName, sqlTabStates);
     }
   },
 
@@ -1614,6 +1723,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextTabs = tabs.filter((t) => t.id !== id);
 
     if (nextTabs.length === 0) {
+      persistSessionTabs(get().activeConnection.id, [], '', '', nextSqlStates);
       set({
         tabs: [],
         sqlTabStates: nextSqlStates,
@@ -1630,12 +1740,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const nextActiveTab = nextTabs.find((t) => t.id === nextActiveId);
+    const nextTargetTable = nextActiveTab?.tableName || selectedTable;
+    persistSessionTabs(get().activeConnection.id, nextTabs, nextActiveId, nextTargetTable, nextSqlStates);
     set({
       tabs: nextTabs,
       sqlTabStates: nextSqlStates,
       activeTabId: nextActiveId,
       activeTab: nextActiveTab?.type || 'grid',
-      selectedTable: nextActiveTab?.tableName || selectedTable,
+      selectedTable: nextTargetTable,
     });
   },
 
@@ -1992,6 +2104,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       structureSearchColumn: state.structureSearchColumn,
     };
 
+    persistSessionTabs(currentId, state.tabs, state.activeTabId, state.selectedTable, state.sqlTabStates);
+
     const nextSessions = {
       ...state.sessions,
       [currentId]: currentSession,
@@ -2009,8 +2123,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextSessions[id] = targetSession;
     }
 
+    // 2/ nếu previous có mở tab thì mở lại, nhưng không execute query, cực kỳ nguy hiểm
+    const safeSqlStates: Record<string, SqlTabState> = {};
+    for (const [k, v] of Object.entries(targetSession.sqlTabStates || {})) {
+      safeSqlStates[k] = { ...v, isExecuting: false };
+    }
+
     const nextEngine = targetConn.engine;
     const nextAppMode = nextEngine === 'redis' ? 'redis' : nextEngine === 'snowflake' ? 'snowflake' : 'sql';
+    const targetActiveTab = targetSession.tabs.find((t) => t.id === targetSession.activeTabId) || targetSession.tabs[0];
 
     // 4. Update store with fully isolated session state
     set({
@@ -2022,10 +2143,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Restored isolated workspace session
       tabs: targetSession.tabs,
-      activeTabId: targetSession.activeTabId,
-      activeTab: targetSession.tabs.find((t) => t.id === targetSession.activeTabId)?.type || 'grid',
-      sqlTabStates: targetSession.sqlTabStates,
-      selectedTable: targetSession.selectedTable,
+      activeTabId: targetActiveTab ? targetActiveTab.id : '',
+      activeTab: targetActiveTab ? targetActiveTab.type : 'default',
+      sqlTabStates: safeSqlStates,
+      selectedTable: targetActiveTab?.tableName || targetSession.selectedTable || '',
       tableViewMode: targetSession.tableViewMode,
       isFilterBarOpen: targetSession.isFilterBarOpen,
       filterWhereText: targetSession.filterWhereText,
@@ -2043,11 +2164,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     state.showToast(`⚡ Connecting to "${targetConn.name}"...`);
     get().triggerConnectingAnimation(id);
     get().fetchLiveTables(targetConn);
-    get().reloadData();
+    get().fetchLiveFunctions(targetConn);
+    get().fetchLiveDatabases(targetConn);
+
+    // Only reload table grid data if restored tab is specifically a 'grid' tab
+    if (targetActiveTab?.type === 'grid' && targetActiveTab.tableName) {
+      get().reloadData(targetActiveTab.tableName);
+    }
   },
 
   isDatabaseModalOpen: false,
-  setDatabaseModalOpen: (open) => set({ isDatabaseModalOpen: open }),
+  setDatabaseModalOpen: (open) => {
+    if (open) {
+      get().fetchLiveDatabases(get().activeConnection);
+    }
+    set({ isDatabaseModalOpen: open });
+  },
 
   switchActiveDatabase: (dbName) => {
     const { activeConnection, connections } = get();
@@ -2061,7 +2193,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       isDatabaseModalOpen: false,
     });
     get().fetchLiveTables(nextConn);
-    get().reloadData();
+    get().fetchLiveFunctions(nextConn);
+    get().fetchLiveDatabases(nextConn);
+    const curTab = get().tabs.find((t) => t.id === get().activeTabId);
+    if (curTab?.type === 'grid' && curTab.tableName) {
+      get().reloadData(curTab.tableName);
+    }
   },
 
   createDatabase: (dbName) => {
@@ -2110,7 +2247,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         get().showToast(`🟢 Reconnected to '${conn.database || conn.name}' (${latency}ms)`);
         get().fetchLiveTables(conn);
-        get().reloadData();
+        get().fetchLiveFunctions(conn);
+        get().fetchLiveDatabases(conn);
+        const curTab = get().tabs.find((t) => t.id === get().activeTabId);
+        if (curTab?.type === 'grid' && curTab.tableName) {
+          get().reloadData(curTab.tableName);
+        }
         return true;
       } else {
         get().updateHeartbeat(0, false, res.message);
@@ -2404,8 +2546,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       originalRows: JSON.parse(JSON.stringify(targetRows)),
       pendingEditsCount: 0,
     });
-    // Asynchronously fetch live rows from database
+    // Asynchronously fetch live rows & schema metadata from database
     get().reloadData(tbl);
+    get().fetchLiveTableSchema(tbl);
   },
 
   isReloading: false,

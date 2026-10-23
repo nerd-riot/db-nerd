@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
-import { ConnectionProfile, FunctionItem } from '../types';
+import {
+  ConnectionProfile,
+  FunctionItem,
+  TableSchemaInfo,
+  ColumnDefinition,
+  TableIndexDefinition,
+  TableForeignKeyDefinition,
+} from '../types';
 
 export interface DbConfigPayload {
   engine: string;
@@ -37,6 +44,14 @@ export interface RealTestResult {
 export interface RealTableSummary {
   name: string;
   count: string;
+  schema?: string;
+  kind?: string;
+  owner?: string;
+  estimated_rows?: number;
+  total_size?: string;
+  data_size?: string;
+  index_size?: string;
+  comment?: string;
 }
 
 export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => {
@@ -151,6 +166,33 @@ export async function getRealTables(profile: ConnectionProfile): Promise<RealTab
   }
 }
 
+export async function getRealDatabases(profile: ConnectionProfile): Promise<string[]> {
+  try {
+    const config = profileToConfig(profile);
+    const res = await invoke<string[]>('get_databases', { config });
+    if (res && res.length > 0) {
+      return res;
+    }
+  } catch (e) {
+    try {
+      if (profile.engine === 'postgres') {
+        const q = await executeRealQuery(profile, 'SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname ASC;');
+        if (q.success && q.rows && q.rows.length > 0) {
+          return q.rows.map((r: any) => String(r.datname || Object.values(r)[0]));
+        }
+      } else if (profile.engine === 'mysql') {
+        const q = await executeRealQuery(profile, 'SHOW DATABASES;');
+        if (q.success && q.rows && q.rows.length > 0) {
+          return q.rows.map((r: any) => String(r.Database || Object.values(r)[0]));
+        }
+      }
+    } catch {}
+  }
+  return profile.databases && profile.databases.length > 0
+    ? profile.databases
+    : [profile.database || (profile.engine === 'postgres' ? 'postgres' : 'default')];
+}
+
 export async function getRealFunctions(profile: ConnectionProfile): Promise<FunctionItem[]> {
   try {
     if (profile.engine === 'postgres') {
@@ -232,4 +274,246 @@ export async function getRealFunctions(profile: ConnectionProfile): Promise<Func
     return [];
   }
 }
+
+export async function getRealTableSchema(
+  profile: ConnectionProfile,
+  tableName: string,
+  summary?: RealTableSummary
+): Promise<TableSchemaInfo | null> {
+  if (!tableName || tableName.startsWith('__')) return null;
+  const safeTable = tableName.replace(/'/g, "''");
+
+  try {
+    if (profile.engine === 'postgres') {
+      const colSql = `
+        SELECT
+          c.column_name AS name,
+          CASE
+            WHEN c.data_type = 'character varying' AND c.character_maximum_length IS NOT NULL
+              THEN 'varchar(' || c.character_maximum_length || ')'
+            WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL
+              THEN 'numeric(' || c.numeric_precision || ',' || COALESCE(c.numeric_scale, 0) || ')'
+            ELSE c.udt_name
+          END AS data_type,
+          (c.is_nullable = 'YES') AS is_nullable,
+          c.column_default AS default_value,
+          COALESCE(pk.is_pk, false) AS is_primary_key,
+          fk.foreign_table_name AS foreign_table,
+          fk.foreign_column_name AS foreign_column,
+          fk.constraint_name AS fk_name,
+          COALESCE(pgd.description, '') AS comment
+        FROM information_schema.columns c
+        LEFT JOIN (
+          SELECT kcu.column_name, true AS is_pk
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          WHERE tc.table_schema = 'public'
+            AND tc.table_name = '${safeTable}'
+            AND tc.constraint_type = 'PRIMARY KEY'
+        ) pk ON pk.column_name = c.column_name
+        LEFT JOIN (
+          SELECT
+            kcu.column_name,
+            ccu.table_name AS foreign_table_name,
+            ccu.column_name AS foreign_column_name,
+            tc.constraint_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          JOIN information_schema.constraint_column_usage ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema = tc.table_schema
+          WHERE tc.table_schema = 'public'
+            AND tc.table_name = '${safeTable}'
+            AND tc.constraint_type = 'FOREIGN KEY'
+        ) fk ON fk.column_name = c.column_name
+        LEFT JOIN pg_catalog.pg_class cl
+          ON cl.relname = c.table_name
+          AND cl.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = 'public' LIMIT 1)
+        LEFT JOIN pg_catalog.pg_description pgd
+          ON pgd.objoid = cl.oid AND pgd.objsubid = c.ordinal_position
+        WHERE c.table_schema = 'public' AND c.table_name = '${safeTable}'
+        ORDER BY c.ordinal_position ASC;
+      `;
+
+      const idxSql = `
+        SELECT
+          i.relname AS index_name,
+          UPPER(am.amname) AS index_type,
+          ix.indisunique AS is_unique,
+          ix.indisprimary AS is_primary,
+          pg_size_pretty(pg_relation_size(i.oid)) AS index_size,
+          pg_get_indexdef(i.oid) AS index_def
+        FROM pg_index ix
+        JOIN pg_class t ON t.oid = ix.indrelid
+        JOIN pg_class i ON i.oid = ix.indexrelid
+        JOIN pg_am am ON am.oid = i.relam
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public' AND t.relname = '${safeTable}'
+        ORDER BY ix.indisprimary DESC, i.relname ASC;
+      `;
+
+      const [colRes, idxRes] = await Promise.all([
+        executeRealQuery(profile, colSql),
+        executeRealQuery(profile, idxSql),
+      ]);
+
+      if (!colRes.success || !colRes.rows || colRes.rows.length === 0) {
+        return null;
+      }
+
+      const columns: ColumnDefinition[] = [];
+      const foreignKeys: TableForeignKeyDefinition[] = [];
+      const seenCols = new Set<string>();
+
+      for (const r of colRes.rows) {
+        const colName = String(r.name || '');
+        if (!colName || seenCols.has(colName)) continue;
+        seenCols.add(colName);
+
+        const isFk = Boolean(r.foreign_table);
+        columns.push({
+          name: colName,
+          type: String(r.data_type || 'text'),
+          isNullable: Boolean(r.is_nullable),
+          defaultValue: r.default_value ? String(r.default_value) : undefined,
+          isPrimaryKey: Boolean(r.is_primary_key),
+          isForeignKey: isFk,
+          foreignTable: isFk ? String(r.foreign_table) : undefined,
+          foreignColumn: isFk ? String(r.foreign_column || 'id') : undefined,
+          comment: r.comment ? String(r.comment) : undefined,
+        });
+
+        if (isFk) {
+          foreignKeys.push({
+            name: String(r.fk_name || `fk_${tableName}_${colName}`),
+            column: colName,
+            foreignTable: String(r.foreign_table),
+            foreignColumn: String(r.foreign_column || 'id'),
+            onUpdate: 'NO ACTION',
+            onDelete: 'NO ACTION',
+          });
+        }
+      }
+
+      const indexes: TableIndexDefinition[] = [];
+      const indexDdls: string[] = [];
+      if (idxRes.success && Array.isArray(idxRes.rows)) {
+        for (const ir of idxRes.rows) {
+          const idxName = String(ir.index_name || '');
+          const def = String(ir.index_def || '');
+          if (def) indexDdls.push(`${def};`);
+          const colMatch = def.match(/\(([^)]+)\)/);
+          const idxCols = colMatch
+            ? colMatch[1].split(',').map((s) => s.trim())
+            : ['id'];
+          const rawType = String(ir.index_type || 'BTREE').toUpperCase();
+          const idxType: TableIndexDefinition['type'] =
+            rawType === 'GIN' || rawType === 'HASH' || rawType === 'GIST'
+              ? rawType
+              : 'BTREE';
+          indexes.push({
+            name: idxName,
+            columns: idxCols,
+            type: idxType,
+            isUnique: Boolean(ir.is_unique),
+            isPrimary: Boolean(ir.is_primary),
+            size: ir.index_size ? String(ir.index_size) : undefined,
+          });
+        }
+      }
+
+      const pkCols = columns.filter((c) => c.isPrimaryKey).map((c) => `"${c.name}"`);
+      const ddlLines = columns.map((c) => {
+        const nullStr = c.isNullable ? '' : ' NOT NULL';
+        const defStr = c.defaultValue ? ` DEFAULT ${c.defaultValue}` : '';
+        return `  "${c.name}" ${c.type}${nullStr}${defStr}`;
+      });
+      if (pkCols.length > 0) {
+        ddlLines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
+      }
+
+      const ddl = `-- DDL for table: public.${tableName}\nCREATE TABLE public."${tableName}" (\n${ddlLines.join(',\n')}\n);\n${
+        indexDdls.length > 0 ? '\n' + indexDdls.join('\n') : ''
+      }`;
+
+      const estRows = summary?.estimated_rows ?? 0;
+      const totalSize = summary?.total_size || '16 KB';
+      const dataSize = summary?.data_size || totalSize;
+      const idxSize = summary?.index_size || '0 KB';
+
+      return {
+        tableName,
+        schema: summary?.schema || 'public',
+        engine: 'PostgreSQL (Heap)',
+        rowCount: `${estRows.toLocaleString()} rows`,
+        totalSize: `${totalSize} (Data: ${dataSize}, Index: ${idxSize})`,
+        columns,
+        indexes,
+        foreignKeys,
+        ddl,
+      };
+    } else if (profile.engine === 'mysql') {
+      const colSql = `
+        SELECT
+          COLUMN_NAME AS name,
+          COLUMN_TYPE AS data_type,
+          (IS_NULLABLE = 'YES') AS is_nullable,
+          COLUMN_DEFAULT AS default_value,
+          (COLUMN_KEY = 'PRI') AS is_primary_key,
+          COLUMN_COMMENT AS comment
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${safeTable}'
+        ORDER BY ORDINAL_POSITION ASC;
+      `;
+      const colRes = await executeRealQuery(profile, colSql);
+      if (!colRes.success || !colRes.rows || colRes.rows.length === 0) {
+        return null;
+      }
+
+      const columns: ColumnDefinition[] = colRes.rows.map((r: any) => ({
+        name: String(r.name || ''),
+        type: String(r.data_type || 'varchar(255)'),
+        isNullable: Boolean(r.is_nullable),
+        defaultValue: r.default_value !== null && r.default_value !== undefined ? String(r.default_value) : undefined,
+        isPrimaryKey: Boolean(r.is_primary_key),
+        comment: r.comment ? String(r.comment) : undefined,
+      }));
+
+      const ddlLines = columns.map((c) => {
+        const nullStr = c.isNullable ? ' NULL' : ' NOT NULL';
+        const defStr = c.defaultValue ? ` DEFAULT '${c.defaultValue}'` : '';
+        return `  \`${c.name}\` ${c.type}${nullStr}${defStr}`;
+      });
+      const pkCols = columns.filter((c) => c.isPrimaryKey).map((c) => `\`${c.name}\``);
+      if (pkCols.length > 0) {
+        ddlLines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
+      }
+
+      const estRows = summary?.estimated_rows ?? 0;
+      const totalSize = summary?.total_size || '16 KB';
+      const dataSize = summary?.data_size || totalSize;
+      const idxSize = summary?.index_size || '0 KB';
+
+      return {
+        tableName,
+        schema: summary?.schema || profile.database || 'mysql',
+        engine: 'MySQL (InnoDB)',
+        rowCount: `${estRows.toLocaleString()} rows`,
+        totalSize: `${totalSize} (Data: ${dataSize}, Index: ${idxSize})`,
+        columns,
+        indexes: [],
+        foreignKeys: [],
+        ddl: `-- DDL for table: ${tableName}\nCREATE TABLE \`${tableName}\` (\n${ddlLines.join(',\n')}\n) ENGINE=InnoDB;`,
+      };
+    }
+  } catch (e) {
+    console.warn('getRealTableSchema failed:', e);
+  }
+  return null;
+}
+
 

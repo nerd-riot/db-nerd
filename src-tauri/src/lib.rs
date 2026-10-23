@@ -157,10 +157,40 @@ pub struct QueryResult {
     pub error: Option<String>,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, Default)]
 pub struct TableSummary {
     pub name: String,
     pub count: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_rows: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_size: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index_size: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+fn format_compact_table_badge(estimated_rows: i64, total_size: &str) -> String {
+    if estimated_rows >= 1_000_000 {
+        format!("{:.1}M", estimated_rows as f64 / 1_000_000.0)
+    } else if estimated_rows >= 1_000 {
+        format!("{:.1}K", estimated_rows as f64 / 1_000.0)
+    } else if estimated_rows > 0 {
+        estimated_rows.to_string()
+    } else if !total_size.is_empty() && total_size != "0 bytes" {
+        total_size.replace(" bytes", " B")
+    } else {
+        "0".to_string()
+    }
 }
 
 #[tauri::command]
@@ -578,37 +608,180 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
 async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
     match config.engine.as_str() {
         "postgres" => {
-            let res = execute_query(
+            let stats_sql = r#"
+                SELECT
+                    c.relname AS table_name,
+                    n.nspname AS schema_name,
+                    CASE c.relkind
+                        WHEN 'r' THEN 'TABLE'
+                        WHEN 'p' THEN 'PARTITIONED'
+                        WHEN 'v' THEN 'VIEW'
+                        WHEN 'm' THEN 'MAT VIEW'
+                        ELSE 'TABLE'
+                    END AS kind,
+                    pg_catalog.pg_get_userbyid(c.relowner) AS owner,
+                    GREATEST(COALESCE(s.n_live_tup, c.reltuples::bigint, 0), 0)::bigint AS estimated_rows,
+                    pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+                    pg_size_pretty(pg_relation_size(c.oid)) AS data_size,
+                    pg_size_pretty(pg_indexes_size(c.oid)) AS index_size,
+                    COALESCE(d.description, '') AS comment
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+                LEFT JOIN pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+                WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm')
+                ORDER BY c.relname ASC;
+            "#;
+
+            let res = execute_query(config.clone(), stats_sql.into()).await;
+            if let Ok(res) = res {
+                if res.success && !res.rows.is_empty() {
+                    let mut tables = Vec::with_capacity(res.rows.len());
+                    for r in res.rows {
+                        if let Some(name) = r.get("table_name").and_then(|v| v.as_str()) {
+                            let est_rows = r
+                                .get("estimated_rows")
+                                .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                                .unwrap_or(0);
+                            let total_size = r
+                                .get("total_size")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let data_size = r
+                                .get("data_size")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let index_size = r
+                                .get("index_size")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let schema = r
+                                .get("schema_name")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let kind = r
+                                .get("kind")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let owner = r
+                                .get("owner")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let comment = r
+                                .get("comment")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .map(|s| s.to_string());
+
+                            tables.push(TableSummary {
+                                name: name.to_string(),
+                                count: format_compact_table_badge(est_rows, &total_size),
+                                schema,
+                                kind,
+                                owner,
+                                estimated_rows: Some(est_rows),
+                                total_size: if total_size.is_empty() { None } else { Some(total_size) },
+                                data_size,
+                                index_size,
+                                comment,
+                            });
+                        }
+                    }
+                    return Ok(tables);
+                }
+            }
+
+            // Fallback to information_schema if pg_catalog permissions are restricted
+            let fallback = execute_query(
                 config,
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name ASC;".into(),
             ).await?;
             let mut tables = Vec::new();
-            for r in res.rows {
+            for r in fallback.rows {
                 if let Some(name) = r.get("table_name").and_then(|v| v.as_str()) {
                     tables.push(TableSummary {
                         name: name.to_string(),
-                        count: "live".into(),
+                        count: "0".into(),
+                        schema: Some("public".into()),
+                        kind: Some("TABLE".into()),
+                        ..Default::default()
                     });
                 }
             }
             Ok(tables)
         }
         "mysql" => {
-            let res = execute_query(
-                config,
-                "SELECT TABLE_NAME as table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name ASC;".into()
-            ).await?;
+            let stats_sql = r#"
+                SELECT
+                    TABLE_NAME AS table_name,
+                    TABLE_SCHEMA AS schema_name,
+                    TABLE_TYPE AS kind,
+                    COALESCE(ENGINE, 'InnoDB') AS owner,
+                    COALESCE(TABLE_ROWS, 0) AS estimated_rows,
+                    CONCAT(ROUND((COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0)) / 1024, 0), ' KB') AS total_size,
+                    CONCAT(ROUND(COALESCE(DATA_LENGTH, 0) / 1024, 0), ' KB') AS data_size,
+                    CONCAT(ROUND(COALESCE(INDEX_LENGTH, 0) / 1024, 0), ' KB') AS index_size,
+                    COALESCE(TABLE_COMMENT, '') AS comment
+                FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                ORDER BY TABLE_NAME ASC;
+            "#;
+            let res = execute_query(config, stats_sql.into()).await?;
             let mut tables = Vec::new();
             for r in res.rows {
-                if let Some(obj) = r.as_object() {
-                    if let Some((_, val)) = obj.iter().next() {
-                        if let Some(name) = val.as_str() {
-                            tables.push(TableSummary {
-                                name: name.to_string(),
-                                count: "live".into(),
-                            });
-                        }
-                    }
+                let name_opt = r
+                    .get("table_name")
+                    .or_else(|| r.get("TABLE_NAME"))
+                    .and_then(|v| v.as_str());
+                if let Some(name) = name_opt {
+                    let est_rows = r
+                        .get("estimated_rows")
+                        .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                        .unwrap_or(0);
+                    let total_size = r
+                        .get("total_size")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let data_size = r
+                        .get("data_size")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let index_size = r
+                        .get("index_size")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let schema = r
+                        .get("schema_name")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let kind = r
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let owner = r
+                        .get("owner")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let comment = r
+                        .get("comment")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string());
+
+                    tables.push(TableSummary {
+                        name: name.to_string(),
+                        count: format_compact_table_badge(est_rows, &total_size),
+                        schema,
+                        kind,
+                        owner,
+                        estimated_rows: Some(est_rows),
+                        total_size: if total_size.is_empty() { None } else { Some(total_size) },
+                        data_size,
+                        index_size,
+                        comment,
+                    });
                 }
             }
             Ok(tables)
@@ -660,10 +833,78 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                 .map(|name| TableSummary {
                     name,
                     count: "key".into(),
+                    kind: Some("KEY".into()),
+                    ..Default::default()
                 })
                 .collect())
         }
         _ => Ok(Vec::new()),
+    }
+}
+
+#[tauri::command]
+async fn get_databases(config: DbConfig) -> Result<Vec<String>, String> {
+    match config.engine.as_str() {
+        "postgres" => {
+            let sql = "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname ASC;";
+            let res = execute_query(config.clone(), sql.into()).await;
+            if let Ok(res) = res {
+                if res.success && !res.rows.is_empty() {
+                    let mut dbs = Vec::new();
+                    for r in res.rows {
+                        if let Some(name) = r.get("datname").and_then(|v| v.as_str()) {
+                            dbs.push(name.to_string());
+                        }
+                    }
+                    if !dbs.is_empty() {
+                        return Ok(dbs);
+                    }
+                }
+            }
+
+            // Fallback: try table_catalog if pg_database has restricted permissions
+            let fallback_sql = "SELECT DISTINCT table_catalog FROM information_schema.tables ORDER BY table_catalog ASC;";
+            if let Ok(res) = execute_query(config.clone(), fallback_sql.into()).await {
+                let mut dbs = Vec::new();
+                for r in res.rows {
+                    if let Some(name) = r.get("table_catalog").and_then(|v| v.as_str()) {
+                        dbs.push(name.to_string());
+                    }
+                }
+                if !dbs.is_empty() {
+                    return Ok(dbs);
+                }
+            }
+
+            Ok(vec![config.database])
+        }
+        "mysql" => {
+            let res = execute_query(config.clone(), "SHOW DATABASES;".into()).await;
+            if let Ok(res) = res {
+                if res.success && !res.rows.is_empty() {
+                    let mut dbs = Vec::new();
+                    for r in res.rows {
+                        let name_opt = r
+                            .get("Database")
+                            .or_else(|| r.get("SCHEMA_NAME"))
+                            .or_else(|| r.as_object().and_then(|m| m.values().next()))
+                            .and_then(|v| v.as_str());
+                        if let Some(name) = name_opt {
+                            dbs.push(name.to_string());
+                        }
+                    }
+                    if !dbs.is_empty() {
+                        return Ok(dbs);
+                    }
+                }
+            }
+            Ok(vec![config.database])
+        }
+        "redis" => {
+            let list = (0..16).map(|i| i.to_string()).collect();
+            Ok(list)
+        }
+        _ => Ok(vec![config.database]),
     }
 }
 
@@ -675,6 +916,7 @@ pub fn run() {
             test_connection,
             execute_query,
             get_tables,
+            get_databases,
             close_connection
         ])
         .run(tauri::generate_context!())

@@ -609,7 +609,108 @@ export const getTablesForConnection = (connName: string, engine: string = 'postg
 };
 
 export const getTableSchema = (tableName: string): TableSchemaInfo => {
-  return TABLE_SCHEMAS[tableName] || TABLE_SCHEMAS.user_orders;
+  const safeName = tableName || 'users';
+  try {
+    const store = typeof window !== 'undefined' ? (window as any).__APP_STORE__?.getState?.() : null;
+    if (store) {
+      const connId = store.activeConnection?.id;
+      const engine = store.activeConnection?.engine || 'postgres';
+      const liveSchema: TableSchemaInfo | undefined = connId ? store.liveSchemas?.[connId]?.[safeName] : undefined;
+      const liveSummary = connId
+        ? store.liveTables?.[connId]?.find((t: any) => t.name === safeName)
+        : undefined;
+
+      if (liveSchema) {
+        if (liveSummary) {
+          const total = liveSummary.total_size || '16 KB';
+          const data = liveSummary.data_size || total;
+          const idx = liveSummary.index_size || '0 KB';
+          const est =
+            liveSummary.estimated_rows !== undefined && liveSummary.estimated_rows >= 0
+              ? `${Number(liveSummary.estimated_rows).toLocaleString()} rows`
+              : liveSchema.rowCount;
+          return {
+            ...liveSchema,
+            schema: liveSummary.schema || liveSchema.schema,
+            rowCount: est,
+            totalSize: `${total} (Data: ${data}, Index: ${idx})`,
+          };
+        }
+        return liveSchema;
+      }
+
+      if (safeName in TABLE_SCHEMAS && !liveSummary) {
+        return TABLE_SCHEMAS[safeName];
+      }
+
+      if (liveSummary || !(safeName in TABLE_SCHEMAS)) {
+        const internalKeys = new Set(['isDirty', 'dirtyFields', 'rowState']);
+        const currentRows: any[] = store.selectedTable === safeName && Array.isArray(store.rows) ? store.rows : [];
+        const sample = currentRows[0];
+        const rowKeys = sample ? Object.keys(sample).filter((k) => !internalKeys.has(k)) : ['id'];
+        const inferredCols = rowKeys.map((key) => {
+          const val = sample?.[key];
+          let inferredType = 'varchar(255)';
+          if (typeof val === 'number') {
+            inferredType = Number.isInteger(val) ? 'int8' : 'numeric(12,2)';
+          } else if (typeof val === 'boolean') {
+            inferredType = 'bool';
+          } else if (val !== null && typeof val === 'object') {
+            inferredType = 'jsonb';
+          } else if (key.endsWith('_at') || key.includes('date') || key === 'tstamp') {
+            inferredType = 'timestamptz';
+          }
+          return {
+            name: key,
+            type: inferredType,
+            isNullable: key !== 'id',
+            defaultValue: key === 'id' ? 'AUTO' : undefined,
+            isPrimaryKey: key === 'id' || key === 'version_id' || key === 'ulid',
+            comment: '',
+          };
+        });
+
+        const total = liveSummary?.total_size || '32 KB';
+        const data = liveSummary?.data_size || '16 KB';
+        const idx = liveSummary?.index_size || '16 KB';
+        const estRows =
+          liveSummary?.estimated_rows !== undefined && liveSummary.estimated_rows >= 0
+            ? `${Number(liveSummary.estimated_rows).toLocaleString()} rows`
+            : liveSummary?.count && liveSummary.count !== 'live'
+            ? `${liveSummary.count} rows`
+            : `${currentRows.length} rows`;
+        const schemaName = liveSummary?.schema || (engine === 'mysql' ? store.activeConnection?.database || 'mysql' : 'public');
+        const quote = engine === 'mysql' ? '`' : '"';
+        const colDdl = inferredCols
+          .map((c) => `  ${quote}${c.name}${quote} ${c.type}${c.isPrimaryKey ? ' PRIMARY KEY' : ''}${c.isNullable ? '' : ' NOT NULL'}`)
+          .join(',\n');
+
+        return {
+          tableName: safeName,
+          schema: schemaName,
+          engine: engine === 'mysql' ? 'MySQL 8.0 (InnoDB)' : 'PostgreSQL (Heap)',
+          rowCount: estRows,
+          totalSize: `${total} (Data: ${data}, Index: ${idx})`,
+          columns: inferredCols,
+          indexes: [
+            {
+              name: `${safeName}_pkey`,
+              columns: [inferredCols[0]?.name || 'id'],
+              type: 'BTREE',
+              isUnique: true,
+              isPrimary: true,
+              size: idx,
+            },
+          ],
+          foreignKeys: [],
+          ddl: `-- DDL for table: ${schemaName}.${safeName}\nCREATE TABLE ${quote}${safeName}${quote} (\n${colDdl}\n);`,
+        };
+      }
+    }
+  } catch {
+    // Fallback to static dictionary
+  }
+  return TABLE_SCHEMAS[safeName] || TABLE_SCHEMAS.user_orders;
 };
 
 export const getFunctionsForConnection = (_connName?: string, engine: string = 'postgres'): FunctionItem[] => {

@@ -332,19 +332,40 @@ export const Sidebar = () => {
               {/* Table List (TablePlus Style) */}
               {isTablesOpen && (
                 <div className="space-y-0.5 pt-0.5">
-                  {filteredTables.map((tbl) => {
+                  {filteredTables.map((tbl: any) => {
                     const isSelected = selectedTable === tbl.name;
+                    const displayBadge =
+                      tbl.count && tbl.count !== 'live'
+                        ? tbl.count
+                        : tbl.estimated_rows !== undefined && tbl.estimated_rows >= 0
+                        ? (tbl.estimated_rows >= 1_000_000
+                            ? `${(tbl.estimated_rows / 1_000_000).toFixed(1)}M`
+                            : tbl.estimated_rows >= 1_000
+                            ? `${(tbl.estimated_rows / 1_000).toFixed(1)}K`
+                            : `${tbl.estimated_rows}`)
+                        : (tbl.total_size || '0');
+
+                    const tooltipParts = [
+                      `Table: ${tbl.name}`,
+                      tbl.schema ? `Schema: ${tbl.schema}` : null,
+                      tbl.estimated_rows !== undefined ? `Rows: ${Number(tbl.estimated_rows).toLocaleString()}` : null,
+                      tbl.total_size ? `Size: ${tbl.total_size}` : null,
+                      tbl.data_size ? `Data: ${tbl.data_size}` : null,
+                      tbl.index_size ? `Index: ${tbl.index_size}` : null,
+                      tbl.comment && tbl.comment !== '--' ? `Comment: ${tbl.comment}` : null,
+                    ].filter(Boolean);
 
                     return (
                       <div
                         key={tbl.name}
                         onClick={() => {
                           setSelectedTable(tbl.name);
+                          setSelectedRowData(null);
                         }}
                         onDoubleClick={() => {
                           openTableGridTab(tbl.name);
                         }}
-                        title="Click to select • Double-click to open in new tab"
+                        title={tooltipParts.join(' • ')}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -365,9 +386,20 @@ export const Sidebar = () => {
                           />
                           <span className="truncate">{tbl.name}</span>
                         </div>
-                        <span className="text-[10px] text-slate-500 font-mono flex-shrink-0">
-                          {tbl.count}
-                        </span>
+                        <div className="flex items-center space-x-1.5 flex-shrink-0">
+                          {tbl.total_size && displayBadge !== tbl.total_size && (
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono hidden group-hover:inline">
+                              {tbl.total_size}
+                            </span>
+                          )}
+                          <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${
+                            isSelected
+                              ? 'bg-sky-200/60 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 font-semibold'
+                              : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300'
+                          }`}>
+                            {displayBadge}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}

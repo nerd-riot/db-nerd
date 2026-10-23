@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
-import { Search, Database, Plus, X } from 'lucide-react';
+import { Search, Database, Plus, X, RefreshCw } from 'lucide-react';
 import { HeartbeatDot } from './HeartbeatDot';
 
 export const OpenDatabaseModal: React.FC = () => {
@@ -10,17 +10,23 @@ export const OpenDatabaseModal: React.FC = () => {
     activeConnection,
     switchActiveDatabase,
     createDatabase,
+    liveDatabases,
+    fetchLiveDatabases,
   } = useAppStore();
 
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newDbName, setNewDbName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const databases = activeConnection.databases && activeConnection.databases.length > 0
+  const liveList = liveDatabases[activeConnection.id];
+  const databases = (liveList && liveList.length > 0)
+    ? liveList
+    : (activeConnection.databases && activeConnection.databases.length > 0)
     ? activeConnection.databases
-    : [activeConnection.database || 'postgres'];
+    : [activeConnection.database || (activeConnection.engine === 'postgres' ? 'postgres' : 'default')];
 
   const filtered = databases.filter((db) =>
     db.toLowerCase().includes(search.trim().toLowerCase())
@@ -35,8 +41,10 @@ export const OpenDatabaseModal: React.FC = () => {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
+      setIsLoading(true);
+      fetchLiveDatabases(activeConnection).finally(() => setIsLoading(false));
     }
-  }, [isDatabaseModalOpen]);
+  }, [isDatabaseModalOpen, activeConnection.id]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -82,24 +90,36 @@ export const OpenDatabaseModal: React.FC = () => {
       onClick={() => setDatabaseModalOpen(false)}
     >
       <div
-        className="w-[380px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10 flex flex-col animate-in zoom-in-95 duration-150 font-sans"
+        className="w-[420px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10 flex flex-col animate-in zoom-in-95 duration-150 font-sans"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Title Header */}
         <div className="h-10 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 truncate">
             <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Open database</span>
-            <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded font-mono">
+            <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded font-mono truncate max-w-[160px]">
               {activeConnection.name}
             </span>
           </div>
-          <button
-            onClick={() => setDatabaseModalOpen(false)}
-            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => {
+                setIsLoading(true);
+                fetchLiveDatabases(activeConnection).finally(() => setIsLoading(false));
+              }}
+              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+              title="Refresh databases from server"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-sky-500' : ''}`} />
+            </button>
+            <button
+              onClick={() => setDatabaseModalOpen(false)}
+              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}

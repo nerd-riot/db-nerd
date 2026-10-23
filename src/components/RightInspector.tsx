@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { getTableSchema } from '../data/schemas';
 import {
@@ -54,10 +54,20 @@ export const RightInspector: React.FC = () => {
     activeTabId,
     activeTab,
     selectedStructureColumn,
+    activeConnection,
+    liveTables,
   } = useAppStore();
 
   const [searchField, setSearchField] = useState('');
   const [copied, setCopied] = useState(false);
+  const [sqlInspectorTab, setSqlInspectorTab] = useState<'table' | 'metrics'>('table');
+
+  useEffect(() => {
+    if (selectedTable) {
+      setSqlInspectorTab('table');
+    }
+  }, [selectedTable]);
+
   const [expandedFields, setExpandedFields] = useState<Record<string, boolean>>({
     _user: true,
     object_id: true,
@@ -85,13 +95,15 @@ export const RightInspector: React.FC = () => {
   };
 
   // Metadata sizes
-  const totalSize = schemaInfo.totalSize ? schemaInfo.totalSize.split(' ')[0] + ' ' + schemaInfo.totalSize.split(' ')[1] : '24 KB';
-  const dataSize = schemaInfo.totalSize?.includes('Data:')
+  const liveSummary = liveTables[activeConnection.id]?.find((t) => t.name === selectedTable);
+  const totalSize = liveSummary?.total_size || (schemaInfo.totalSize ? schemaInfo.totalSize.split(' ')[0] + ' ' + schemaInfo.totalSize.split(' ')[1] : '32 KB');
+  const dataSize = liveSummary?.data_size || (schemaInfo.totalSize?.includes('Data:')
     ? schemaInfo.totalSize.split('Data: ')[1]?.split(',')[0]
-    : '8 KB';
-  const indexSize = schemaInfo.totalSize?.includes('Index:')
+    : '16 KB');
+  const indexSize = liveSummary?.index_size || (schemaInfo.totalSize?.includes('Index:')
     ? schemaInfo.totalSize.split('Index: ')[1]?.replace(')', '')
-    : '16 KB';
+    : '16 KB');
+  const tableComment = liveSummary?.comment || (schemaInfo as any).comment || 'NULL';
 
   // Determine which mode to render in Right Inspector:
   // 1. Data mode (Row inspector OR Table metadata)
@@ -143,7 +155,7 @@ export const RightInspector: React.FC = () => {
 
           <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
             {isSqlTab
-              ? 'Query Inspector'
+              ? (sqlInspectorTab === 'table' && selectedTable ? `Table: ${selectedTable}` : 'Query Inspector')
               : isStatsTab
               ? 'Instance Telemetry'
               : isStructureMode
@@ -152,7 +164,7 @@ export const RightInspector: React.FC = () => {
               ? 'Index Inspector'
               : selectedRowData
               ? (selectedRowData.name ? `${selectedRowData.kind || 'Item'}: ${selectedRowData.name}` : `Row #${selectedRowData.id ?? selectedRowData.ulid ?? 'Selected'}`)
-              : 'Table Metadata'}
+              : (selectedTable ? `Table: ${selectedTable}` : 'Table Metadata')}
           </span>
         </div>
 
@@ -380,7 +392,7 @@ export const RightInspector: React.FC = () => {
                 comment
               </label>
               <div className="w-full bg-slate-100 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-lg px-2.5 py-1 text-slate-500 italic">
-                NULL
+                {tableComment}
               </div>
             </div>
 
@@ -406,6 +418,50 @@ export const RightInspector: React.FC = () => {
                 <span className="text-amber-700 dark:text-amber-400 font-semibold">{schemaInfo.indexes.length}</span>
               </div>
             </div>
+
+            {schemaInfo.columns && schemaInfo.columns.length > 0 && (
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 font-sans">
+                <div className="flex items-center justify-between pb-1">
+                  <span className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider">
+                    Columns ({schemaInfo.columns.length})
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {schemaInfo.columns.filter((c) => c.isPrimaryKey).length} PK
+                  </span>
+                </div>
+                <div className="space-y-1 max-h-60 overflow-y-auto pr-0.5">
+                  {schemaInfo.columns.map((col) => (
+                    <div
+                      key={col.name}
+                      onClick={() => handleCopyText(col.name)}
+                      className="flex items-center justify-between p-1.5 bg-slate-50 dark:bg-slate-900/70 hover:bg-slate-100 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-800/80 rounded-lg text-xs cursor-pointer transition"
+                      title="Click to copy column name"
+                    >
+                      <div className="flex items-center space-x-1.5 truncate">
+                        {col.isPrimaryKey ? (
+                          <Key className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                        ) : (
+                          <span className="w-3 h-3 flex items-center justify-center text-[9px] text-slate-400">#</span>
+                        )}
+                        <span className="font-mono text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          {col.name}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-1 flex-shrink-0">
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded border font-mono ${getTypeBadgeClass(col.type)}`}>
+                          {col.type}
+                        </span>
+                        {col.isNullable && (
+                          <span className="text-[9px] text-slate-400 font-mono" title="Nullable">
+                            null
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="p-2.5 bg-sky-50 dark:bg-slate-900/60 rounded-xl border border-sky-200 dark:border-slate-800/80 text-[11px] font-sans text-slate-700 dark:text-slate-400 space-y-1">
               <div className="flex items-center space-x-1.5 text-sky-700 dark:text-sky-400 font-bold">
@@ -542,60 +598,158 @@ export const RightInspector: React.FC = () => {
         )}
 
         {/* ========================================================================= */}
-        {/* CASE 5: SQL QUERY TAB - EXECUTION STATS & SNIPPETS */}
+        {/* CASE 5: SQL QUERY TAB - EXECUTION STATS & SNIPPETS / TABLE INFO */}
         {/* ========================================================================= */}
         {isSqlTab && (
           <div className="space-y-3 font-sans">
-            <div className="p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 shadow-2xs">
-              <div className="flex items-center justify-between font-sans text-xs font-semibold text-slate-800 dark:text-slate-200">
-                <span className="flex items-center space-x-1.5">
-                  <Zap className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                  <span>Execution Metrics</span>
-                </span>
-                <span className="text-[10px] px-2 py-0.5 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 rounded-full text-emerald-700 dark:text-emerald-300 font-mono font-medium flex items-center space-x-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                  <span>Success</span>
-                </span>
-              </div>
-              <div className="space-y-1 font-mono text-[11px] text-slate-700 dark:text-slate-300">
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400 font-sans">Duration:</span>
-                  <span className="text-sky-700 dark:text-sky-300 font-semibold">1.4ms (Cached)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400 font-sans">Rows affected:</span>
-                  <span className="text-slate-800 dark:text-slate-200 font-medium">3 rows</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400 font-sans">Lock time:</span>
-                  <span className="text-slate-800 dark:text-slate-200 font-medium">0.02ms</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-1.5 pt-1">
-              <span className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400 tracking-wider">
-                Quick SQL Snippets
-              </span>
-              {[
-                { label: 'COUNT(*) OVER ()', desc: 'Window total' },
-                { label: 'DATE_TRUNC(\'day\', tstamp)', desc: 'Group by date' },
-                { label: 'COALESCE(val, \'default\')', desc: 'Handle NULL' },
-                { label: 'JSONB_AGG(obj)', desc: 'Aggregate JSON' },
-              ].map((s) => (
-                <div
-                  key={s.label}
-                  onClick={() => handleCopyText(s.label)}
-                  className="p-2 bg-slate-100 dark:bg-slate-900/60 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-800 rounded-lg cursor-pointer transition flex items-center justify-between group shadow-2xs"
-                  title="Click to copy snippet"
+            {selectedTable && (
+              <div className="flex items-center p-0.5 bg-slate-200 dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 text-[11px]">
+                <button
+                  onClick={() => setSqlInspectorTab('table')}
+                  className={`flex-1 py-1 rounded-md font-medium transition cursor-pointer ${
+                    sqlInspectorTab === 'table'
+                      ? 'bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 shadow-2xs font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
                 >
-                  <div className="font-mono text-[11px] text-sky-700 dark:text-sky-300 group-hover:text-sky-900 dark:group-hover:text-white font-medium truncate">
-                    {s.label}
+                  Table ({selectedTable})
+                </button>
+                <button
+                  onClick={() => setSqlInspectorTab('metrics')}
+                  className={`flex-1 py-1 rounded-md font-medium transition cursor-pointer ${
+                    sqlInspectorTab === 'metrics'
+                      ? 'bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 shadow-2xs font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Metrics & Snippets
+                </button>
+              </div>
+            )}
+
+            {sqlInspectorTab === 'table' && selectedTable ? (
+              <div className="space-y-3 font-sans text-[11px]">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider font-sans">
+                    Table Summary
+                  </label>
+                  <div className="p-2.5 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5 font-sans">
+                    <div className="flex justify-between items-center text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      <span className="font-mono text-sky-600 dark:text-sky-400">{selectedTable}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800 rounded font-mono">
+                        {schemaInfo.rowCount}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-[11px] pt-1 border-t border-slate-200 dark:border-slate-800/60 font-mono text-slate-600 dark:text-slate-400">
+                      <div>Total: <span className="font-semibold text-slate-800 dark:text-slate-200">{totalSize}</span></div>
+                      <div>Data: <span className="font-semibold text-slate-800 dark:text-slate-200">{dataSize}</span></div>
+                      <div>Index: <span className="font-semibold text-slate-800 dark:text-slate-200">{indexSize}</span></div>
+                      <div>Engine: <span className="font-semibold text-slate-800 dark:text-slate-200">{schemaInfo.engine}</span></div>
+                    </div>
+                    {tableComment && tableComment !== 'NULL' && tableComment !== '--' && (
+                      <div className="text-[10px] text-slate-500 italic pt-1 border-t border-slate-200 dark:border-slate-800/60">
+                        {tableComment}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400">{s.desc}</span>
                 </div>
-              ))}
-            </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider">
+                      Columns ({schemaInfo.columns.length})
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {schemaInfo.columns.filter((c) => c.isPrimaryKey).length} PK
+                    </span>
+                  </div>
+                  <div className="space-y-1 max-h-72 overflow-y-auto pr-0.5">
+                    {schemaInfo.columns.map((col) => (
+                      <div
+                        key={col.name}
+                        onClick={() => handleCopyText(col.name)}
+                        className="flex items-center justify-between p-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/70 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-800/80 rounded-lg text-xs cursor-pointer transition"
+                        title="Click to copy column name"
+                      >
+                        <div className="flex items-center space-x-1.5 truncate">
+                          {col.isPrimaryKey ? (
+                            <Key className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                          ) : (
+                            <span className="w-3 h-3 flex items-center justify-center text-[9px] text-slate-400">#</span>
+                          )}
+                          <span className="font-mono text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {col.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-1 flex-shrink-0">
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded border font-mono ${getTypeBadgeClass(col.type)}`}>
+                            {col.type}
+                          </span>
+                          {col.isNullable && (
+                            <span className="text-[9px] text-slate-400 font-mono" title="Nullable">
+                              null
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between font-sans text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    <span className="flex items-center space-x-1.5">
+                      <Zap className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                      <span>Execution Metrics</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 rounded-full text-emerald-700 dark:text-emerald-300 font-mono font-medium flex items-center space-x-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                      <span>Success</span>
+                    </span>
+                  </div>
+                  <div className="space-y-1 font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400 font-sans">Duration:</span>
+                      <span className="text-sky-700 dark:text-sky-300 font-semibold">1.4ms (Cached)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400 font-sans">Rows affected:</span>
+                      <span className="text-slate-800 dark:text-slate-200 font-medium">3 rows</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400 font-sans">Lock time:</span>
+                      <span className="text-slate-800 dark:text-slate-200 font-medium">0.02ms</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400 tracking-wider">
+                    Quick SQL Snippets
+                  </span>
+                  {[
+                    { label: 'COUNT(*) OVER ()', desc: 'Window total' },
+                    { label: 'DATE_TRUNC(\'day\', tstamp)', desc: 'Group by date' },
+                    { label: 'COALESCE(val, \'default\')', desc: 'Handle NULL' },
+                    { label: 'JSONB_AGG(obj)', desc: 'Aggregate JSON' },
+                  ].map((s) => (
+                    <div
+                      key={s.label}
+                      onClick={() => handleCopyText(s.label)}
+                      className="p-2 bg-slate-100 dark:bg-slate-900/60 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-800 rounded-lg cursor-pointer transition flex items-center justify-between group shadow-2xs"
+                      title="Click to copy snippet"
+                    >
+                      <div className="font-mono text-[11px] text-sky-700 dark:text-sky-300 group-hover:text-sky-900 dark:group-hover:text-white font-medium truncate">
+                        {s.label}
+                      </div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">{s.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
