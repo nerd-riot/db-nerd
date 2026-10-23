@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../stores/useAppStore';
-import { getTableSchema } from '../data/schemas';
+import { getTableSchema, TABLE_SCHEMAS } from '../data/schemas';
 import {
   Key,
   Plus,
@@ -20,7 +20,7 @@ import {
   RefreshCw,
   WrapText,
 } from 'lucide-react';
-import { GridRow } from '../types';
+import { GridRow, ColumnDefinition } from '../types';
 import { TableContextMenu } from './TableContextMenu';
 import { TableStructureView } from './TableStructureView';
 import { TableIndexesView } from './TableIndexesView';
@@ -34,6 +34,9 @@ import {
   ContextMenuHeader,
   ContextMenuPosition,
 } from './ContextMenu';
+
+const GRID_PAGE_SIZE = 200;
+const INTERNAL_ROW_KEYS = new Set(['isDirty', 'dirtyFields', 'rowState']);
 
 export const TableGrid: React.FC = () => {
   const {
@@ -55,6 +58,7 @@ export const TableGrid: React.FC = () => {
     setFilterOrderByText,
     setSelectedStructureColumn,
     isReloading,
+    reloadData,
     activeConnection,
     setConnectionModalOpen,
     reconnectActiveConnection,
@@ -62,6 +66,44 @@ export const TableGrid: React.FC = () => {
   } = useAppStore();
 
   const schemaInfo = getTableSchema(selectedTable);
+
+  // Dynamically derive columns when viewing live tables not in hardcoded TABLE_SCHEMAS
+  const resolvedColumns: ColumnDefinition[] = useMemo(() => {
+    const isKnownSchema = selectedTable in TABLE_SCHEMAS;
+    if (rows.length > 0) {
+      const sample = rows[0];
+      const rowKeys = Object.keys(sample).filter((k) => !INTERNAL_ROW_KEYS.has(k));
+      const schemaColMap = new Map(schemaInfo.columns.map((c) => [c.name, c]));
+      const matchesSchema = isKnownSchema && rowKeys.every((k) => schemaColMap.has(k));
+
+      if (!matchesSchema && rowKeys.length > 0) {
+        return rowKeys.map((key) => {
+          const existing = schemaColMap.get(key);
+          if (existing) return existing;
+          const val = sample[key];
+          let inferredType = 'VARCHAR(255)';
+          if (typeof val === 'number') {
+            inferredType = Number.isInteger(val) ? 'INT8' : 'NUMERIC(12,2)';
+          } else if (typeof val === 'boolean') {
+            inferredType = 'BOOL';
+          } else if (val !== null && typeof val === 'object') {
+            inferredType = 'JSONB';
+          } else if (key.endsWith('_at') || key.includes('date') || key === 'tstamp') {
+            inferredType = 'TIMESTAMPTZ';
+          }
+          return {
+            name: key,
+            type: inferredType,
+            isNullable: key !== 'id',
+            defaultValue: key === 'id' ? 'AUTO' : 'NULL',
+            isPrimaryKey: key === 'id' || key === 'version_id' || key === 'ulid',
+            comment: '',
+          };
+        });
+      }
+    }
+    return schemaInfo.columns;
+  }, [selectedTable, rows, schemaInfo.columns]);
 
   const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState<ContextMenuPosition | null>(null);
@@ -73,14 +115,19 @@ export const TableGrid: React.FC = () => {
   const [isDdlModalOpen, setIsDdlModalOpen] = useState(false);
   const [isColumnsModalOpen, setIsColumnsModalOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    new Set(schemaInfo.columns.map((c) => c.name))
+    new Set(resolvedColumns.map((c) => c.name))
   );
   const [wrapText, setWrapText] = useState(false);
+  const [sortConfig, setSortConfig] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
-  // Sync visible columns when selectedTable changes
+  // Sync visible columns and reset pagination when selectedTable or resolvedColumns keys change
+  const resolvedColSignature = useMemo(() => resolvedColumns.map((c) => c.name).join(','), [resolvedColumns]);
   React.useEffect(() => {
-    setVisibleColumns(new Set(schemaInfo.columns.map((c) => c.name)));
-  }, [selectedTable]);
+    setVisibleColumns(new Set(resolvedColumns.map((c) => c.name)));
+    setCurrentPage(0);
+    setSortConfig(null);
+  }, [selectedTable, resolvedColSignature]);
 
   const handleDuplicateRow = (r: GridRow) => {
     duplicateRow(r);
@@ -112,7 +159,7 @@ export const TableGrid: React.FC = () => {
 
   const startEditing = (id: number, field: string) => {
     // Prevent editing the primary key directly
-    if (field === 'id' && schemaInfo.columns.find((c) => c.name === 'id')?.isPrimaryKey) return;
+    if (field === 'id' && resolvedColumns.find((c) => c.name === 'id')?.isPrimaryKey) return;
     setEditingCell({ id, field });
   };
 
@@ -136,7 +183,51 @@ export const TableGrid: React.FC = () => {
     });
   };
 
-  const activeCols = schemaInfo.columns.filter((c) => visibleColumns.has(c.name));
+  const activeCols = useMemo(
+    () => resolvedColumns.filter((c) => visibleColumns.has(c.name)),
+    [resolvedColumns, visibleColumns]
+  );
+
+  // Client-side sort & filter support for immediate responsiveness
+  const processedRows = useMemo(() => {
+    let list = rows;
+    if (sortConfig) {
+      const { col, dir } = sortConfig;
+      list = [...list].sort((a, b) => {
+        const va = a[col];
+        const vb = b[col];
+        if (va === vb) return 0;
+        if (va === null || va === undefined) return 1;
+        if (vb === null || vb === undefined) return -1;
+        if (typeof va === 'number' && typeof vb === 'number') {
+          return dir === 'asc' ? va - vb : vb - va;
+        }
+        const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+        return dir === 'asc' ? cmp : -cmp;
+      });
+    }
+    return list;
+  }, [rows, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(processedRows.length / GRID_PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages - 1);
+  const paginatedRows = useMemo(
+    () => processedRows.slice(safePage * GRID_PAGE_SIZE, (safePage + 1) * GRID_PAGE_SIZE),
+    [processedRows, safePage]
+  );
+
+  const handleApplyFilter = () => {
+    setCurrentPage(0);
+    const orderMatch = filterOrderByText.trim().match(/^([a-zA-Z0-9_]+)\s*(ASC|DESC)?$/i);
+    if (orderMatch) {
+      const col = orderMatch[1];
+      const dir = (orderMatch[2] || 'ASC').toLowerCase() === 'desc' ? 'desc' : 'asc';
+      setSortConfig({ col, dir });
+    } else if (!filterOrderByText.trim()) {
+      setSortConfig(null);
+    }
+    reloadData(selectedTable);
+  };
 
   return (
     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900/60 overflow-hidden relative">
@@ -214,6 +305,9 @@ export const TableGrid: React.FC = () => {
               type="text"
               value={filterWhereText}
               onChange={(e) => setFilterWhereText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleApplyFilter();
+              }}
               placeholder="e.g. status = 'pending' AND total_amount > 50"
               className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/70 rounded px-2.5 py-1 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 shadow-2xs font-mono"
             />
@@ -224,11 +318,14 @@ export const TableGrid: React.FC = () => {
               type="text"
               value={filterOrderByText}
               onChange={(e) => setFilterOrderByText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleApplyFilter();
+              }}
               placeholder="e.g. id DESC"
               className="w-28 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/70 rounded px-2 py-1 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 shadow-2xs font-mono"
             />
             <button
-              onClick={() => showToast('⚡ Filter applied in 1.2ms (4 records returned)')}
+              onClick={handleApplyFilter}
               className="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded text-[11px] font-sans font-semibold transition active:scale-95 flex items-center space-x-1 cursor-pointer shadow-2xs"
             >
               <Zap className="w-3 h-3" />
@@ -238,7 +335,9 @@ export const TableGrid: React.FC = () => {
               onClick={() => {
                 setFilterWhereText('');
                 setFilterOrderByText('');
+                setSortConfig(null);
                 showToast('Filter cleared');
+                setTimeout(() => reloadData(selectedTable), 0);
               }}
               className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition cursor-pointer"
               title="Clear Filter"
@@ -249,7 +348,7 @@ export const TableGrid: React.FC = () => {
 
           <div className="flex items-center space-x-2 font-mono text-[11px] text-slate-500 dark:text-slate-400">
             <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center space-x-1">
-              <span>⚡ 1.2ms</span>
+              <span>⚡ {processedRows.length} rows</span>
             </span>
           </div>
         </div>
@@ -268,40 +367,69 @@ export const TableGrid: React.FC = () => {
             <thead className="sticky top-0 bg-slate-100 dark:bg-slate-950/95 backdrop-blur-md z-10 border-b border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 select-none shadow-sm text-[11px]">
               <tr className="text-left font-semibold">
                 <th className="w-12 px-3 py-2 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold">#</th>
-                {activeCols.map((col) => (
-                  <th
-                    key={col.name}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setColContextPos({ x: e.clientX, y: e.clientY });
-                      setTargetCol(col);
-                    }}
-                    className="px-3 py-2 border-r border-slate-300 dark:border-slate-800/80 min-w-[130px] cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-900/60 transition-colors"
-                  >
-                    <div className="flex items-center space-x-1.5 truncate">
-                      <ColumnTypeIcon type={col.type} />
-                      <span className="text-slate-800 dark:text-slate-200 font-semibold truncate">{col.name}</span>
-                      {col.isPrimaryKey && (
-                        <span title="Primary Key" className="inline-flex items-center ml-0.5">
-                          <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                ))}
+                {activeCols.map((col) => {
+                  const isSorted = sortConfig?.col === col.name;
+                  return (
+                    <th
+                      key={col.name}
+                      onClick={() => {
+                        setSortConfig((prev) => {
+                          if (!prev || prev.col !== col.name) {
+                            setFilterOrderByText(`${col.name} ASC`);
+                            return { col: col.name, dir: 'asc' };
+                          }
+                          if (prev.dir === 'asc') {
+                            setFilterOrderByText(`${col.name} DESC`);
+                            return { col: col.name, dir: 'desc' };
+                          }
+                          setFilterOrderByText('');
+                          return null;
+                        });
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setColContextPos({ x: e.clientX, y: e.clientY });
+                        setTargetCol(col);
+                      }}
+                      className="px-3 py-2 border-r border-slate-300 dark:border-slate-800/80 min-w-[130px] cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-900/60 transition-colors"
+                    >
+                      <div className="flex items-center justify-between space-x-1.5 truncate">
+                        <div className="flex items-center space-x-1.5 truncate">
+                          <ColumnTypeIcon type={col.type} />
+                          <span className="text-slate-800 dark:text-slate-200 font-semibold truncate">{col.name}</span>
+                          {col.isPrimaryKey && (
+                            <span title="Primary Key" className="inline-flex items-center ml-0.5">
+                              <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
+                            </span>
+                          )}
+                        </div>
+                        {isSorted && (
+                          <span className="text-sky-500 shrink-0">
+                            {sortConfig?.dir === 'asc' ? (
+                              <ArrowUpAZ className="w-3 h-3" />
+                            ) : (
+                              <ArrowDownZA className="w-3 h-3" />
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
 
             {/* Rows */}
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800/40 text-[11px]">
-              {rows.map((row, index) => {
+              {paginatedRows.map((row, index) => {
+                const absoluteIndex = safePage * GRID_PAGE_SIZE + index;
                 const isSelected = selectedRowIds.has(row.id) || (selectedRowData && selectedRowData.id === row.id);
-                const isEven = index % 2 === 0;
+                const isEven = absoluteIndex % 2 === 0;
 
                 return (
                   <tr
-                    key={row.id ?? index}
+                    key={row.id ?? absoluteIndex}
                     onClick={(e) => handleRowClick(row, e)}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -325,7 +453,7 @@ export const TableGrid: React.FC = () => {
                   >
                     {/* Row Index */}
                     <td className="px-3 py-1.5 border-r border-slate-200 dark:border-slate-800/60 text-center text-slate-500 dark:text-slate-500 select-none font-medium">
-                      {index + 1}
+                      {absoluteIndex + 1}
                     </td>
 
                     {/* Columns */}
@@ -473,12 +601,14 @@ export const TableGrid: React.FC = () => {
         <div className="text-[11px] text-slate-600 dark:text-slate-400 font-mono select-none flex items-center leading-none">
           {tableViewMode === 'data' ? (
             selectedRowData || selectedRowIds.size > 0 ? (
-              <span className="text-sky-700 dark:text-sky-300 font-semibold">{`${selectedRowIds.size || 1} of ${rows.length} rows selected`}</span>
+              <span className="text-sky-700 dark:text-sky-300 font-semibold">{`${selectedRowIds.size || 1} of ${processedRows.length} rows selected`}</span>
+            ) : processedRows.length === 0 ? (
+              <span>0 rows</span>
             ) : (
-              <span>{`1-${rows.length} of ${rows.length} rows`}</span>
+              <span>{`${safePage * GRID_PAGE_SIZE + 1}-${Math.min((safePage + 1) * GRID_PAGE_SIZE, processedRows.length)} of ${processedRows.length} rows`}</span>
             )
           ) : tableViewMode === 'structure' ? (
-            <span>{`${schemaInfo.columns.length} columns, ${schemaInfo.indexes.length} indexes`}</span>
+            <span>{`${resolvedColumns.length} columns, ${schemaInfo.indexes.length} indexes`}</span>
           ) : (
             <span>{`${schemaInfo.indexes.length} indexes, ${schemaInfo.foreignKeys.length} foreign keys`}</span>
           )}
@@ -525,14 +655,23 @@ export const TableGrid: React.FC = () => {
 
               <div className="flex items-center space-x-0.5 pl-1 h-6">
                 <button
-                  className="h-6 w-6 flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
-                  disabled
+                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                  disabled={safePage <= 0}
+                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
+                  title="Previous Page"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
+                {totalPages > 1 && (
+                  <span className="text-[10px] font-mono text-slate-500 px-1">
+                    {safePage + 1}/{totalPages}
+                  </span>
+                )}
                 <button
-                  className="h-6 w-6 flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
-                  disabled
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={safePage >= totalPages - 1}
+                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
+                  title="Next Page"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
@@ -542,7 +681,6 @@ export const TableGrid: React.FC = () => {
         </div>
       </div>
 
-      {/* Columns Visibility Popup */}
       {/* Columns Visibility Popup */}
       {isColumnsModalOpen && (
         <div
@@ -557,7 +695,7 @@ export const TableGrid: React.FC = () => {
               Toggle Columns
             </div>
             <div className="max-h-48 overflow-y-auto py-1 space-y-0.5">
-              {schemaInfo.columns.map((col) => {
+              {resolvedColumns.map((col) => {
                 const isVis = visibleColumns.has(col.name);
                 return (
                   <label
@@ -648,6 +786,7 @@ export const TableGrid: React.FC = () => {
             icon={<ArrowUpAZ className="w-3.5 h-3.5 text-sky-400" />}
             label={`Sort "${targetCol.name}" ASC`}
             onClick={() => {
+              setSortConfig({ col: targetCol.name, dir: 'asc' });
               setFilterOrderByText(`${targetCol.name} ASC`);
               showToast(`⚡ Sorted by ${targetCol.name} ASC`);
             }}
@@ -656,15 +795,17 @@ export const TableGrid: React.FC = () => {
             icon={<ArrowDownZA className="w-3.5 h-3.5 text-sky-400" />}
             label={`Sort "${targetCol.name}" DESC`}
             onClick={() => {
+              setSortConfig({ col: targetCol.name, dir: 'desc' });
               setFilterOrderByText(`${targetCol.name} DESC`);
               showToast(`⚡ Sorted by ${targetCol.name} DESC`);
             }}
           />
-          {filterOrderByText && (
+          {(filterOrderByText || sortConfig) && (
             <ContextMenuItem
               icon={<X className="w-3.5 h-3.5 text-slate-400" />}
               label="Clear Sort"
               onClick={() => {
+                setSortConfig(null);
                 setFilterOrderByText('');
                 showToast('Cleared sorting');
               }}

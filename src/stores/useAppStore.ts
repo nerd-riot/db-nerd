@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag } from '../types';
 import { STOCK_ITEMS_ROWS, WAREHOUSES_ROWS, getTablesForConnection } from '../data/schemas';
-import { executeRealQuery, getRealTables, getRealFunctions, testRealConnection } from '../services/dbService';
+import { closeRealConnection, executeRealQuery, getRealTables, getRealFunctions, testRealConnection } from '../services/dbService';
 import { heartbeatService } from '../services/heartbeatService';
 import { getThemeDefinition } from '../themes/themeRegistry';
 import { splitSqlStatements } from '../utils/sqlParser';
@@ -869,12 +869,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeSession: (connId) => {
-    const { openSessionIds, activeConnection, switchActiveConnection, showToast } = get();
+    const { openSessionIds, activeConnection, connections, sessions, switchActiveConnection, showToast } = get();
+    const targetConn = connections.find((c) => c.id === connId);
+    if (targetConn) {
+      closeRealConnection(targetConn);
+    }
+    const nextSessions = { ...sessions };
+    delete nextSessions[connId];
+
     const nextOpen = openSessionIds.filter((id) => id !== connId);
     if (nextOpen.length === 0) {
       set({
         openSessionIds: [],
+        sessions: nextSessions,
         tabs: [],
+        sqlTabStates: {},
         activeTabId: '',
         activeTab: 'default',
         isConnectionModalOpen: true,
@@ -885,7 +894,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (activeConnection.id === connId) {
       switchActiveConnection(nextOpen[0]);
     }
-    set({ openSessionIds: nextOpen });
+    set((state) => {
+      const updatedSessions = { ...state.sessions };
+      delete updatedSessions[connId];
+      return { openSessionIds: nextOpen, sessions: updatedSessions };
+    });
     showToast('Session disconnected');
   },
 
@@ -1334,11 +1347,11 @@ export const useAppStore = create<AppState>((set, get) => ({
               timestamp: `Today at ${new Date().toTimeString().slice(0, 8)}`,
               durationMs: duration,
               rowsAffected: res.rows_affected || (isSuccess ? rows.length : 0),
-              status: isSuccess ? 'success' : 'error',
+              status: (isSuccess ? 'success' : 'error') as 'success' | 'error',
               isFavorite: false,
             },
             ...state.history,
-          ],
+          ].slice(0, 200),
         }));
       } catch (err: any) {
         const errMsg = String(err?.message || err);
@@ -1587,18 +1600,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeTab: (id) => {
-    const { tabs, activeTabId, selectedTable } = get();
+    const { tabs, activeTabId, selectedTable, sqlTabStates } = get();
     const tabToClose = tabs.find((t) => t.id === id);
     if (tabToClose && tabToClose.canClose === false) return;
 
     const idx = tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
 
+    activeCancelledTabs.delete(id);
+    const nextSqlStates = { ...sqlTabStates };
+    delete nextSqlStates[id];
+
     const nextTabs = tabs.filter((t) => t.id !== id);
 
     if (nextTabs.length === 0) {
       set({
         tabs: [],
+        sqlTabStates: nextSqlStates,
         activeTabId: '',
         activeTab: 'default',
       });
@@ -1614,6 +1632,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextActiveTab = nextTabs.find((t) => t.id === nextActiveId);
     set({
       tabs: nextTabs,
+      sqlTabStates: nextSqlStates,
       activeTabId: nextActiveId,
       activeTab: nextActiveTab?.type || 'grid',
       selectedTable: nextActiveTab?.tableName || selectedTable,
@@ -1621,12 +1640,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeOtherTabs: (id) => {
-    const { tabs, selectedTable } = get();
+    const { tabs, selectedTable, sqlTabStates } = get();
     const target = tabs.find((t) => t.id === id);
     if (!target) return;
     const nextTabs = tabs.filter((t) => t.id === id || t.canClose === false);
+    const keptIds = new Set(nextTabs.map((t) => t.id));
+    const nextSqlStates: Record<string, SqlTabState> = {};
+    for (const [k, v] of Object.entries(sqlTabStates)) {
+      if (keptIds.has(k)) nextSqlStates[k] = v;
+    }
     set({
       tabs: nextTabs,
+      sqlTabStates: nextSqlStates,
       activeTabId: target.id,
       activeTab: target.type,
       selectedTable: target.tableName || selectedTable,
@@ -1634,10 +1659,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeTabsToRight: (id) => {
-    const { tabs, activeTabId, selectedTable } = get();
+    const { tabs, activeTabId, selectedTable, sqlTabStates } = get();
     const idx = tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
     const nextTabs = tabs.filter((t, i) => i <= idx || t.canClose === false);
+    const keptIds = new Set(nextTabs.map((t) => t.id));
+    const nextSqlStates: Record<string, SqlTabState> = {};
+    for (const [k, v] of Object.entries(sqlTabStates)) {
+      if (keptIds.has(k)) nextSqlStates[k] = v;
+    }
     let nextActiveId = activeTabId;
     if (!nextTabs.some((t) => t.id === activeTabId)) {
       nextActiveId = id;
@@ -1645,6 +1675,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextActive = nextTabs.find((t) => t.id === nextActiveId) || nextTabs[0];
     set({
       tabs: nextTabs,
+      sqlTabStates: nextSqlStates,
       activeTabId: nextActive ? nextActive.id : '',
       activeTab: nextActive ? nextActive.type : 'default',
       selectedTable: nextActive?.tableName || selectedTable,
@@ -1652,17 +1683,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeAllTabs: () => {
-    const { tabs } = get();
+    const { tabs, sqlTabStates } = get();
     const remaining = tabs.filter((t) => t.canClose === false);
+    const keptIds = new Set(remaining.map((t) => t.id));
+    const nextSqlStates: Record<string, SqlTabState> = {};
+    for (const [k, v] of Object.entries(sqlTabStates)) {
+      if (keptIds.has(k)) nextSqlStates[k] = v;
+    }
     if (remaining.length === 0) {
       set({
         tabs: [],
+        sqlTabStates: nextSqlStates,
         activeTabId: '',
         activeTab: 'default',
       });
     } else {
       set({
         tabs: remaining,
+        sqlTabStates: nextSqlStates,
         activeTabId: remaining[0].id,
         activeTab: remaining[0].type,
         selectedTable: remaining[0].tableName || get().selectedTable,
@@ -1788,10 +1826,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteConnectionGroup: (id) => {
-    set((state) => ({
-      connectionGroups: state.connectionGroups.filter((g) => g.id !== id),
-      connections: state.connections.filter((c) => c.groupId !== id),
-    }));
+    const state = get();
+    const removedConns = state.connections.filter((c) => c.groupId === id);
+    removedConns.forEach((c) => closeRealConnection(c));
+    const removedIds = new Set(removedConns.map((c) => c.id));
+
+    set((s) => {
+      const nextConnections = s.connections.filter((c) => c.groupId !== id);
+      const nextOpenSessionIds = s.openSessionIds.filter((sid) => !removedIds.has(sid));
+      const nextSessions = { ...s.sessions };
+      const nextLiveTables = { ...s.liveTables };
+      const nextLiveFunctions = { ...s.liveFunctions };
+      removedIds.forEach((rid) => {
+        delete nextSessions[rid];
+        delete nextLiveTables[rid];
+        delete nextLiveFunctions[rid];
+      });
+      let nextActive = s.activeConnection;
+      if (removedIds.has(s.activeConnection.id) && nextConnections.length > 0) {
+        nextActive = nextConnections[0];
+      }
+      return {
+        connectionGroups: s.connectionGroups.filter((g) => g.id !== id),
+        connections: nextConnections,
+        openSessionIds: nextOpenSessionIds,
+        sessions: nextSessions,
+        liveTables: nextLiveTables,
+        liveFunctions: nextLiveFunctions,
+        activeConnection: nextActive,
+      };
+    });
   },
 
   addConnection: (profile) => {
@@ -1812,13 +1876,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteConnection: (id) => {
+    const target = get().connections.find((c) => c.id === id);
+    if (target) {
+      closeRealConnection(target);
+    }
     set((state) => {
       const nextConnections = state.connections.filter((c) => c.id !== id);
+      const nextOpenSessionIds = state.openSessionIds.filter((sid) => sid !== id);
+      const nextSessions = { ...state.sessions };
+      const nextLiveTables = { ...state.liveTables };
+      const nextLiveFunctions = { ...state.liveFunctions };
+      delete nextSessions[id];
+      delete nextLiveTables[id];
+      delete nextLiveFunctions[id];
+
       let nextActive = state.activeConnection;
       if (state.activeConnection.id === id && nextConnections.length > 0) {
         nextActive = nextConnections[0];
       }
-      return { connections: nextConnections, activeConnection: nextActive };
+      return {
+        connections: nextConnections,
+        openSessionIds: nextOpenSessionIds,
+        sessions: nextSessions,
+        liveTables: nextLiveTables,
+        liveFunctions: nextLiveFunctions,
+        activeConnection: nextActive,
+      };
     });
   },
 
@@ -2240,11 +2323,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           timestamp: 'Just now',
           durationMs: 1.1,
           rowsAffected: 0,
-          status: 'success',
+          status: 'success' as const,
           isFavorite: false,
         },
         ...state.history,
-      ],
+      ].slice(0, 200),
     }));
     get().showToast(`⚡ Truncated table "${tableName}" (0 rows)`);
   },
@@ -2290,11 +2373,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             timestamp: 'Just now',
             durationMs: 1.8,
             rowsAffected: 0,
-            status: 'success',
+            status: 'success' as const,
             isFavorite: false,
           },
           ...state.history,
-        ],
+        ].slice(0, 200),
       };
     });
 
@@ -2321,7 +2404,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       originalRows: JSON.parse(JSON.stringify(targetRows)),
       pendingEditsCount: 0,
     });
-    // Asynchronously fetch live rows from Docker database
+    // Asynchronously fetch live rows from database
     get().reloadData(tbl);
   },
 
@@ -2367,13 +2450,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       errorMessage: item.errorMessage,
       isFavorite: false,
     };
-    set((s) => ({ history: [newItem, ...s.history] }));
+    set((s) => ({ history: [newItem, ...s.history].slice(0, 200) }));
   },
   clearHistory: () => {
     set({ history: [] });
   },
   reloadData: async (tableName?: string) => {
-    const { activeTabId, tabs, selectedTable, runSqlQuery, showToast, truncatedTables, activeConnection } = get();
+    const {
+      activeTabId,
+      tabs,
+      selectedTable,
+      runSqlQuery,
+      showToast,
+      truncatedTables,
+      activeConnection,
+      isFilterBarOpen,
+      filterWhereText,
+      filterOrderByText,
+    } = get();
     const activeTab = tabs.find((t) => t.id === activeTabId);
 
     set({ isReloading: true });
@@ -2388,13 +2482,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const quote = activeConnection.engine === 'mysql' ? '`' : '"';
-      const sql = activeConnection.engine === 'redis'
+      const baseSql = activeConnection.engine === 'redis'
         ? `KEYS *`
-        : `SELECT * FROM ${quote}${targetTable}${quote} LIMIT 100;`;
+        : `SELECT * FROM ${quote}${targetTable}${quote} LIMIT 500;`;
 
-      const res = await executeRealQuery(activeConnection, sql);
+      let sql = baseSql;
+      const hasCustomFilter = isFilterBarOpen && (Boolean(filterWhereText.trim()) || Boolean(filterOrderByText.trim()));
+      if (hasCustomFilter && activeConnection.engine !== 'redis') {
+        const whereClause = filterWhereText.trim() ? ` WHERE ${filterWhereText.trim()}` : '';
+        const orderClause = filterOrderByText.trim() ? ` ORDER BY ${filterOrderByText.trim()}` : '';
+        sql = `SELECT * FROM ${quote}${targetTable}${quote}${whereClause}${orderClause} LIMIT 500;`;
+      }
 
-      if (res.success && res.rows && res.rows.length > 0) {
+      let res = await executeRealQuery(activeConnection, sql);
+      // If custom filter referenced columns from a different table, fall back to base query
+      if (!res.success && hasCustomFilter && sql !== baseSql) {
+        res = await executeRealQuery(activeConnection, baseSql);
+      }
+
+      if (res.success && Array.isArray(res.rows) && res.rows.length > 0) {
         const liveRows: GridRow[] = res.rows.map((r, idx) => ({
           ...r,
           id: r.id !== undefined ? r.id : idx + 1,
@@ -2642,6 +2748,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         stock: 50,
         is_active: true,
       };
+    } else if (selectedTable !== 'user_orders' && rows.length > 0) {
+      const internalKeys = new Set(['id', 'isDirty', 'dirtyFields', 'rowState']);
+      const sample = rows[0];
+      for (const [k, v] of Object.entries(sample)) {
+        if (internalKeys.has(k)) continue;
+        if (typeof v === 'number') (template as any)[k] = 0;
+        else if (typeof v === 'boolean') (template as any)[k] = false;
+        else if (k.includes('date') || k.includes('_at') || k.includes('time')) (template as any)[k] = now;
+        else (template as any)[k] = '';
+      }
     } else {
       template = {
         user_id: 501,
@@ -2761,7 +2877,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingEditsCount: 0,
       isTransactionOpen: false,
       isSqlDiffModalOpen: false,
-      history: [newHistoryItem, ...history],
+      history: [newHistoryItem, ...history].slice(0, 200),
     });
 
     showToast(`✅ Successfully committed ${count} change(s)`);
@@ -2769,24 +2885,55 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   getPendingSQL: () => {
-    const { rows, selectedTable } = get();
+    const { rows, selectedTable, activeConnection } = get();
     const sqlStatements: string[] = [];
+    const isMysql = activeConnection?.engine === 'mysql';
+    const quote = isMysql ? '`' : '"';
+    const internalKeys = new Set(['isDirty', 'dirtyFields', 'rowState']);
+
+    const formatSqlValue = (val: any): string => {
+      if (val === null || val === undefined) return 'NULL';
+      if (typeof val === 'number') return Number.isFinite(val) ? String(val) : 'NULL';
+      if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+      if (typeof val === 'object') {
+        const jsonStr = JSON.stringify(val).replace(/'/g, "''");
+        return isMysql ? `'${jsonStr}'` : `'${jsonStr}'::jsonb`;
+      }
+      return `'${String(val).replace(/'/g, "''")}'`;
+    };
+
+    const resolvePrimaryKey = (row: GridRow): { col: string; val: any } => {
+      for (const candidate of ['id', 'version_id', 'ulid', 'sku', 'code']) {
+        if (candidate in row && (row as any)[candidate] !== undefined) {
+          return { col: candidate, val: (row as any)[candidate] };
+        }
+      }
+      const firstKey = Object.keys(row).find((k) => !internalKeys.has(k)) || 'id';
+      return { col: firstKey, val: (row as any)[firstKey] };
+    };
 
     rows.forEach((r) => {
       if (r.rowState === 'inserted') {
+        const dataKeys = Object.keys(r).filter((k) => !internalKeys.has(k) && (r as any)[k] !== undefined);
+        const colsList = dataKeys.map((k) => `${quote}${k}${quote}`).join(', ');
+        const valsList = dataKeys.map((k) => formatSqlValue((r as any)[k])).join(', ');
         sqlStatements.push(
-          `INSERT INTO ${selectedTable} (id, user_id, customer_name, product_sku, total_amount, status, created_at) VALUES (${r.id}, ${r.user_id}, '${r.customer_name}', '${r.product_sku}', ${r.total_amount}, '${r.status}', '${r.created_at}');`
+          `INSERT INTO ${quote}${selectedTable}${quote} (${colsList}) VALUES (${valsList});`
         );
       } else if (r.rowState === 'deleted') {
-        sqlStatements.push(`DELETE FROM ${selectedTable} WHERE id = ${r.id};`);
+        const pk = resolvePrimaryKey(r);
+        sqlStatements.push(
+          `DELETE FROM ${quote}${selectedTable}${quote} WHERE ${quote}${pk.col}${quote} = ${formatSqlValue(pk.val)};`
+        );
       } else if (r.dirtyFields && Object.keys(r.dirtyFields).length > 0) {
+        const pk = resolvePrimaryKey(r);
         const setClauses = Object.keys(r.dirtyFields).map((field) => {
           const val = (r as any)[field];
-          if (typeof val === 'number') return `${field} = ${val}`;
-          if (typeof val === 'object') return `${field} = '${JSON.stringify(val)}'::jsonb`;
-          return `${field} = '${String(val).replace(/'/g, "''")}'`;
+          return `${quote}${field}${quote} = ${formatSqlValue(val)}`;
         });
-        sqlStatements.push(`UPDATE ${selectedTable} SET ${setClauses.join(', ')} WHERE id = ${r.id};`);
+        sqlStatements.push(
+          `UPDATE ${quote}${selectedTable}${quote} SET ${setClauses.join(', ')} WHERE ${quote}${pk.col}${quote} = ${formatSqlValue(pk.val)};`
+        );
       }
     });
 

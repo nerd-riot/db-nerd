@@ -64,10 +64,7 @@ export const Titlebar = () => {
     });
     if (!approved) return;
 
-    const res = await commitTransaction();
-    if (res.count > 0) {
-      alert(`✅ Transaction Committed Successfully!\n\nExecuted ${res.count} change(s)! All locks released.`);
-    }
+    await commitTransaction();
   };
 
   const handleDiscard = () => {

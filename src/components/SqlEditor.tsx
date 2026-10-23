@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Play, 
   Sparkles, 
@@ -15,6 +15,8 @@ import {
   Zap, 
   ChevronDown, 
   ChevronUp, 
+  ChevronLeft,
+  ChevronRight,
   Maximize2, 
   Minimize2, 
   AlertCircle, 
@@ -155,6 +157,7 @@ export const SqlEditor: React.FC = () => {
     history,
     addHistoryItem,
     updateSqlTabResults,
+    setSelectedRowData,
   } = useAppStore();
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -172,6 +175,7 @@ export const SqlEditor: React.FC = () => {
   const [waitingSeconds, setWaitingSeconds] = useState(0);
   const [resultsSubTab, setResultsSubTab] = useState<'data' | 'message' | 'history' | 'chart'>('data');
   const [isApplyingDirect, setIsApplyingDirect] = useState(false);
+  const [sqlPage, setSqlPage] = useState(0);
 
   const runMenuRef = useRef<HTMLDivElement>(null);
   const limitMenuRef = useRef<HTMLDivElement>(null);
@@ -237,11 +241,12 @@ export const SqlEditor: React.FC = () => {
   const pendingEditsRef = useRef(pendingEdits);
   pendingEditsRef.current = pendingEdits;
 
-  // Reset cell edits on query tab switch or new result selection
+  // Reset cell edits and pagination on query tab switch or new result selection
   useEffect(() => {
     setPendingEdits({});
     setEditedRowOverrides({});
     setEditingCell(null);
+    setSqlPage(0);
   }, [activeTabId, tabState.activeResultId]);
 
   // Close dropdown menus when clicking outside or pressing Escape, and handle ⌘S for query edits
@@ -474,7 +479,7 @@ export const SqlEditor: React.FC = () => {
   const [contextMenuPos, setContextMenuPos] = useState<ContextMenuPosition | null>(null);
   const [contextMenuRows, setContextMenuRows] = useState<any[]>([]);
   const [editorContextPos, setEditorContextPos] = useState<ContextMenuPosition | null>(null);
-  const [selectedRowIds, setSelectedRowIds] = useState<Set<number>>(new Set([501]));
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string | number>>(new Set([501]));
   const [inspectingRow, setInspectingRow] = useState<any | null>(null);
   const [wrapText, setWrapText] = useState<boolean>(true);
   const [hasSelection, setHasSelection] = useState<boolean>(false);
@@ -841,21 +846,63 @@ export const SqlEditor: React.FC = () => {
     ? tabState.columns
     : Object.keys(rawResults[0] || {});
 
-  const modifiedResults = (rawResults || []).map((r, idx) => {
-    const rowId = r.id !== undefined ? r.id : `row-${idx}`;
-    const overrides = editedRowOverrides[rowId];
-    return overrides ? { ...r, ...overrides } : r;
-  });
+  const modifiedResults = useMemo(
+    () =>
+      (rawResults || []).map((r, idx) => {
+        const rowId = r.id !== undefined ? r.id : `row-${idx}`;
+        const overrides = editedRowOverrides[rowId];
+        return overrides ? { ...r, ...overrides } : r;
+      }),
+    [rawResults, editedRowOverrides]
+  );
 
-  const displayResults = searchFilter.trim()
-    ? modifiedResults.filter((r) =>
-        Object.values(r).some((v) =>
-          String(v).toLowerCase().includes(searchFilter.trim().toLowerCase())
-        )
-      )
-    : modifiedResults;
+  const displayResults = useMemo(() => {
+    const filter = searchFilter.trim().toLowerCase();
+    if (!filter) return modifiedResults;
+    return modifiedResults.filter((r) =>
+      Object.values(r).some((v) => v !== null && v !== undefined && String(v).toLowerCase().includes(filter))
+    );
+  }, [modifiedResults, searchFilter]);
 
   const results = displayResults;
+  const SQL_PAGE_SIZE = 200;
+  const totalSqlPages = Math.max(1, Math.ceil(results.length / SQL_PAGE_SIZE));
+  const safeSqlPage = Math.min(sqlPage, totalSqlPages - 1);
+  const paginatedSqlResults = useMemo(
+    () => results.slice(safeSqlPage * SQL_PAGE_SIZE, (safeSqlPage + 1) * SQL_PAGE_SIZE),
+    [results, safeSqlPage]
+  );
+
+  const colMetaMap = useMemo(() => {
+    const map: Record<string, { foundType?: string; isPk: boolean; sampleVal: any; colDef: ColumnDefinition }> = {};
+    for (const col of columns) {
+      const firstRowWithVal = results.find((r) => r[col] !== null && r[col] !== undefined);
+      const sampleVal = firstRowWithVal ? firstRowWithVal[col] : undefined;
+      let foundType: string | undefined;
+      let isPk = false;
+      for (const schema of Object.values(TABLE_SCHEMAS)) {
+        const match = schema.columns.find((c) => c.name === col);
+        if (match) {
+          foundType = match.type;
+          isPk = !!match.isPrimaryKey;
+          break;
+        }
+      }
+      map[col] = {
+        foundType,
+        isPk,
+        sampleVal,
+        colDef: {
+          name: col,
+          type: foundType || inferColumnType(sampleVal, col),
+          isPrimaryKey: isPk || col.toLowerCase() === 'id' || col.toLowerCase().endsWith('_id'),
+          isNullable: true,
+        },
+      };
+    }
+    return map;
+  }, [columns, results]);
+
   const activeDuration = activeResultItem ? activeResultItem.durationMs : tabState.durationMs;
   const activeError = activeResultItem ? activeResultItem.error : tabState.error;
   const isErrorResult = Boolean(
@@ -1379,19 +1426,7 @@ export const SqlEditor: React.FC = () => {
                       <th className="w-12 p-2 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold">#</th>
                       {columns.map((col) => {
                         const isErrorCol = col.toLowerCase() === 'error';
-                        const firstRowWithVal = results.find((r) => r[col] !== null && r[col] !== undefined);
-                        const sampleVal = firstRowWithVal ? firstRowWithVal[col] : undefined;
-
-                        let foundType: string | undefined;
-                        let isPk = false;
-                        for (const schema of Object.values(TABLE_SCHEMAS)) {
-                          const match = schema.columns.find((c) => c.name === col);
-                          if (match) {
-                            foundType = match.type;
-                            isPk = !!match.isPrimaryKey;
-                            break;
-                          }
-                        }
+                        const meta = colMetaMap[col];
 
                         return (
                           <th key={col} className={`p-2 border-r border-slate-300 dark:border-slate-800/80 font-semibold min-w-[120px] ${
@@ -1401,10 +1436,10 @@ export const SqlEditor: React.FC = () => {
                               {isErrorCol ? (
                                 <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                               ) : (
-                                <ColumnTypeIcon type={foundType} sampleValue={sampleVal} />
+                                <ColumnTypeIcon type={meta?.foundType} sampleValue={meta?.sampleVal} />
                               )}
                               <span className={`font-semibold truncate ${isErrorCol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>{col}</span>
-                              {isPk && (
+                              {meta?.isPk && (
                                 <span title="Primary Key" className="inline-flex items-center ml-0.5">
                                   <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
                                 </span>
@@ -1423,9 +1458,10 @@ export const SqlEditor: React.FC = () => {
                         </td>
                       </tr>
                     ) : (
-                      results.map((r, index) => {
+                      paginatedSqlResults.map((r, pageIdx) => {
+                        const index = safeSqlPage * SQL_PAGE_SIZE + pageIdx;
                         const rowId = r.id !== undefined ? r.id : `row-${index}`;
-                        const isSelected = selectedRowIds.has(r.id);
+                        const isSelected = selectedRowIds.has(rowId);
                         const isEven = index % 2 === 0;
 
                         return (
@@ -1434,17 +1470,19 @@ export const SqlEditor: React.FC = () => {
                             onClick={(e) => {
                               if (e.metaKey || e.ctrlKey) {
                                 const next = new Set(selectedRowIds);
-                                if (next.has(r.id)) next.delete(r.id);
-                                else next.add(r.id);
+                                if (next.has(rowId)) next.delete(rowId);
+                                else next.add(rowId);
                                 setSelectedRowIds(next);
                               } else {
-                                setSelectedRowIds(new Set([r.id]));
+                                setSelectedRowIds(new Set([rowId]));
                               }
+                              setSelectedRowData(r);
                             }}
                             onContextMenu={(e) => {
                               e.preventDefault();
                               setContextMenuRows([r]);
                               setSelectedRowIds(new Set([rowId]));
+                              setSelectedRowData(r);
                               setContextMenuPos({ x: e.clientX, y: e.clientY });
                             }}
                             className={`cursor-pointer transition-colors ${
@@ -1466,14 +1504,13 @@ export const SqlEditor: React.FC = () => {
                               const isErrorCol = col.toLowerCase() === 'error';
                               const shouldWrap = wrapText || isErrorCol;
 
-                              const colDef: ColumnDefinition = {
-                                name: col,
-                                type: inferColumnType(val, col),
-                                isPrimaryKey: col.toLowerCase() === 'id' || col.toLowerCase().endsWith('_id'),
-                                isNullable: true,
-                              };
-
                               if (isEditing) {
+                                const colDef = colMetaMap[col]?.colDef || {
+                                  name: col,
+                                  type: inferColumnType(val, col),
+                                  isPrimaryKey: col.toLowerCase() === 'id',
+                                  isNullable: true,
+                                };
                                 return (
                                   <td
                                     key={col}
@@ -1663,8 +1700,31 @@ export const SqlEditor: React.FC = () => {
               )}
             </div>
 
-            {/* Right: Pin, Search, Export..., Wrap, Split controls */}
+            {/* Right: Pagination, Pin, Search, Export..., Wrap, Split controls */}
             <div className="flex items-center space-x-2 text-xs">
+              {totalSqlPages > 1 && resultsSubTab === 'data' && (
+                <div className="flex items-center space-x-0.5 pr-1 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                  <button
+                    onClick={() => setSqlPage((p) => Math.max(0, p - 1))}
+                    disabled={safeSqlPage <= 0}
+                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+                    title="Previous 200 rows"
+                  >
+                    <ChevronLeft className="w-3 h-3" />
+                  </button>
+                  <span>
+                    {safeSqlPage + 1}/{totalSqlPages}
+                  </span>
+                  <button
+                    onClick={() => setSqlPage((p) => Math.min(totalSqlPages - 1, p + 1))}
+                    disabled={safeSqlPage >= totalSqlPages - 1}
+                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+                    title="Next 200 rows"
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
               {/* Pin Tab Button */}
               <button
                 onClick={() => {

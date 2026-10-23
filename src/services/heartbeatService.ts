@@ -93,7 +93,10 @@ class HeartbeatService {
 
     const store = useAppStore.getState();
     const activeConn = store.activeConnection;
-    if (!activeConn) return false;
+    if (!activeConn || store.openSessionIds.length === 0 || !store.openSessionIds.includes(activeConn.id)) {
+      this.scheduleNext(30000);
+      return false;
+    }
 
     // Piggyback check: If real query ran < 30s ago and status is connected, skip ping!
     const elapsedSinceActivity = Date.now() - this.lastActivityTimestamp;

@@ -193,17 +193,24 @@ export function App() {
       }
       // ⌘H: Query History
       if ((e.metaKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
+        const activeTab = useAppStore.getState().tabs.find((t) => t.id === useAppStore.getState().activeTabId);
+        if (activeTab?.type === 'sql') {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         setHistoryModalOpen(true);
       }
       // ⌘S: Commit Transaction
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        const state = useAppStore.getState();
+        const activeTab = state.tabs.find((t) => t.id === state.activeTabId);
+        if (activeTab?.type === 'sql' && state.pendingEditsCount === 0) {
+          return;
+        }
         e.preventDefault();
-        if (useAppStore.getState().pendingEditsCount > 0) {
-          commitTransaction().then((res) => {
-            alert(`✅ Transaction Committed Successfully!\n\nExecuted ${res.count} change(s)! All locks released.`);
-          });
+        if (state.pendingEditsCount > 0) {
+          commitTransaction();
         }
       }
       // ⌘Z: Rollback Transaction (when not in input/textarea)
@@ -477,10 +484,7 @@ export function App() {
               </button>
               <button
                 onClick={async () => {
-                  const res = await commitTransaction();
-                  if (res.count > 0) {
-                    alert(`✅ Transaction Committed!\n\nExecuted ${res.count} change(s).`);
-                  }
+                  await commitTransaction();
                 }}
                 className="h-6 px-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold rounded text-[11px] flex items-center space-x-1.5 shadow-sm transition-all active:scale-95 leading-none cursor-pointer"
               >

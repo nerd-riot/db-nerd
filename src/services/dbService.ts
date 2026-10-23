@@ -113,6 +113,17 @@ export async function testRealConnection(profile: ConnectionProfile): Promise<Re
   };
 }
 
+export async function closeRealConnection(profile: ConnectionProfile): Promise<void> {
+  const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+  if (!isTauri) return;
+  try {
+    const config = profileToConfig(profile);
+    await invoke('close_connection', { config });
+  } catch {
+    // Ignore close errors
+  }
+}
+
 export async function executeRealQuery(profile: ConnectionProfile, query: string): Promise<RealQueryResult> {
   try {
     const config = profileToConfig(profile);

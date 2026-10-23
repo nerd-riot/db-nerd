@@ -41,6 +41,7 @@ rust_decimal = "1.36"
 redis = { version = "0.27", default-features = false, features = ["tokio-comp", "aio"] }
 
 async-trait = "0.1"
+futures-util = "0.3"
 thiserror = "2.0"
 anyhow = "1.0"
 
