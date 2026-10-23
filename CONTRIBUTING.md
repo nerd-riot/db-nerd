@@ -21,10 +21,10 @@ Thank you for contributing to **DB Nerd**! We follow **Trunk-Based Development (
 
 ## 🛡️ 2. Repository Permissions & Access Rules
 
-| Role | Push to `main` | Open PRs | Code Review & Approval | Automated Releases |
-| :--- | :---: | :---: | :---: | :---: |
-| **Owner / Admin** (`@khoa-nguyen`) | ✅ **Direct Push & Pull** | ✅ Allowed | ✅ Exclusive Authority | ✅ Full Access |
-| **Contributors** | ❌ **Forbidden** | ✅ **Required** | ❌ Requires Owner Review | ❌ Handled via `main` |
+| Role | Push to `main` | Open PRs | Code Review & Approval | Merge Authority | Automated Releases |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Owner / Admin** (`@khoa-nguyen`) | ✅ **Direct Push & Pull** | ✅ Allowed | ✅ Exclusive Authority | ✅ Full Access | ✅ Full Access |
+| **Contributors** | ❌ **Forbidden** | ✅ **Required** | ❌ Requires Owner Approval | ✅ **Self-Merge** (after Approval & Green CI) | ❌ Handled via `main` |
 
 ### For Contributors:
 1. Clone or fork the repository.
@@ -39,8 +39,13 @@ Thank you for contributing to **DB Nerd**! We follow **Trunk-Based Development (
    git commit -m "feat(ui): add new filter operator"
    ```
 4. Push your branch and open a **Pull Request (PR)** targeting `main`.
-5. Automated CI will compile and typecheck your code (`tsc && vite build`).
-6. The repository owner will review, approve, and merge your PR into `main`.
+5. **Automated CI**: CI verifies your code in parallel:
+   - **Frontend**: `pnpm run lint` (`tsc --noEmit`) & `pnpm run build`
+   - **Backend**: `cargo clippy -- -D warnings` & `cargo check`
+   - Gate status: **Full CI Green**
+6. **Owner Approval**: The repository owner (`@khoa-nguyen`) reviews and approves the PR.
+7. **Contributor Self-Merge**: Once the owner has approved and **Full CI Green** has passed, the contributor has full permission to merge their PR.
+8. **Default Merge Method**: Always use **Squash and merge** into `main` to maintain a clean, linear git history with 1 atomic Conventional Commit per PR.
 
 ---
 

@@ -70,10 +70,11 @@ fn find_candidate_ssh_keys(raw_path: Option<&str>, context_hint: &str) -> Vec<Pa
                         }
                     } else if path.is_file() {
                         let name = entry.file_name().to_string_lossy().to_string();
-                        if (name.starts_with("id_") || name.ends_with(".pem")) && !name.ends_with(".pub") {
-                            if !candidates.contains(&path) {
-                                candidates.push(path);
-                            }
+                        if (name.starts_with("id_") || name.ends_with(".pem"))
+                            && !name.ends_with(".pub")
+                            && !candidates.contains(&path)
+                        {
+                            candidates.push(path);
                         }
                     }
                 }

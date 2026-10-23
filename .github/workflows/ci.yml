@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Build & Typecheck Verification
+  frontend:
+    name: Frontend Lint & Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -39,5 +39,63 @@ jobs:
       - name: 📥 Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: 🔍 TypeScript Compile & Vite Build
+      - name: 🔍 Frontend Lint & Typecheck
+        run: pnpm run lint
+
+      - name: 🏗️ Frontend Build
         run: pnpm run build
+
+  backend:
+    name: Backend Rust Check & Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐧 Install Linux system dependencies (Tauri v2)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: 🦀 Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: ⚡ Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: 🔍 Cargo Clippy (Lint)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+      - name: 🏗️ Cargo Check (Compile verification)
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  ci-gate:
+    name: Full CI Green
+    needs: [frontend, backend]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Verify all CI checks passed
+        run: |
+          if [ "${{ needs.frontend.result }}" != "success" ] || [ "${{ needs.backend.result }}" != "success" ]; then
+            echo "❌ CI validation failed: one or more jobs did not succeed."
+            echo "Frontend: ${{ needs.frontend.result }}"
+            echo "Backend:  ${{ needs.backend.result }}"
+            exit 1
+          fi
+          echo "✅ Full CI Green! All lint and build checks passed."
