@@ -1145,6 +1145,19 @@ export const ConnectionModal = () => {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[410px] overflow-y-auto pr-1">
                     {filteredConnectors.map((item) => {
                       const isSelected = formData.engine === item.id;
+                      const isNativeDriver = [
+                        'postgres',
+                        'mysql',
+                        'mariadb',
+                        'sqlite',
+                        'redis',
+                        'cockroach',
+                        'redshift',
+                        'greenplum',
+                        'vertica',
+                        'libsql',
+                        'duckdb',
+                      ].includes(item.id);
                       return (
                         <button
                           key={item.id}
@@ -1161,9 +1174,20 @@ export const ConnectionModal = () => {
                         >
                           <div className="flex items-center justify-between w-full mb-2">
                             <ConnectorIcon engine={item.id} size="md" className="group-hover/card:scale-105 transition-transform" />
-                            <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                              {item.tag}
-                            </span>
+                            <div className="flex items-center space-x-1">
+                              <span
+                                className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold border ${
+                                  isNativeDriver
+                                    ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
+                                    : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
+                                }`}
+                              >
+                                {isNativeDriver ? 'Native' : 'Preview'}
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                {item.tag}
+                              </span>
+                            </div>
                           </div>
                           <span className="text-xs font-bold line-clamp-1 leading-snug group-hover/card:text-sky-600 dark:group-hover/card:text-sky-400 transition-colors">
                             {item.label}

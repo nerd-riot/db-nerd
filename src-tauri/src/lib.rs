@@ -1,3 +1,5 @@
+pub mod drivers;
+
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -54,7 +56,7 @@ pub struct TableSummary {
 #[tauri::command]
 async fn test_connection(config: DbConfig) -> Result<TestConnectionResult, String> {
     let start = Instant::now();
-    match config.engine.as_str() {
+    match drivers::normalize_engine(&config.engine) {
         "postgres" => {
             let user = config.username.unwrap_or_else(|| "postgres".to_string());
             let pass = config.password.unwrap_or_default();
@@ -121,13 +123,19 @@ async fn test_connection(config: DbConfig) -> Result<TestConnectionResult, Strin
                 Ok(client) => match client.get_multiplexed_tokio_connection().await {
                     Ok(mut con) => {
                         let pong: Result<String, _> = redis::cmd("PING").query_async(&mut con).await;
+                        let info: Result<String, _> =
+                            redis::cmd("INFO").arg("server").query_async(&mut con).await;
+                        let version = info
+                            .ok()
+                            .and_then(|s| drivers::extract_redis_version(&s))
+                            .or_else(|| Some("Redis".into()));
                         let latency = start.elapsed().as_secs_f64() * 1000.0;
                         match pong {
                             Ok(_) => Ok(TestConnectionResult {
                                 success: true,
                                 message: "Successfully connected to Redis!".into(),
                                 latency_ms: (latency * 10.0).round() / 10.0,
-                                version: Some("Redis 7.x".into()),
+                                version,
                             }),
                             Err(e) => Ok(TestConnectionResult {
                                 success: false,
@@ -152,6 +160,7 @@ async fn test_connection(config: DbConfig) -> Result<TestConnectionResult, Strin
                 }),
             }
         }
+        "sqlite" => drivers::test_sqlite(&config, start).await,
         _ => Err(format!("Unsupported database engine: {}", config.engine)),
     }
 }
@@ -161,7 +170,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
     let start = Instant::now();
     let q_trimmed = query.trim();
 
-    match config.engine.as_str() {
+    match drivers::normalize_engine(&config.engine) {
         "postgres" => {
             let user = config.username.unwrap_or_else(|| "postgres".to_string());
             let pass = config.password.unwrap_or_default();
@@ -174,12 +183,8 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 .await
                 .map_err(|e| format!("Connection error: {}", e))?;
 
-            // Check if query produces rows
-            if q_trimmed.to_uppercase().starts_with("SELECT")
-                || q_trimmed.to_uppercase().starts_with("SHOW")
-                || q_trimmed.to_uppercase().starts_with("EXPLAIN")
-                || q_trimmed.to_uppercase().starts_with("WITH")
-            {
+            // Check if query produces rows (including RETURNING, PRAGMA, VALUES, TABLE)
+            if drivers::query_returns_rows(q_trimmed) {
                 use sqlx::{Column, Row, TypeInfo};
                 let rows = sqlx::query(&query)
                     .fetch_all(&pool)
@@ -314,11 +319,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 .await
                 .map_err(|e| format!("MySQL connection error: {}", e))?;
 
-            if q_trimmed.to_uppercase().starts_with("SELECT")
-                || q_trimmed.to_uppercase().starts_with("SHOW")
-                || q_trimmed.to_uppercase().starts_with("EXPLAIN")
-                || q_trimmed.to_uppercase().starts_with("DESC")
-            {
+            if drivers::query_returns_rows(q_trimmed) {
                 use sqlx::{Column, Row};
                 let rows = sqlx::query(&query)
                     .fetch_all(&pool)
@@ -408,7 +409,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 .await
                 .map_err(|e| format!("Redis connection error: {}", e))?;
 
-            let parts: Vec<&str> = q_trimmed.split_whitespace().collect();
+            let parts = drivers::parse_redis_command(q_trimmed);
             if parts.is_empty() {
                 return Err("Empty Redis command".into());
             }
@@ -416,7 +417,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
             let cmd_name = parts[0].to_uppercase();
             let mut cmd = redis::cmd(&cmd_name);
             for arg in &parts[1..] {
-                cmd.arg(*arg);
+                cmd.arg(arg);
             }
 
             let val: redis::Value = cmd
@@ -496,13 +497,14 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 }),
             }
         }
+        "sqlite" => drivers::execute_sqlite_query(&config, q_trimmed, start).await,
         _ => Err(format!("Unsupported database engine: {}", config.engine)),
     }
 }
 
 #[tauri::command]
 async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
-    match config.engine.as_str() {
+    match drivers::normalize_engine(&config.engine) {
         "postgres" => {
             let res = execute_query(
                 config,
@@ -540,18 +542,39 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
             Ok(tables)
         }
         "redis" => {
-            let res = execute_query(config, "KEYS *".into()).await?;
+            let url = if let Some(pass) = config.password.filter(|p| !p.is_empty()) {
+                format!("redis://:{}@{}:{}", pass, config.host, config.port)
+            } else {
+                format!("redis://{}:{}", config.host, config.port)
+            };
+            let client = redis::Client::open(url).map_err(|e| format!("Redis URL error: {}", e))?;
+            let mut con = client
+                .get_multiplexed_tokio_connection()
+                .await
+                .map_err(|e| format!("Redis connection error: {}", e))?;
+
+            let scan_res: Result<(u64, Vec<String>), _> = redis::cmd("SCAN")
+                .arg(0)
+                .arg("MATCH")
+                .arg("*")
+                .arg("COUNT")
+                .arg(100)
+                .query_async(&mut con)
+                .await;
+
             let mut tables = Vec::new();
-            for r in res.rows {
-                if let Some(val) = r.get("value").and_then(|v| v.as_str()) {
+            if let Ok((_, mut keys)) = scan_res {
+                keys.sort();
+                for k in keys {
                     tables.push(TableSummary {
-                        name: val.to_string(),
+                        name: k,
                         count: "key".into(),
                     });
                 }
             }
             Ok(tables)
         }
+        "sqlite" => drivers::get_sqlite_tables(config).await,
         _ => Ok(Vec::new()),
     }
 }
