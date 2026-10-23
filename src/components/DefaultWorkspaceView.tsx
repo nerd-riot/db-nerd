@@ -24,13 +24,13 @@ export const DefaultWorkspaceView: React.FC = () => {
     triggerConnectingAnimation,
   } = useAppStore();
 
-  const hasNoSessions = openSessionIds.length === 0;
+  const hasNoSessions = openSessionIds.length === 0 || !activeConnection?.id;
 
   const [imgError, setImgError] = React.useState(false);
 
-  const isPostgres = activeConnection.engine === 'postgres';
-  const isMysql = activeConnection.engine === 'mysql';
-  const isRedis = activeConnection.engine === 'redis';
+  const isPostgres = activeConnection?.engine === 'postgres';
+  const isMysql = activeConnection?.engine === 'mysql';
+  const isRedis = activeConnection?.engine === 'redis';
 
   const engineName = isPostgres
     ? 'PostgreSQL 16.15'
@@ -90,16 +90,16 @@ export const DefaultWorkspaceView: React.FC = () => {
               />
             ) : (
               <div className="relative z-1 w-full h-full flex flex-col items-center justify-center rounded-2xl bg-slate-100/80 dark:bg-slate-800/50">
-                <ConnectorIcon engine={activeConnection.engine} size="xl" className="w-20 h-20" />
+                <ConnectorIcon engine={activeConnection?.engine || 'postgres'} size="xl" className="w-20 h-20" />
               </div>
             )}
           </div>
 
           {/* Engine Badge */}
           <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 bg-slate-900 border border-slate-700/80 rounded-full flex items-center space-x-1.5 shadow-md z-10">
-            <HeartbeatDot color={isConnecting ? 'amber' : 'green'} size="xs" showWave={true} />
+            <HeartbeatDot color={hasNoSessions ? 'slate' : isConnecting ? 'amber' : 'green'} size="xs" showWave={!hasNoSessions} />
             <span className="text-[10px] font-mono font-bold text-slate-200 uppercase tracking-wider">
-              {activeConnection.engine}
+              {hasNoSessions ? 'STANDBY' : activeConnection.engine}
             </span>
           </div>
         </div>
@@ -108,7 +108,7 @@ export const DefaultWorkspaceView: React.FC = () => {
         <div className="space-y-1.5 pt-1">
           <div className="flex items-center justify-center space-x-2">
             <h1 className="text-base font-bold text-slate-800 dark:text-slate-100 font-mono tracking-tight">
-              {hasNoSessions ? 'No Connection Open' : (activeConnection.database || 'postgres')}
+              {hasNoSessions ? 'No Connection Open' : (activeConnection.database || 'default')}
             </h1>
             {!hasNoSessions && (
               <>
@@ -140,7 +140,7 @@ export const DefaultWorkspaceView: React.FC = () => {
 
         {/* Quick Action Tiles */}
         {hasNoSessions ? (
-          <div className="w-full max-w-md">
+          <div className="w-full max-w-md space-y-3">
             <button
               onClick={() => setConnectionModalOpen(true)}
               className="w-full p-4 rounded-xl bg-sky-50 dark:bg-sky-500/15 hover:bg-sky-100 dark:hover:bg-sky-500/25 border border-sky-300 dark:border-sky-500/40 flex items-center justify-between transition-all duration-150 cursor-pointer group shadow-sm text-left active:scale-[0.98]"
@@ -151,11 +151,44 @@ export const DefaultWorkspaceView: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-xs font-bold text-sky-950 dark:text-white block">Open Connection Manager</span>
-                  <span className="text-[11px] text-sky-700 dark:text-sky-300">Choose a database profile or configure a new connection</span>
+                  <span className="text-[11px] text-sky-700 dark:text-sky-300">Choose a database connector or import from URL / files</span>
                 </div>
               </div>
               <kbd className="px-2 py-1 text-xs font-mono bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-300 border border-sky-200 dark:border-sky-700 rounded-md font-bold shadow-2xs">⌘K</kbd>
             </button>
+
+            {/* Educational Quick Start Chips */}
+            <div className="grid grid-cols-3 gap-2 text-left">
+              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1 shadow-2xs">
+                <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1">
+                  <span>🔌</span>
+                  <span>22 Engines</span>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                  Postgres, MySQL, Redis, Snowflake, and more.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1 shadow-2xs">
+                <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1">
+                  <span>🔗</span>
+                  <span>URL Import</span>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                  Paste connection string for instant connection.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1 shadow-2xs">
+                <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1">
+                  <span>📁</span>
+                  <span>1-Click Sync</span>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                  Import from TablePlus or DBeaver configs.
+                </p>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 w-full max-w-md">

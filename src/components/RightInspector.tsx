@@ -154,7 +154,9 @@ export const RightInspector: React.FC = () => {
           )}
 
           <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
-            {isSqlTab
+            {!activeConnection?.id
+              ? 'Inspector'
+              : isSqlTab
               ? (sqlInspectorTab === 'table' && selectedTable ? `Table: ${selectedTable}` : 'Query Inspector')
               : isStatsTab
               ? 'Instance Telemetry'
@@ -202,8 +204,8 @@ export const RightInspector: React.FC = () => {
         </div>
       </div>
 
-      {/* Search Input Bar (Shown in Data Mode & Structure Mode) */}
-      {(isDataMode || isStructureMode) && (
+      {/* Search Input Bar (Shown in Data Mode & Structure Mode when database is active and table/row selected) */}
+      {activeConnection?.id && (selectedRowData || selectedTable || isStructureMode) && (isDataMode || isStructureMode) && (
         <div className="p-2 border-b border-slate-300 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-950/60 flex-shrink-0">
           <div className="relative">
             <input
@@ -221,8 +223,61 @@ export const RightInspector: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 font-mono text-[11px]">
         {/* ========================================================================= */}
-        {/* CASE 1: DATA TAB - ROW INSPECTOR (TablePlus style with expand/collapse) */}
+        {/* CASE 0A: ONBOARDING STATE - NO ACTIVE CONNECTION */}
         {/* ========================================================================= */}
+        {!activeConnection?.id ? (
+          <div className="h-full flex flex-col items-center justify-center p-4 text-center text-slate-500 font-sans select-none">
+            <div className="w-12 h-12 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/50 flex items-center justify-center mb-3">
+              <Database className="w-6 h-6 text-sky-500" />
+            </div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 mb-1">
+              No Database Active
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-4 leading-relaxed max-w-[240px]">
+              Connect to a database via <strong>⌘K</strong> to inspect schemas, live telemetry, and records in real time.
+            </p>
+
+            <div className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-left space-y-2 text-[11px]">
+              <div className="font-semibold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <span>Inspector Capabilities</span>
+              </div>
+              <ul className="space-y-1.5 text-slate-500 dark:text-slate-400">
+                <li className="flex items-start space-x-1.5">
+                  <span className="text-sky-500 font-bold">•</span>
+                  <span><strong>Row Inspector:</strong> Expand, edit, and copy JSON or long text attributes</span>
+                </li>
+                <li className="flex items-start space-x-1.5">
+                  <span className="text-emerald-500 font-bold">•</span>
+                  <span><strong>Live Telemetry:</strong> Track physical disk footprint, index sizes, and row estimations</span>
+                </li>
+                <li className="flex items-start space-x-1.5">
+                  <span className="text-purple-500 font-bold">•</span>
+                  <span><strong>Query Profiler:</strong> Inspect query explain plans, cache hits, and execution timings</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        ) : !selectedTable && !activeTabObj ? (
+          /* ========================================================================= */
+          /* CASE 0B: ONBOARDING STATE - NO TABLE OR TAB SELECTED */
+          /* ========================================================================= */
+          <div className="h-full flex flex-col items-center justify-center p-4 text-center text-slate-500 font-sans select-none">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center mb-2.5">
+              <Info className="w-5 h-5 text-slate-400" />
+            </div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 mb-1">
+              No Table Selected
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed max-w-[220px]">
+              Select a table from the sidebar to inspect its columns, keys, and row telemetry.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* ========================================================================= */}
+            {/* CASE 1: DATA TAB - ROW INSPECTOR (TablePlus style with expand/collapse) */}
+            {/* ========================================================================= */}
         {isDataMode && selectedRowData && (
           <div className="space-y-3">
             <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800/80">
@@ -783,6 +838,8 @@ export const RightInspector: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </aside>

@@ -608,12 +608,30 @@ export const getTablesForConnection = (connName: string, engine: string = 'postg
   ];
 };
 
+export const EMPTY_TABLE_SCHEMA: TableSchemaInfo = {
+  tableName: '',
+  schema: '',
+  engine: '',
+  rowCount: '0 rows',
+  totalSize: '0 KB',
+  columns: [],
+  indexes: [],
+  foreignKeys: [],
+  ddl: '',
+};
+
 export const getTableSchema = (tableName: string): TableSchemaInfo => {
-  const safeName = tableName || 'users';
+  if (!tableName || !tableName.trim()) {
+    return EMPTY_TABLE_SCHEMA;
+  }
+  const safeName = tableName.trim();
   try {
     const store = typeof window !== 'undefined' ? (window as any).__APP_STORE__?.getState?.() : null;
     if (store) {
       const connId = store.activeConnection?.id;
+      if (!connId) {
+        return EMPTY_TABLE_SCHEMA;
+      }
       const engine = store.activeConnection?.engine || 'postgres';
       const liveSchema: TableSchemaInfo | undefined = connId ? store.liveSchemas?.[connId]?.[safeName] : undefined;
       const liveSummary = connId
@@ -710,7 +728,7 @@ export const getTableSchema = (tableName: string): TableSchemaInfo => {
   } catch {
     // Fallback to static dictionary
   }
-  return TABLE_SCHEMAS[safeName] || TABLE_SCHEMAS.user_orders;
+  return TABLE_SCHEMAS[safeName] || EMPTY_TABLE_SCHEMA;
 };
 
 export const getFunctionsForConnection = (_connName?: string, engine: string = 'postgres'): FunctionItem[] => {

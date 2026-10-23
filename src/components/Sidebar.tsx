@@ -75,6 +75,7 @@ export const Sidebar = () => {
     openAllFunctionsTab,
     openNewQueryTab,
     activeConnection,
+    setConnectionModalOpen,
     setDatabaseModalOpen,
     history,
     showToast,
@@ -109,26 +110,33 @@ export const Sidebar = () => {
   const [targetQuery, setTargetQuery] = useState<{ id: string; title?: string; sql: string } | null>(null);
 
   useEffect(() => {
-    fetchLiveTables(activeConnection);
-    fetchLiveFunctions(activeConnection);
-  }, [activeConnection.id, activeConnection.database]);
+    if (activeConnection?.id) {
+      fetchLiveTables(activeConnection);
+      fetchLiveFunctions(activeConnection);
+    }
+  }, [activeConnection?.id, activeConnection?.database]);
 
-  const deletedForConn = deletedTables[activeConnection.id] || [];
-  const liveForConn = liveTables[activeConnection.id];
-  const connectionTables = (liveForConn && liveForConn.length > 0
-    ? liveForConn
-    : getTablesForConnection(activeConnection.name, activeConnection.engine)
+  const deletedForConn = deletedTables[activeConnection?.id || ''] || [];
+  const liveForConn = activeConnection?.id ? liveTables[activeConnection.id] : undefined;
+  const connectionTables = (!activeConnection?.id
+    ? []
+    : (liveForConn && liveForConn.length > 0
+        ? liveForConn
+        : getTablesForConnection(activeConnection.name, activeConnection.engine)
+      )
   ).filter((t) => !deletedForConn.includes(t.name));
 
   const filteredTables = connectionTables.filter((t) =>
     t.name.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  const liveFuncsForConn = liveFunctions[activeConnection.id];
-  const connectionFunctions = (liveFuncsForConn && liveFuncsForConn.length > 0
-    ? liveFuncsForConn
-    : getFunctionsForConnection(activeConnection.name, activeConnection.engine)
-  );
+  const liveFuncsForConn = activeConnection?.id ? liveFunctions[activeConnection.id] : undefined;
+  const connectionFunctions = !activeConnection?.id
+    ? []
+    : (liveFuncsForConn && liveFuncsForConn.length > 0
+        ? liveFuncsForConn
+        : getFunctionsForConnection(activeConnection.name, activeConnection.engine)
+      );
 
   const filteredFunctions = connectionFunctions.filter((f) =>
     f.name.toLowerCase().includes(searchFilter.toLowerCase())
@@ -229,6 +237,40 @@ export const Sidebar = () => {
         
         {/* Tab 1: Database Items (Functions & Tables) */}
         {sidebarTab === 'items' && (
+          !activeConnection?.id ? (
+            <div className="p-4 mx-1 my-3 rounded-xl bg-gradient-to-b from-sky-50/80 to-white dark:from-slate-900/80 dark:to-slate-950/80 border border-sky-200/80 dark:border-sky-500/20 shadow-sm space-y-3 text-center animate-in fade-in duration-200">
+              <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-400 mx-auto flex items-center justify-center shadow-2xs">
+                <Database className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">No Connection Active</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Connect to a database to inspect tables, browse live data, and run queries.
+                </p>
+              </div>
+              <button
+                onClick={() => setConnectionModalOpen(true)}
+                className="w-full py-2 px-3 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white font-semibold rounded-lg text-xs transition cursor-pointer shadow-sm flex items-center justify-center space-x-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Connection (⌘K)</span>
+              </button>
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 text-left space-y-2 text-[10px] text-slate-500 dark:text-slate-400">
+                <div className="flex items-start space-x-1.5">
+                  <span className="text-amber-500 shrink-0">💡</span>
+                  <span><strong>Import tools:</strong> Drag &amp; drop TablePlus, DBeaver, or pgAdmin exports to connect instantly.</span>
+                </div>
+                <div className="flex items-start space-x-1.5">
+                  <span className="text-sky-500 shrink-0">⚡</span>
+                  <span><strong>Shortcut:</strong> Press <kbd className="px-1 py-0.5 font-mono bg-slate-200 dark:bg-slate-800 rounded text-slate-700 dark:text-slate-300 font-bold">⌘K</kbd> to open connection switcher anytime.</span>
+                </div>
+                <div className="flex items-start space-x-1.5">
+                  <span className="text-emerald-500 shrink-0">🛡️</span>
+                  <span><strong>Safety guard:</strong> Production databases have 2-step verification for safe queries.</span>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-1">
             {/* Functions Group */}
             <div>
@@ -407,6 +449,7 @@ export const Sidebar = () => {
               )}
             </div>
           </div>
+          )
         )}
 
         {/* Tab 2: Saved Queries */}
@@ -541,22 +584,34 @@ export const Sidebar = () => {
 
         {/* TablePlus Database & Schema Switcher Dropdown */}
         <button
-          onClick={() => setDatabaseModalOpen(true)}
+          onClick={() => {
+            if (!activeConnection?.id) {
+              setConnectionModalOpen(true);
+            } else {
+              setDatabaseModalOpen(true);
+            }
+          }}
           className="flex items-center space-x-1.5 px-2 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded text-[11px] font-mono text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition group border border-transparent hover:border-slate-300 dark:hover:border-slate-700/60 cursor-pointer"
-          title="Switch Database or Schema (⌘O)"
+          title={!activeConnection?.id ? "Connect Database (⌘K)" : "Switch Database or Schema (⌘O)"}
         >
           <span
             className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              activeConnection.connectionStatus === 'failed'
+              !activeConnection?.id
+                ? 'bg-slate-400'
+                : activeConnection.connectionStatus === 'failed'
                 ? 'bg-rose-500 shadow-xs shadow-rose-500/50'
                 : 'bg-emerald-500 shadow-xs shadow-emerald-500/50'
             }`}
           />
           <span className="font-semibold text-sky-600 dark:text-sky-400 truncate max-w-[120px]">
-            {activeConnection.database || 'postgres'}
+            {!activeConnection?.id ? 'No Connection' : (activeConnection.database || 'default')}
           </span>
-          <span className="text-slate-400 dark:text-slate-500">:</span>
-          <span className="text-slate-700 dark:text-slate-300">public</span>
+          {activeConnection?.id && (
+            <>
+              <span className="text-slate-400 dark:text-slate-500">:</span>
+              <span className="text-slate-700 dark:text-slate-300">public</span>
+            </>
+          )}
           <ChevronDown className="w-3 h-3 text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-transform" />
         </button>
       </div>

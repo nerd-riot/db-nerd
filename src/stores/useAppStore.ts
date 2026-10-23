@@ -459,165 +459,86 @@ const getDefaultRowsForTable = (tbl: string, isTruncated?: boolean): GridRow[] =
   return INITIAL_ROWS;
 };
 
-const INITIAL_SQL_TAB_STATES: Record<string, SqlTabState> = {
-  'tab-sql-1': {
-    tabId: 'tab-sql-1',
-    query: `SELECT u.id, u.email, COUNT(o.id) AS total_orders, SUM(o.total_amount) AS total_spend
-FROM users u
-LEFT JOIN user_orders o ON o.user_id = u.id
-WHERE u.status = 'active'
-GROUP BY u.id, u.email
-ORDER BY total_spend DESC LIMIT 50;`,
-    results: [
-      { id: 501, email: 'alex.turner@corp.io', total_orders: 14, total_spend: 2030.0 },
-      { id: 502, email: 'sarah.connor@cyberdyne.net', total_orders: 29, total_spend: 4210.5 },
-      { id: 503, email: 'khoa.nguyen@ai.lab', total_orders: 102, total_spend: 12450.0 },
-    ],
-    columns: ['id', 'email', 'total_orders', 'total_spend'],
-    durationMs: 1.4,
-    rowsCount: 3,
-    executedAt: 'Just now',
-    isExecuting: false,
-    queryResults: [
-      {
-        id: 'q-1',
-        title: 'Query 1',
-        query: `SELECT u.id, u.email, COUNT(o.id) AS total_orders, SUM(o.total_amount) AS total_spend\nFROM users u\nLEFT JOIN user_orders o ON o.user_id = u.id\nWHERE u.status = 'active'\nGROUP BY u.id, u.email\nORDER BY total_spend DESC LIMIT 50;`,
-        results: [
-          { id: 501, email: 'alex.turner@corp.io', total_orders: 14, total_spend: 2030.0 },
-          { id: 502, email: 'sarah.connor@cyberdyne.net', total_orders: 29, total_spend: 4210.5 },
-          { id: 503, email: 'khoa.nguyen@ai.lab', total_orders: 102, total_spend: 12450.0 },
-        ],
-        columns: ['id', 'email', 'total_orders', 'total_spend'],
-        durationMs: 1.4,
-        rowsCount: 3,
-        executedAt: 'Just now',
-        status: 'success',
-      },
-    ],
-    activeResultId: 'q-1',
-  },
+export const EMPTY_CONNECTION: ConnectionProfile = {
+  id: '',
+  name: '',
+  groupId: '',
+  engine: 'postgres',
+  env: 'local',
+  host: '',
+  port: 5432,
+  database: '',
+  username: '',
+  password: '',
+  active: false,
+  latencyMs: 0,
 };
 
-const INITIAL_GROUPS: ConnectionGroup[] = [
-  { id: 'group-prod', name: 'Production', color: 'rose', tag: 'PROD' },
-  { id: 'group-staging', name: 'Staging GCP', color: 'amber', tag: 'QA' },
-  { id: 'group-local', name: 'Localhost', color: 'emerald', tag: 'DEV' },
-];
+export const EMPTY_SESSION: ConnectionSession = {
+  connectionId: '',
+  tabs: [],
+  activeTabId: '',
+  sqlTabStates: {},
+  selectedTable: '',
+  tableViewMode: 'data',
+  isFilterBarOpen: false,
+  filterWhereText: '',
+  filterOrderByText: '',
+  rows: [],
+  originalRows: [],
+  isTransactionOpen: false,
+  pendingEditsCount: 0,
+  history: [],
+  selectedRowData: null,
+  selectedStructureColumn: null,
+  structureSearchColumn: '',
+};
 
-const INITIAL_CONNECTIONS: ConnectionProfile[] = [
-  {
-    id: 'conn-1',
-    name: 'ecom_prod_db (PostgreSQL)',
-    groupId: 'group-local',
-    engine: 'postgres',
-    env: 'local',
-    host: 'localhost',
-    port: 5432,
-    database: 'ecom_prod_db',
-    databases: [
-      'ecom_prod_db',
-      'postgres',
-      'local_dev',
-    ],
-    username: 'dev_user',
-    password: 'dev_password',
-    useSsh: false,
-    active: true,
-    latencyMs: 0.8,
-  },
-  {
-    id: 'conn-4',
-    name: 'analytics-mysql (MySQL 8.0)',
-    groupId: 'group-local',
-    engine: 'mysql',
-    env: 'local',
-    host: 'localhost',
-    port: 3306,
-    database: 'analytics_staging',
-    databases: [
-      'analytics_staging',
-      'information_schema',
-      'performance_schema',
-    ],
-    username: 'dev_user',
-    password: 'dev_password',
-    useSsh: false,
-    active: false,
-    latencyMs: 1.1,
-  },
-  {
-    id: 'conn-3',
-    name: 'docker-redis (Port 6379)',
-    groupId: 'group-local',
-    engine: 'redis',
-    env: 'local',
-    host: 'localhost',
-    port: 6379,
-    database: '0',
-    databases: ['0', '1', '2', '3', '4', '5'],
-    username: 'default',
-    password: '',
-    active: false,
-    latencyMs: 0.4,
-  },
-  {
-    id: 'conn-stock',
-    name: 'stock_movement (Postgres)',
-    groupId: 'group-local',
-    engine: 'postgres',
-    env: 'local',
-    host: 'localhost',
-    port: 5432,
-    database: 'ecom_prod_db',
-    databases: ['ecom_prod_db', 'postgres'],
-    username: 'dev_user',
-    password: 'dev_password',
-    active: false,
-    latencyMs: 0.9,
-  },
-  {
-    id: 'conn-2',
-    name: 'analytics-dwh (Cloud)',
-    groupId: 'group-prod',
-    engine: 'snowflake',
-    env: 'prod',
-    host: 'xy12345.us-east-1.snowflakecomputing.com',
-    port: 443,
-    database: 'ANALYTICS_PROD',
-    databases: ['ANALYTICS_PROD', 'RAW_DWH', 'REPORTING', 'SNOWFLAKE'],
-    username: 'dwh_engineer',
-    password: '••••••••••••',
-    accountIdentifier: 'xy12345.us-east-1',
-    warehouse: 'COMPUTE_WH',
-    active: false,
-    latencyMs: 24.5,
-    safeMode: 'alert-2',
-  },
-  {
-    id: 'conn-5',
-    name: '[Production] [VN] Vigo DB (SSH)',
-    groupId: 'group-prod',
-    engine: 'postgres',
-    env: 'prod',
-    host: 'oms.coy4vltic3yw.ap-southeast-1.rds.amazonaws.com',
-    port: 5432,
-    database: 'app_db',
-    databases: ['app_db', 'postgres'],
-    username: 'postgres',
-    password: '1Refrh1OF70dAlCnKoez',
-    useSsh: true,
-    sshHost: '13.212.189.147',
-    sshPort: 22,
-    sshUser: 'ec2-user',
-    sshPassword: '',
-    useSshKey: true,
-    sshKeyPath: '~/.ssh/vigo/id_rsa',
-    active: false,
-    latencyMs: 14.2,
-    safeMode: 'alert-2',
-  },
-];
+const loadSavedGroups = (): ConnectionGroup[] => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem('dbnerd_groups');
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return [];
+};
+
+const loadSavedConnections = (): ConnectionProfile[] => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem('dbnerd_connections');
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return [];
+};
+
+const persistGroups = (groups: ConnectionGroup[]) => {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dbnerd_groups', JSON.stringify(groups));
+    }
+  } catch {}
+};
+
+const persistConnections = (connections: ConnectionProfile[]) => {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dbnerd_connections', JSON.stringify(connections));
+    }
+  } catch {}
+};
+
+const INITIAL_GROUPS: ConnectionGroup[] = loadSavedGroups();
+const INITIAL_CONNECTIONS: ConnectionProfile[] = loadSavedConnections();
+
 
 const persistSessionTabs = (
   connId: string,
@@ -764,12 +685,11 @@ const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionS
   };
 };
 
-const INITIAL_SESSIONS: Record<string, ConnectionSession> = {
-  'conn-1': createDefaultSessionForConnection(INITIAL_CONNECTIONS[0]),
-  'conn-4': createDefaultSessionForConnection(INITIAL_CONNECTIONS[1]),
-  'conn-stock': createDefaultSessionForConnection(INITIAL_CONNECTIONS.find((c) => c.id === 'conn-stock') || INITIAL_CONNECTIONS[0]),
-  'conn-5': createDefaultSessionForConnection(INITIAL_CONNECTIONS.find((c) => c.id === 'conn-5') || INITIAL_CONNECTIONS[0]),
-};
+const INITIAL_SESSIONS: Record<string, ConnectionSession> = {};
+INITIAL_CONNECTIONS.forEach((c) => {
+  INITIAL_SESSIONS[c.id] = createDefaultSessionForConnection(c);
+});
+
 
 const getInitialSettings = (): UserSettings => {
   let initialMode: ThemeMode = 'auto';
@@ -848,12 +768,12 @@ const getInitialConnId = (): string => {
       }
     }
   } catch {}
-  return 'conn-1';
+  return INITIAL_CONNECTIONS[0]?.id || '';
 };
 
 const INITIAL_ACTIVE_CONN_ID = getInitialConnId();
-const INITIAL_ACTIVE_CONN = INITIAL_CONNECTIONS.find((c) => c.id === INITIAL_ACTIVE_CONN_ID) || INITIAL_CONNECTIONS[0];
-const INITIAL_ACTIVE_SESSION = INITIAL_SESSIONS[INITIAL_ACTIVE_CONN.id] || INITIAL_SESSIONS['conn-1'];
+const INITIAL_ACTIVE_CONN = (INITIAL_CONNECTIONS.length > 0 ? (INITIAL_CONNECTIONS.find((c) => c.id === INITIAL_ACTIVE_CONN_ID) || INITIAL_CONNECTIONS[0]) : null) || EMPTY_CONNECTION;
+const INITIAL_ACTIVE_SESSION = (INITIAL_ACTIVE_CONN.id && INITIAL_SESSIONS[INITIAL_ACTIVE_CONN.id]) ? INITIAL_SESSIONS[INITIAL_ACTIVE_CONN.id] : EMPTY_SESSION;
 
 const getInitialActiveTabId = () => {
   try {
@@ -866,11 +786,12 @@ const getInitialActiveTabId = () => {
       }
     }
   } catch {}
-  return INITIAL_ACTIVE_SESSION.activeTabId;
+  return INITIAL_ACTIVE_SESSION.activeTabId || '';
 };
 
 const INITIAL_TAB_ID = getInitialActiveTabId();
-const INITIAL_ACTIVE_TAB = INITIAL_ACTIVE_SESSION.tabs.find((t) => t.id === INITIAL_TAB_ID) || INITIAL_ACTIVE_SESSION.tabs[0];
+const INITIAL_ACTIVE_TAB = INITIAL_ACTIVE_SESSION.tabs.find((t) => t.id === INITIAL_TAB_ID) || INITIAL_ACTIVE_SESSION.tabs[0] || null;
+
 
 const getInitialSelectedRow = () => {
   try {
@@ -941,7 +862,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateResolvedTheme: (resolved) => set({ resolvedTheme: resolved }),
 
-  openSessionIds: ['conn-1', 'conn-4'],
+  openSessionIds: (INITIAL_CONNECTIONS.length > 0 && INITIAL_ACTIVE_CONN.id) ? [INITIAL_ACTIVE_CONN.id] : [],
   sessions: INITIAL_SESSIONS,
 
   openSession: (connId) => {
@@ -1029,7 +950,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  sqlTabStates: INITIAL_SQL_TAB_STATES,
+  sqlTabStates: INITIAL_ACTIVE_SESSION.sqlTabStates || {},
 
   setSqlTabQuery: (tabId, query) => {
     set((state) => {
@@ -1054,6 +975,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   liveDatabases: {},
   fetchLiveDatabases: async (conn) => {
     const targetConn = conn || get().activeConnection;
+    if (!targetConn || !targetConn.id) return;
     try {
       const dbs = await getRealDatabases(targetConn);
       if (dbs && dbs.length > 0) {
@@ -1079,6 +1001,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   liveTables: {},
   fetchLiveTables: async (conn) => {
     const targetConn = conn || get().activeConnection;
+    if (!targetConn || !targetConn.id) return;
     try {
       const tables = await getRealTables(targetConn);
       if (tables && tables.length > 0) {
@@ -1102,6 +1025,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   fetchLiveTableSchema: async (tableName, conn) => {
     if (!tableName || tableName.startsWith('__')) return;
     const targetConn = conn || get().activeConnection;
+    if (!targetConn || !targetConn.id) return;
     const summary = get().liveTables[targetConn.id]?.find((t) => t.name === tableName);
     try {
       const schemaInfo = await getRealTableSchema(targetConn, tableName, summary);
@@ -1124,6 +1048,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   liveFunctions: {},
   fetchLiveFunctions: async (conn) => {
     const targetConn = conn || get().activeConnection;
+    if (!targetConn || !targetConn.id) return;
     try {
       const funcs = await getRealFunctions(targetConn);
       if (funcs && funcs.length > 0) {
@@ -1575,6 +1500,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openNewQueryTab: (initialSql) => {
     const { tabs, sqlTabStates, activeConnection, selectedTable } = get();
+    if (!activeConnection || !activeConnection.id) {
+      set({ isConnectionModalOpen: true });
+      get().showToast('⚠️ Please connect to a database first (⌘K)');
+      return;
+    }
     const sqlTabs = tabs.filter((t) => t.type === 'sql');
     const count = sqlTabs.length;
     const nextTabId = `tab-sql-${Date.now()}`;
@@ -1615,6 +1545,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openTableGridTab: (tableName) => {
     const { tabs, activeConnection, sqlTabStates } = get();
+    if (!activeConnection || !activeConnection.id) {
+      set({ isConnectionModalOpen: true });
+      get().showToast('⚠️ Please connect to a database first (⌘K)');
+      return;
+    }
     const existing = tabs.find((t) => t.type === 'grid' && t.tableName === tableName);
     if (existing) {
       set({
@@ -1654,6 +1589,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openAllTableStatsTab: () => {
     const { tabs, activeConnection } = get();
+    if (!activeConnection || !activeConnection.id) {
+      set({ isConnectionModalOpen: true });
+      get().showToast('⚠️ Please connect to a database first (⌘K)');
+      return;
+    }
     const schemaName = activeConnection.engine === 'postgres' ? 'public' : activeConnection.database || 'public';
     const tabTitle = `Tables.${schemaName}`;
     const tabId = `tab-tables-${activeConnection.id}`;
@@ -1682,6 +1622,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openAllFunctionsTab: () => {
     const { tabs, activeConnection } = get();
+    if (!activeConnection || !activeConnection.id) {
+      set({ isConnectionModalOpen: true });
+      get().showToast('⚠️ Please connect to a database first (⌘K)');
+      return;
+    }
     const schemaName = activeConnection.engine === 'postgres' ? 'public' : activeConnection.database || 'public';
     const tabTitle = `Functions.${schemaName}`;
     const tabId = `tab-functions-${activeConnection.id}`;
@@ -1927,14 +1872,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...group,
       id: `group-${Date.now()}`,
     };
-    set((state) => ({ connectionGroups: [...state.connectionGroups, newGroup] }));
+    set((state) => {
+      const nextGroups = [...state.connectionGroups, newGroup];
+      persistGroups(nextGroups);
+      return { connectionGroups: nextGroups };
+    });
     return newGroup;
   },
 
   updateConnectionGroup: (id, updates) => {
-    set((state) => ({
-      connectionGroups: state.connectionGroups.map((g) => (g.id === id ? { ...g, ...updates } : g)),
-    }));
+    set((state) => {
+      const nextGroups = state.connectionGroups.map((g) => (g.id === id ? { ...g, ...updates } : g));
+      persistGroups(nextGroups);
+      return { connectionGroups: nextGroups };
+    });
   },
 
   deleteConnectionGroup: (id) => {
@@ -1944,6 +1895,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const removedIds = new Set(removedConns.map((c) => c.id));
 
     set((s) => {
+      const nextGroups = s.connectionGroups.filter((g) => g.id !== id);
       const nextConnections = s.connections.filter((c) => c.groupId !== id);
       const nextOpenSessionIds = s.openSessionIds.filter((sid) => !removedIds.has(sid));
       const nextSessions = { ...s.sessions };
@@ -1955,11 +1907,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         delete nextLiveFunctions[rid];
       });
       let nextActive = s.activeConnection;
-      if (removedIds.has(s.activeConnection.id) && nextConnections.length > 0) {
-        nextActive = nextConnections[0];
+      if (removedIds.has(s.activeConnection.id)) {
+        nextActive = nextConnections.length > 0 ? nextConnections[0] : EMPTY_CONNECTION;
       }
+      persistGroups(nextGroups);
+      persistConnections(nextConnections);
       return {
-        connectionGroups: s.connectionGroups.filter((g) => g.id !== id),
+        connectionGroups: nextGroups,
         connections: nextConnections,
         openSessionIds: nextOpenSessionIds,
         sessions: nextSessions,
@@ -1975,7 +1929,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...profile,
       id: `conn-${Date.now()}`,
     };
-    set((state) => ({ connections: [...state.connections, newConn] }));
+    set((state) => {
+      const nextConnections = [...state.connections, newConn];
+      persistConnections(nextConnections);
+      const nextActive = state.activeConnection?.id ? state.activeConnection : newConn;
+      return { connections: nextConnections, activeConnection: nextActive };
+    });
     return newConn;
   },
 
@@ -1983,6 +1942,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const nextConnections = state.connections.map((c) => (c.id === id ? { ...c, ...updates } : c));
       const nextActive = state.activeConnection.id === id ? { ...state.activeConnection, ...updates } : state.activeConnection;
+      persistConnections(nextConnections);
       return { connections: nextConnections, activeConnection: nextActive };
     });
   },
@@ -2003,9 +1963,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete nextLiveFunctions[id];
 
       let nextActive = state.activeConnection;
-      if (state.activeConnection.id === id && nextConnections.length > 0) {
-        nextActive = nextConnections[0];
+      if (state.activeConnection.id === id) {
+        nextActive = nextConnections.length > 0 ? nextConnections[0] : EMPTY_CONNECTION;
       }
+      persistConnections(nextConnections);
       return {
         connections: nextConnections,
         openSessionIds: nextOpenSessionIds,
@@ -2030,6 +1991,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         insertIdx += 1;
       }
       groups.splice(insertIdx, 0, movedGroup);
+      persistGroups(groups);
       return { connectionGroups: groups };
     });
   },
@@ -2055,6 +2017,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             insertIdx += 1;
           }
           conns.splice(insertIdx, 0, updatedMoved);
+          persistConnections(conns);
           return { connections: conns, activeConnection: nextActive };
         }
       }
@@ -2071,6 +2034,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         conns.push(updatedMoved);
       }
 
+      persistConnections(conns);
       return { connections: conns, activeConnection: nextActive };
     });
   },
@@ -2224,7 +2188,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  isConnectionModalOpen: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modal') === 'connection',
+  isConnectionModalOpen: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modal') === 'connection') || INITIAL_CONNECTIONS.length === 0,
   setConnectionModalOpen: (open) => set({ isConnectionModalOpen: open }),
 
   reconnectModalOpen: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modal') === 'disconnected',
