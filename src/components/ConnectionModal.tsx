@@ -28,10 +28,14 @@ import {
   ArrowLeft,
   ArrowRight,
   RefreshCw,
+  Database,
+  UploadCloud,
+  CheckCircle2,
 } from 'lucide-react';
 import { HeartbeatDot, HeartbeatColor } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
-import { parseConnectionUrl, serializeConnectionUrl } from '../utils/connectionUrl';
+import { parseConnectionUrl, serializeConnectionUrl, ParsedConnectionUrl } from '../utils/connectionUrl';
+import { parseConnectionFile, ImportedConnectionItem } from '../utils/connectionImport';
 import { testRealConnection } from '../services/dbService';
 import {
   ContextMenuContainer,
@@ -124,11 +128,37 @@ export const ConnectionModal = () => {
   const [creationStep, setCreationStep] = useState<'select-engine' | 'configure'>('select-engine');
   const [selectedCategory, setSelectedCategory] = useState<ConnectorCategory>('all');
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
-  const [isImportingUrl, setIsImportingUrl] = useState(false);
-  const [importUrlInput, setImportUrlInput] = useState('');
+  const [newConnMethod, setNewConnMethod] = useState<'catalog' | 'url' | 'file'>('catalog');
+  const [urlInputValue, setUrlInputValue] = useState('');
+  const [parsedUrlResult, setParsedUrlResult] = useState<ParsedConnectionUrl | null>(null);
+  const [urlParseError, setUrlParseError] = useState<string | null>(null);
+
+  // File import state
+  const [importedFileItems, setImportedFileItems] = useState<ImportedConnectionItem[]>([]);
+  const [fileImportError, setFileImportError] = useState<string | null>(null);
+  const [importedFileName, setImportedFileName] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [connectorSearch, setConnectorSearch] = useState('');
+
+  // Auto-parse URL as user types/pastes
+  useEffect(() => {
+    const trimmed = urlInputValue.trim();
+    if (!trimmed) {
+      setParsedUrlResult(null);
+      setUrlParseError(null);
+      return;
+    }
+    try {
+      const parsed = parseConnectionUrl(trimmed);
+      setParsedUrlResult(parsed);
+      setUrlParseError(null);
+    } catch (err: any) {
+      setParsedUrlResult(null);
+      setUrlParseError(err.message || 'Invalid connection URL format');
+    }
+  }, [urlInputValue]);
 
   const filteredConnectors = ALL_TABLEPLUS_CONNECTORS.filter((item) => {
     const query = connectorSearch.trim().toLowerCase();
@@ -313,11 +343,18 @@ export const ConnectionModal = () => {
   const handleStartNewConnection = (groupId?: string) => {
     setIsCreatingNew(true);
     setCreationStep('select-engine');
+    setNewConnMethod('catalog');
     setSelectedCategory('all');
     setSelectedConnId(null);
     setTestSuccess(false);
     setTestError(null);
     setConnectorSearch('');
+    setUrlInputValue('');
+    setParsedUrlResult(null);
+    setUrlParseError(null);
+    setImportedFileItems([]);
+    setFileImportError(null);
+    setImportedFileName(null);
     setFormData({
       name: 'new-postgres-connection',
       groupId: groupId || connectionGroups[0]?.id || 'group-prod',
@@ -386,45 +423,143 @@ export const ConnectionModal = () => {
     });
   };
 
-  const handleImportFromUrl = () => {
-    try {
-      if (!importUrlInput.trim()) return;
-      const parsed = parseConnectionUrl(importUrlInput.trim());
-      const targetGroupId = connectionGroups[0]?.id || 'group-prod';
-      const newProfile: Omit<ConnectionProfile, 'id'> = {
-        name: parsed.name || `${parsed.database} (${parsed.host})`,
+  const handleApplyUrlToForm = () => {
+    if (!parsedUrlResult) return;
+    const meta = CONNECTOR_METADATA[parsedUrlResult.engine] || CONNECTOR_METADATA.generic;
+    setFormData((prev) => ({
+      ...prev,
+      name: parsedUrlResult.name || `${parsedUrlResult.database || meta.label} (${parsedUrlResult.host})`,
+      engine: parsedUrlResult.engine,
+      env: parsedUrlResult.env,
+      host: parsedUrlResult.host,
+      port: parsedUrlResult.port,
+      database: parsedUrlResult.database,
+      username: parsedUrlResult.username,
+      password: parsedUrlResult.password || '',
+      useSsh: parsedUrlResult.useSsh || false,
+      sshHost: parsedUrlResult.sshHost || '',
+      sshPort: parsedUrlResult.sshPort || 22,
+      sshUser: parsedUrlResult.sshUser || '',
+      sshPassword: parsedUrlResult.sshPassword || '',
+      useSshKey: parsedUrlResult.useSshKey ?? true,
+      sshKeyPath: parsedUrlResult.sshKeyPath || (parsedUrlResult.useSsh ? 'id_rsa' : ''),
+    }));
+    setCreationStep('configure');
+    showToast(`Loaded URL settings for ${meta.label}`);
+  };
+
+  const handleFileUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const items = parseConnectionFile(text, file.name);
+        setImportedFileItems(items);
+        setImportedFileName(file.name);
+        setFileImportError(null);
+        showToast(`Discovered ${items.length} connection(s) from ${file.name}`);
+      } catch (err: any) {
+        setImportedFileItems([]);
+        setFileImportError(err.message || 'Failed to parse file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleApplyFileItemToForm = (item: ImportedConnectionItem) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: item.name,
+      engine: item.engine,
+      env: item.env,
+      host: item.host,
+      port: item.port,
+      database: item.database,
+      username: item.username,
+      password: item.password || '',
+      useSsh: item.useSsh || false,
+      sshHost: item.sshHost || '',
+      sshPort: item.sshPort || 22,
+      sshUser: item.sshUser || '',
+      sshPassword: item.sshPassword || '',
+      useSshKey: item.useSshKey ?? true,
+      sshKeyPath: item.sshKeyPath || '',
+    }));
+    setCreationStep('configure');
+    showToast(`Loaded "${item.name}" from ${item.sourceTool.toUpperCase()}`);
+  };
+
+  const handleBatchImportAll = () => {
+    if (importedFileItems.length === 0) return;
+    let firstId = '';
+    importedFileItems.forEach((item, idx) => {
+      let targetGroupId = connectionGroups[0]?.id || 'group-prod';
+      if (item.groupName) {
+        const existingGroup = connectionGroups.find(
+          (g) => g.name.toLowerCase() === item.groupName!.toLowerCase()
+        );
+        if (existingGroup) {
+          targetGroupId = existingGroup.id;
+        } else {
+          const newGrp = addConnectionGroup({
+            name: item.groupName,
+            tag: item.env.toUpperCase().slice(0, 4) || 'DEV',
+            color: item.env === 'prod' ? 'rose' : item.env === 'staging' ? 'amber' : 'sky',
+          });
+          targetGroupId = newGrp.id;
+        }
+      }
+
+      const created = addConnection({
+        name: item.name,
         groupId: targetGroupId,
-        engine: parsed.engine,
-        env: parsed.env,
-        host: parsed.host,
-        port: parsed.port,
-        database: parsed.database,
-        username: parsed.username,
-        password: parsed.password || '',
-        useSsh: parsed.useSsh || false,
-        sshHost: parsed.sshHost || '',
-        sshPort: parsed.sshPort || 22,
-        sshUser: parsed.sshUser || '',
-        sshPassword: parsed.sshPassword || '',
-        useSshKey: parsed.useSshKey ?? true,
-        sshKeyPath: parsed.sshKeyPath || (parsed.useSsh ? 'id_rsa' : ''),
-        sshPassphrase: '',
-        accountIdentifier: '',
-        warehouse: '',
+        engine: item.engine,
+        env: item.env,
+        host: item.host,
+        port: item.port,
+        database: item.database,
+        username: item.username,
+        password: item.password || '',
+        useSsh: item.useSsh || false,
+        sshHost: item.sshHost || '',
+        sshPort: item.sshPort || 22,
+        sshUser: item.sshUser || '',
+        sshPassword: item.sshPassword || '',
+        useSshKey: item.useSshKey ?? true,
+        sshKeyPath: item.sshKeyPath || '',
         active: false,
         latencyMs: 1.0,
-      };
+      });
 
-      const created = addConnection(newProfile);
-      setSelectedConnId(created.id);
+      if (idx === 0) firstId = created.id;
+    });
+
+    setIsCreatingNew(false);
+    if (firstId) setSelectedConnId(firstId);
+    showToast(`Successfully imported ${importedFileItems.length} connections!`);
+  };
+
+  const handleSaveOnly = () => {
+    if (!formData.name.trim()) {
+      alert('Please enter a valid connection name');
+      return;
+    }
+
+    const status: 'connected' | 'connecting' = testSuccess ? 'connected' : 'connecting';
+    const payload = {
+      ...formData,
+      connectionStatus: status,
+      active: false,
+    };
+
+    if (isCreatingNew) {
+      const created = addConnection(payload);
       setIsCreatingNew(false);
-      setIsImportingUrl(false);
-      setImportUrlInput('');
-      setTestSuccess(false);
-      setTestError(null);
-      showToast(`Imported connection: ${created.name}`);
-    } catch (err: any) {
-      alert(`Failed to parse connection URL: ${err.message}`);
+      setSelectedConnId(created.id);
+      showToast(`Saved new connection: "${created.name}"`);
+    } else if (selectedConnId) {
+      updateConnection(selectedConnId, payload);
+      showToast(`Updated connection: "${formData.name}"`);
     }
   };
 
@@ -729,10 +864,15 @@ export const ConnectionModal = () => {
 
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => alert("📥 Auto-Discovery:\nScanned local configurations.\nImported all profiles successfully!")}
-              className="px-2.5 py-1 bg-purple-50 dark:bg-purple-500/15 hover:bg-purple-100 dark:hover:bg-purple-500/25 border border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-semibold transition active:scale-95 cursor-pointer"
+              onClick={() => {
+                handleStartNewConnection();
+                setNewConnMethod('file');
+              }}
+              className="px-2.5 py-1 bg-purple-50 dark:bg-purple-500/15 hover:bg-purple-100 dark:hover:bg-purple-500/25 border border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-semibold transition active:scale-95 cursor-pointer flex items-center space-x-1.5"
+              title="Import connections from TablePlus, DBeaver, pgAdmin or JSON files"
             >
-              Import XML / JSON
+              <FileCode className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <span>Import File / Tools</span>
             </button>
             <button
               onClick={() => setConnectionModalOpen(false)}
@@ -753,10 +893,7 @@ export const ConnectionModal = () => {
               <div className="flex items-center space-x-1">
                 {/* New Group Button */}
                 <button
-                  onClick={() => {
-                    setIsCreatingGroup(!isCreatingGroup);
-                    setIsImportingUrl(false);
-                  }}
+                  onClick={() => setIsCreatingGroup(!isCreatingGroup)}
                   className={`p-1 rounded transition-all duration-150 active:scale-95 cursor-pointer ${
                     isCreatingGroup ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-800 dark:text-indigo-300' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
@@ -765,25 +902,10 @@ export const ConnectionModal = () => {
                   <FolderPlus className="w-3.5 h-3.5" />
                 </button>
 
-                {/* Import URL Button */}
-                <button
-                  onClick={() => {
-                    setIsImportingUrl(!isImportingUrl);
-                    setIsCreatingGroup(false);
-                  }}
-                  className={`p-1 rounded transition-all duration-150 active:scale-95 cursor-pointer ${
-                    isImportingUrl ? 'bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                  title="Import from Connection URL (TablePlus / Postgres / MySQL)"
-                >
-                  <Link className="w-3.5 h-3.5" />
-                </button>
-
                 {/* New Connection Button */}
                 <button
                   onClick={() => {
                     handleStartNewConnection();
-                    setIsImportingUrl(false);
                     setIsCreatingGroup(false);
                   }}
                   className={`p-1 rounded transition-all duration-150 active:scale-95 cursor-pointer ${
@@ -793,48 +915,6 @@ export const ConnectionModal = () => {
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
-              </div>
-            </div>
-
-            {/* Smooth Collapsible Inline Import URL Card */}
-            <div
-              className={`grid transition-[grid-template-rows,opacity] duration-250 ease-out ${
-                isImportingUrl ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-              }`}
-            >
-              <div className="overflow-hidden">
-                <div className="p-3 bg-amber-50/80 dark:bg-slate-900 border border-amber-200 dark:border-amber-500/40 rounded-xl space-y-2 text-xs shadow-md mb-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-amber-800 dark:text-amber-300 flex items-center space-x-1">
-                      <Link className="w-3.5 h-3.5" />
-                      <span>Import Connection URL</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsImportingUrl(false)}
-                      className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div>
-                    <textarea
-                      placeholder="Paste postgresql://, mysql:// or postgresql+ssh://..."
-                      value={importUrlInput}
-                      onChange={(e) => setImportUrlInput(e.target.value)}
-                      rows={3}
-                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 font-mono text-[10px] focus:outline-none focus:border-amber-500 shadow-2xs"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleImportFromUrl}
-                    disabled={!importUrlInput.trim()}
-                    className="w-full py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-bold rounded-lg transition active:scale-95 cursor-pointer disabled:cursor-not-allowed shadow-2xs"
-                  >
-                    Parse & Import Profile
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -1288,7 +1368,9 @@ export const ConnectionModal = () => {
                     >
                       1
                     </span>
-                    <span className="truncate">Choose Connector</span>
+                    <span className="truncate">
+                      {newConnMethod === 'url' ? 'Import URL' : newConnMethod === 'file' ? 'Import File' : 'Choose Connector'}
+                    </span>
                   </button>
 
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -1338,105 +1420,426 @@ export const ConnectionModal = () => {
             <div className="flex-1 p-5 overflow-y-auto space-y-4 text-xs select-text">
               {isCreatingNew && creationStep === 'select-engine' ? (
                 /* ========================================================================= */
-                /* STEP 1: CHOOSE DATABASE CONNECTOR CATALOG (When Creating New)            */
+                /* STEP 1: CHOOSE METHOD (CONNECTOR CATALOG / IMPORT URL / IMPORT FILE)      */
                 /* ========================================================================= */
                 <div className="space-y-4">
-                  {/* Catalog Title & Search Bar */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center space-x-2">
-                        <span>Select Database Engine</span>
-                        <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/30">
-                          22 Connectors
-                        </span>
-                      </h3>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Select a database connector to configure host, authentication and security settings.
-                      </p>
-                    </div>
+                  {/* Step 1 Entry-Point Switcher */}
+                  <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setNewConnMethod('catalog')}
+                      className={`flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        newConnMethod === 'catalog'
+                          ? 'bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 shadow-2xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      <span>Database Connectors</span>
+                    </button>
 
-                    {/* Real-time search */}
-                    <div className="relative w-full sm:w-64">
-                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        value={connectorSearch}
-                        onChange={(e) => setConnectorSearch(e.target.value)}
-                        placeholder="Filter 22 connectors..."
-                        className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700/80 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 font-medium shadow-2xs"
-                      />
-                      {connectorSearch && (
-                        <button
-                          type="button"
-                          onClick={() => setConnectorSearch('')}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                        >
-                          ✕
-                        </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewConnMethod('url')}
+                      className={`flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        newConnMethod === 'url'
+                          ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-2xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <Link className="w-3.5 h-3.5" />
+                      <span>Import Connection URL</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewConnMethod('file')}
+                      className={`flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        newConnMethod === 'file'
+                          ? 'bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <FileCode className="w-3.5 h-3.5" />
+                      <span>Import from File / Tools</span>
+                    </button>
+                  </div>
+
+                  {/* OPTION 1: 22 DATABASE CONNECTORS CATALOG */}
+                  {newConnMethod === 'catalog' && (
+                    <div className="space-y-4 animate-in fade-in duration-150">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center space-x-2">
+                            <span>Select Database Engine</span>
+                            <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/30">
+                              22 Connectors
+                            </span>
+                          </h3>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            Select a database connector to configure host, authentication and security settings.
+                          </p>
+                        </div>
+
+                        {/* Real-time search */}
+                        <div className="relative w-full sm:w-64">
+                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            value={connectorSearch}
+                            onChange={(e) => setConnectorSearch(e.target.value)}
+                            placeholder="Filter 22 connectors..."
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700/80 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 font-medium shadow-2xs"
+                          />
+                          {connectorSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setConnectorSearch('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Category Filter Tabs */}
+                      <div className="flex items-center space-x-1.5 border-b border-slate-200 dark:border-slate-800 pb-2.5 overflow-x-auto">
+                        {CONNECTOR_CATEGORIES.map((cat) => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setSelectedCategory(cat.id)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center space-x-1.5 ${
+                              selectedCategory === cat.id
+                                ? 'bg-sky-50 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/50 shadow-2xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 border border-transparent'
+                            }`}
+                          >
+                            <span>{cat.label}</span>
+                            <span className="text-[10px] opacity-75 font-mono">({cat.count})</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Connectors Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[350px] overflow-y-auto pr-1">
+                        {filteredConnectors.map((item) => {
+                          const isSelected = formData.engine === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                handleEngineChange(item.id as DatabaseEngine);
+                                setCreationStep('configure');
+                              }}
+                              className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all duration-150 cursor-pointer group/card relative ${
+                                isSelected
+                                  ? 'bg-sky-50 dark:bg-sky-500/20 border-sky-400 shadow-2xs text-sky-900 dark:text-sky-100 ring-1 ring-sky-400/50'
+                                  : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800/80 hover:border-sky-300 dark:hover:border-sky-600/70 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300 shadow-2xs hover:shadow-xs'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between w-full mb-2">
+                                <ConnectorIcon engine={item.id} size="md" className="group-hover/card:scale-105 transition-transform" />
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                  {item.tag}
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold line-clamp-1 leading-snug group-hover/card:text-sky-600 dark:group-hover/card:text-sky-400 transition-colors">
+                                {item.label}
+                              </span>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 flex items-center justify-between w-full font-mono">
+                                <span>{item.defaultPort > 0 ? `Port :${item.defaultPort}` : 'Embedded'}</span>
+                                <span className="text-sky-500 opacity-0 group-hover/card:opacity-100 transition-opacity font-bold font-sans">Select →</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OPTION 2: IMPORT CONNECTION URL */}
+                  {newConnMethod === 'url' && (
+                    <div className="space-y-4 animate-in fade-in duration-150">
+                      <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/30 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Link className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                              Paste Database Connection URL
+                            </h4>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            URI / TablePlus / DBeaver / SSH
+                          </span>
+                        </div>
+
+                        <div className="relative">
+                          <textarea
+                            rows={3}
+                            value={urlInputValue}
+                            onChange={(e) => setUrlInputValue(e.target.value)}
+                            placeholder="postgresql://user:password@hostname.rds.amazonaws.com:5432/dbname?sslmode=require"
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-slate-800 dark:text-slate-100 font-mono text-xs placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-amber-500 shadow-2xs resize-none"
+                          />
+                          {urlInputValue && (
+                            <button
+                              type="button"
+                              onClick={() => setUrlInputValue('')}
+                              className="absolute right-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Quick Examples */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                            Examples:
+                          </span>
+                          {[
+                            { label: 'Postgres Aurora', url: 'postgresql://postgres:secret123@commonprod-aurora-cluster.cluster-cmilpekm1tcx.us-east-2.rds.amazonaws.com:5432/commonproddb?sslmode=require' },
+                            { label: 'Local Postgres', url: 'postgresql://postgres:postgres@localhost:5432/postgres' },
+                            { label: 'MySQL 8', url: 'mysql://root:password@localhost:3306/production_db' },
+                            { label: 'Redis Cache', url: 'redis://:authpass@localhost:6379/0' },
+                            { label: 'SQLite', url: 'sqlite:///var/data/app.db' },
+                          ].map((ex) => (
+                            <button
+                              key={ex.label}
+                              type="button"
+                              onClick={() => setUrlInputValue(ex.url)}
+                              className="text-[10px] px-2 py-0.5 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md text-slate-600 dark:text-slate-300 transition cursor-pointer"
+                            >
+                              {ex.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Live Parsed Preview Box */}
+                      {parsedUrlResult ? (
+                        <div className="p-4 bg-emerald-50/60 dark:bg-slate-900/90 border border-emerald-200 dark:border-emerald-500/40 rounded-2xl space-y-3 animate-in fade-in duration-150">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <ConnectorIcon engine={parsedUrlResult.engine} size="sm" />
+                              <div>
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                                  {CONNECTOR_METADATA[parsedUrlResult.engine]?.label || parsedUrlResult.engine} Detected
+                                </span>
+                                <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded font-mono font-medium bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                  Valid URL
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleApplyUrlToForm}
+                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer flex items-center space-x-1.5"
+                            >
+                              <span>Continue to Connection Info</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-emerald-200 dark:border-emerald-500/20 text-[11px] font-mono">
+                            <div className="p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Host</span>
+                              <span className="text-slate-800 dark:text-slate-200 truncate block font-bold" title={parsedUrlResult.host}>
+                                {parsedUrlResult.host}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Port</span>
+                              <span className="text-slate-800 dark:text-slate-200 font-bold">
+                                {parsedUrlResult.port}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">Database</span>
+                              <span className="text-slate-800 dark:text-slate-200 truncate block font-bold">
+                                {parsedUrlResult.database}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 block font-sans font-semibold uppercase">User</span>
+                              <span className="text-slate-800 dark:text-slate-200 truncate block font-bold">
+                                {parsedUrlResult.username || 'default'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : urlParseError ? (
+                        <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/40 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center space-x-2">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                          <span>{urlParseError}</span>
+                        </div>
+                      ) : (
+                        <div className="p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-1 text-slate-400">
+                          <Link className="w-6 h-6 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                          <p className="text-xs font-semibold">Paste any connection URL above</p>
+                          <p className="text-[10px]">DBNerd will automatically detect engine, credentials, ports, and environment</p>
+                        </div>
                       )}
                     </div>
-                  </div>
+                  )}
 
-                  {/* Category Filter Tabs */}
-                  <div className="flex items-center space-x-1.5 border-b border-slate-200 dark:border-slate-800 pb-2.5 overflow-x-auto">
-                    {CONNECTOR_CATEGORIES.map((cat) => (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setSelectedCategory(cat.id)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center space-x-1.5 ${
-                          selectedCategory === cat.id
-                            ? 'bg-sky-50 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/50 shadow-2xs'
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 border border-transparent'
+                  {/* OPTION 3: IMPORT FROM FILE / TOOLS */}
+                  {newConnMethod === 'file' && (
+                    <div className="space-y-4 animate-in fade-in duration-150">
+                      {/* Supported tools badges */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                          Supported Clients:
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-md font-mono">
+                          TablePlus (*.tableplusconnection, .plist, .json)
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 rounded-md font-mono">
+                          DBeaver (data-sources.json)
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-md font-mono">
+                          pgAdmin 4 (servers.json)
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-md font-mono">
+                          DBNerd JSON / Plist
+                        </span>
+                      </div>
+
+                      {/* Drag & Drop Area */}
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        accept=".tableplusconnection,.json,.xml,.plist,.txt"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleFileUpload(file);
+                        }}
+                      />
+
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDragOver(true);
+                        }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragOver(false);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) handleFileUpload(file);
+                        }}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`p-8 border-2 border-dashed rounded-2xl text-center space-y-2 cursor-pointer transition-all ${
+                          isDragOver
+                            ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-950/30 scale-[1.01]'
+                            : 'border-slate-300 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500/70 bg-slate-50/60 dark:bg-slate-900/40'
                         }`}
                       >
-                        <span>{cat.label}</span>
-                        <span className="text-[10px] opacity-75 font-mono">({cat.count})</span>
-                      </button>
-                    ))}
-                  </div>
+                        <UploadCloud className="w-8 h-8 mx-auto text-purple-600 dark:text-purple-400" />
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                            Click to browse or drag & drop connection export file
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-sans">
+                            Drop a *.tableplusconnection, DBeaver data-sources.json, or pgAdmin servers.json file
+                          </p>
+                        </div>
+                      </div>
 
-                  {/* Connectors Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[410px] overflow-y-auto pr-1">
-                    {filteredConnectors.map((item) => {
-                      const isSelected = formData.engine === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            handleEngineChange(item.id as DatabaseEngine);
-                            setCreationStep('configure');
-                          }}
-                          className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all duration-150 cursor-pointer group/card relative ${
-                            isSelected
-                              ? 'bg-sky-50 dark:bg-sky-500/20 border-sky-400 shadow-2xs text-sky-900 dark:text-sky-100 ring-1 ring-sky-400/50'
-                              : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800/80 hover:border-sky-300 dark:hover:border-sky-600/70 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300 shadow-2xs hover:shadow-xs'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between w-full mb-2">
-                            <ConnectorIcon engine={item.id} size="md" className="group-hover/card:scale-105 transition-transform" />
-                            <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                              {item.tag}
-                            </span>
+                      {fileImportError && (
+                        <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/40 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center space-x-2">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                          <span>{fileImportError}</span>
+                        </div>
+                      )}
+
+                      {/* Discovered Items List */}
+                      {importedFileItems.length > 0 && (
+                        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-3 animate-in fade-in duration-150">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                                Discovered {importedFileItems.length} Connection(s) in {importedFileName}
+                              </span>
+                            </div>
+
+                            {importedFileItems.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={handleBatchImportAll}
+                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer flex items-center space-x-1.5"
+                              >
+                                <span>Import All ({importedFileItems.length}) Connections</span>
+                              </button>
+                            )}
                           </div>
-                          <span className="text-xs font-bold line-clamp-1 leading-snug group-hover/card:text-sky-600 dark:group-hover/card:text-sky-400 transition-colors">
-                            {item.label}
-                          </span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 flex items-center justify-between w-full font-mono">
-                            <span>{item.defaultPort > 0 ? `Port :${item.defaultPort}` : 'Embedded'}</span>
-                            <span className="text-sky-500 opacity-0 group-hover/card:opacity-100 transition-opacity font-bold font-sans">Select →</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+
+                          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                            {importedFileItems.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="p-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/70 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between transition"
+                              >
+                                <div className="flex items-center space-x-2.5 truncate">
+                                  <ConnectorIcon engine={item.engine} size="xs" />
+                                  <div className="truncate">
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                      {item.name}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono truncate">
+                                      {item.username}@{item.host}:{item.port}/{item.database}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleApplyFileItemToForm(item)}
+                                  className="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-[11px] rounded-lg transition active:scale-95 cursor-pointer shrink-0 ml-2"
+                                >
+                                  Configure & Connect →
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* ========================================================================= */
                 /* STEP 2 / EDIT MODE: CONNECTION PARAMETERS & CREDENTIALS                   */
                 /* ========================================================================= */
                 <div className="space-y-4">
+                  {isCreatingNew && (
+                    <div className="flex items-center justify-between p-2.5 bg-slate-100 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-xl mb-3">
+                      <div className="flex items-center space-x-2">
+                        <ConnectorIcon engine={formData.engine} size="xs" />
+                        <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">
+                          {CONNECTOR_METADATA[formData.engine]?.label || formData.engine}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-medium bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          {CONNECTOR_METADATA[formData.engine]?.tag}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setCreationStep('select-engine')}
+                        className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 font-semibold text-[11px] transition flex items-center space-x-1 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-3 h-3" />
+                        <span>Change Connector / Method</span>
+                      </button>
+                    </div>
+                  )}
 
                 {/* Connection Name & Flexible Target Group Selection */}
                 <div className="grid grid-cols-12 gap-3">
@@ -2110,7 +2513,7 @@ export const ConnectionModal = () => {
                     className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center space-x-1.5 active:scale-95 cursor-pointer mr-1"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back to Connectors</span>
+                    <span>Back to Methods</span>
                   </button>
                 )}
 
@@ -2161,16 +2564,25 @@ export const ConnectionModal = () => {
 
               <div className="flex items-center space-x-2">
                 <button
+                  type="button"
                   onClick={() => setConnectionModalOpen(false)}
                   className="px-3.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition active:scale-95 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
+                  onClick={handleSaveOnly}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
                   onClick={handleSaveAndConnect}
                   className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer"
                 >
-                  {isCreatingNew ? 'Create & Connect' : 'Save & Connect'}
+                  Save & Connect
                 </button>
               </div>
             </>
