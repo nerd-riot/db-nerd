@@ -234,7 +234,7 @@ export const TableGrid: React.FC = () => {
       {/* Live Table Reloading Overlay with Border Chase */}
       {isReloading && (
         <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs z-30 flex items-center justify-center p-4">
-          <div className="relative overflow-hidden bg-slate-900/95 border border-sky-500/50 rounded-2xl p-4 shadow-2xl flex items-center space-x-3.5 max-w-sm ring-1 ring-sky-400/20 animate-in zoom-in-95 duration-100">
+          <div className="relative overflow-hidden bg-slate-900/95 rounded-2xl p-4 shadow-2xl flex items-center gap-3.5 max-w-sm animate-in zoom-in-95 duration-100">
             <BorderChase color="sky" dual={true} speed="fast" borderWidth={2} glow={true} />
             <div className="relative z-1 p-2.5 bg-sky-500/15 rounded-xl border border-sky-500/30 text-sky-400 shrink-0">
               <Zap className="w-5 h-5 animate-pulse" />

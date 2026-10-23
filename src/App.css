@@ -460,37 +460,49 @@ html.light body,
 
 @keyframes border-chase-spin {
   0% {
-    transform: rotate(0deg);
+    transform: translate(-50%, -50%) rotate(0deg);
   }
   100% {
-    transform: rotate(360deg);
+    transform: translate(-50%, -50%) rotate(360deg);
   }
 }
 
 .border-chase-root {
-  position: absolute;
-  inset: 0;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  container-type: size;
   box-sizing: border-box;
   border-radius: inherit;
   padding: 1.5px;
   overflow: hidden;
   pointer-events: none;
-  z-index: 0;
+  z-index: 2;
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
 }
 
+/* Eliminate duplicate outer CSS border when BorderChase is active so the chasing ring IS the exact border */
+*:has(> .border-chase-root) {
+  border-color: transparent !important;
+}
+
 /* Guarantee that any sibling text, icons, or badges inside a BorderChase container stay strictly on top */
 *:has(> .border-chase-root) > *:not(.border-chase-root) {
   position: relative;
-  z-index: 1;
+  z-index: 3;
 }
 
 .border-chase-rotor {
   position: absolute;
-  inset: -150%;
+  top: 50%;
+  left: 50%;
+  width: max(260cqmax, 300%);
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
   will-change: transform;
 }
@@ -511,15 +523,15 @@ html.light body,
 .border-chase-dual-sky .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 70deg,
-    rgba(56, 189, 248, 0.25) 130deg,
-    rgba(56, 189, 248, 0.95) 172deg,
+    rgba(56, 189, 248, 0.22) 0deg,
+    rgba(56, 189, 248, 0.22) 70deg,
+    rgba(56, 189, 248, 0.45) 130deg,
+    rgba(56, 189, 248, 0.98) 172deg,
     #ffffff 180deg,
-    transparent 180.1deg,
-    transparent 250deg,
-    rgba(56, 189, 248, 0.25) 310deg,
-    rgba(56, 189, 248, 0.95) 352deg,
+    rgba(56, 189, 248, 0.22) 180.5deg,
+    rgba(56, 189, 248, 0.22) 250deg,
+    rgba(56, 189, 248, 0.45) 310deg,
+    rgba(56, 189, 248, 0.98) 352deg,
     #ffffff 360deg
   );
 }
@@ -527,15 +539,15 @@ html.light body,
 .border-chase-dual-amber .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 70deg,
-    rgba(251, 191, 36, 0.25) 130deg,
-    rgba(251, 191, 36, 0.95) 172deg,
+    rgba(251, 191, 36, 0.22) 0deg,
+    rgba(251, 191, 36, 0.22) 70deg,
+    rgba(251, 191, 36, 0.45) 130deg,
+    rgba(251, 191, 36, 0.98) 172deg,
     #ffffff 180deg,
-    transparent 180.1deg,
-    transparent 250deg,
-    rgba(251, 191, 36, 0.25) 310deg,
-    rgba(251, 191, 36, 0.95) 352deg,
+    rgba(251, 191, 36, 0.22) 180.5deg,
+    rgba(251, 191, 36, 0.22) 250deg,
+    rgba(251, 191, 36, 0.45) 310deg,
+    rgba(251, 191, 36, 0.98) 352deg,
     #ffffff 360deg
   );
 }
@@ -543,15 +555,15 @@ html.light body,
 .border-chase-dual-emerald .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 70deg,
-    rgba(52, 211, 153, 0.25) 130deg,
-    rgba(52, 211, 153, 0.95) 172deg,
+    rgba(52, 211, 153, 0.22) 0deg,
+    rgba(52, 211, 153, 0.22) 70deg,
+    rgba(52, 211, 153, 0.45) 130deg,
+    rgba(52, 211, 153, 0.98) 172deg,
     #ffffff 180deg,
-    transparent 180.1deg,
-    transparent 250deg,
-    rgba(52, 211, 153, 0.25) 310deg,
-    rgba(52, 211, 153, 0.95) 352deg,
+    rgba(52, 211, 153, 0.22) 180.5deg,
+    rgba(52, 211, 153, 0.22) 250deg,
+    rgba(52, 211, 153, 0.45) 310deg,
+    rgba(52, 211, 153, 0.98) 352deg,
     #ffffff 360deg
   );
 }
@@ -559,15 +571,15 @@ html.light body,
 .border-chase-dual-purple .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 70deg,
-    rgba(168, 85, 247, 0.25) 130deg,
-    rgba(168, 85, 247, 0.95) 172deg,
+    rgba(168, 85, 247, 0.22) 0deg,
+    rgba(168, 85, 247, 0.22) 70deg,
+    rgba(168, 85, 247, 0.45) 130deg,
+    rgba(168, 85, 247, 0.98) 172deg,
     #ffffff 180deg,
-    transparent 180.1deg,
-    transparent 250deg,
-    rgba(168, 85, 247, 0.25) 310deg,
-    rgba(168, 85, 247, 0.95) 352deg,
+    rgba(168, 85, 247, 0.22) 180.5deg,
+    rgba(168, 85, 247, 0.22) 250deg,
+    rgba(168, 85, 247, 0.45) 310deg,
+    rgba(168, 85, 247, 0.98) 352deg,
     #ffffff 360deg
   );
 }
@@ -576,10 +588,10 @@ html.light body,
 .border-chase-single-sky .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 220deg,
-    rgba(56, 189, 248, 0.2) 290deg,
-    rgba(56, 189, 248, 0.95) 348deg,
+    rgba(56, 189, 248, 0.22) 0deg,
+    rgba(56, 189, 248, 0.22) 220deg,
+    rgba(56, 189, 248, 0.45) 290deg,
+    rgba(56, 189, 248, 0.98) 348deg,
     #ffffff 360deg
   );
 }
@@ -587,10 +599,10 @@ html.light body,
 .border-chase-single-amber .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 220deg,
-    rgba(251, 191, 36, 0.2) 290deg,
-    rgba(251, 191, 36, 0.95) 348deg,
+    rgba(251, 191, 36, 0.22) 0deg,
+    rgba(251, 191, 36, 0.22) 220deg,
+    rgba(251, 191, 36, 0.45) 290deg,
+    rgba(251, 191, 36, 0.98) 348deg,
     #ffffff 360deg
   );
 }
@@ -598,10 +610,10 @@ html.light body,
 .border-chase-single-emerald .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 220deg,
-    rgba(52, 211, 153, 0.2) 290deg,
-    rgba(52, 211, 153, 0.95) 348deg,
+    rgba(52, 211, 153, 0.22) 0deg,
+    rgba(52, 211, 153, 0.22) 220deg,
+    rgba(52, 211, 153, 0.45) 290deg,
+    rgba(52, 211, 153, 0.98) 348deg,
     #ffffff 360deg
   );
 }
@@ -609,10 +621,10 @@ html.light body,
 .border-chase-single-purple .border-chase-rotor {
   background: conic-gradient(
     from 0deg at 50% 50%,
-    transparent 0deg,
-    transparent 220deg,
-    rgba(168, 85, 247, 0.2) 290deg,
-    rgba(168, 85, 247, 0.95) 348deg,
+    rgba(168, 85, 247, 0.22) 0deg,
+    rgba(168, 85, 247, 0.22) 220deg,
+    rgba(168, 85, 247, 0.45) 290deg,
+    rgba(168, 85, 247, 0.98) 348deg,
     #ffffff 360deg
   );
 }
