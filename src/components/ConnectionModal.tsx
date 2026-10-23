@@ -161,6 +161,16 @@ export const ConnectionModal = () => {
     count?: number;
   } | null>(null);
 
+  // Flexible Target Group Combobox / Dropdown state
+  const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
+  const [groupSearchQuery, setGroupSearchQuery] = useState('');
+  const [isCreatingCustomGroup, setIsCreatingCustomGroup] = useState(false);
+  const [customGroupName, setCustomGroupName] = useState('');
+  const [customGroupTag, setCustomGroupTag] = useState('DEV');
+  const [customGroupColor, setCustomGroupColor] = useState('sky');
+  const groupDropdownRef = useRef<HTMLDivElement>(null);
+  const groupSearchInputRef = useRef<HTMLInputElement>(null);
+
   // Group Form state
   const [groupName, setGroupName] = useState('');
   const [groupTag, setGroupTag] = useState<'PROD' | 'QA' | 'DEV' | 'LOCAL'>('DEV');
@@ -252,6 +262,52 @@ export const ConnectionModal = () => {
     setGroupName('');
     setIsCreatingGroup(false);
     setFormData((prev) => ({ ...prev, groupId: newGroup.id }));
+  };
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!isGroupDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (groupDropdownRef.current && !groupDropdownRef.current.contains(e.target as Node)) {
+        setIsGroupDropdownOpen(false);
+        setIsCreatingCustomGroup(false);
+        setGroupSearchQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isGroupDropdownOpen]);
+
+  // Auto-focus search input when opening Target Group dropdown
+  useEffect(() => {
+    if (isGroupDropdownOpen) {
+      setTimeout(() => groupSearchInputRef.current?.focus(), 50);
+    }
+  }, [isGroupDropdownOpen]);
+
+  const handleSelectGroup = (groupId: string) => {
+    setFormData((prev) => ({ ...prev, groupId }));
+    setIsGroupDropdownOpen(false);
+    setIsCreatingCustomGroup(false);
+    setGroupSearchQuery('');
+  };
+
+  const handleCreateGroupInline = (name: string, tag?: string, color?: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const finalTag = (tag || trimmed.slice(0, 4)).trim().toUpperCase() || 'DEV';
+    const finalColor = color || 'sky';
+    const newGroup = addConnectionGroup({
+      name: trimmed,
+      tag: finalTag,
+      color: finalColor,
+    });
+    setFormData((prev) => ({ ...prev, groupId: newGroup.id }));
+    setIsGroupDropdownOpen(false);
+    setIsCreatingCustomGroup(false);
+    setGroupSearchQuery('');
+    setCustomGroupName('');
+    showToast(`Created & assigned to "${newGroup.name}"`);
   };
 
   const handleStartNewConnection = (groupId?: string) => {
@@ -1062,6 +1118,123 @@ export const ConnectionModal = () => {
                   </div>
                 );
               })}
+
+              {/* Ungrouped connections if any */}
+              {(() => {
+                const ungroupedConns = connections.filter(
+                  (c) => !c.groupId || c.groupId === 'ungrouped' || !connectionGroups.some((g) => g.id === c.groupId)
+                );
+                if (ungroupedConns.length === 0) return null;
+                const isCollapsed = !!collapsedGroups['ungrouped'];
+
+                return (
+                  <div className="space-y-1 pt-1">
+                    <div
+                      onClick={() => toggleGroupCollapse('ungrouped')}
+                      className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-1 px-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-900 rounded-lg cursor-pointer transition select-none group"
+                    >
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <ChevronRight
+                          className={`w-3.5 h-3.5 transition-transform duration-200 text-slate-400 ${
+                            isCollapsed ? '' : 'rotate-90'
+                          }`}
+                        />
+                        <FolderOpen className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate text-slate-600 dark:text-slate-300">Ungrouped</span>
+                      </div>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-medium bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        {ungroupedConns.length}
+                      </span>
+                    </div>
+
+                    <div
+                      className={`grid transition-[grid-template-rows,opacity] duration-240 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                        isCollapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="ml-3 pl-2 border-l border-slate-300 dark:border-slate-800 space-y-1 text-xs pt-1">
+                          {ungroupedConns.map((conn) => {
+                            const isSelected = !isCreatingNew && selectedConnId === conn.id;
+                            const isConnActive = conn.active;
+                            const isConnDragged = draggedItem?.type === 'connection' && draggedItem.id === conn.id;
+                            const isConnDropTarget = dropTarget?.id === conn.id;
+
+                            return (
+                              <div
+                                key={conn.id}
+                                draggable={true}
+                                onDragStart={(e) => handleConnDragStart(e, conn)}
+                                onDragEnd={() => {
+                                  setDraggedItem(null);
+                                  setDropTarget(null);
+                                }}
+                                onDragOver={(e) => handleConnDragOver(e, conn)}
+                                onDragLeave={(e) => handleConnDragLeave(e, conn.id)}
+                                onDrop={(e) => handleConnDrop(e, conn)}
+                                onClick={() => handleSelectConnection(conn)}
+                                onDoubleClick={() => {
+                                  switchActiveConnection(conn.id);
+                                  setConnectionModalOpen(false);
+                                  showToast(`Connected to ${conn.name}`);
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setGroupContextPos(null);
+                                  setConnContextPos({ x: e.clientX, y: e.clientY });
+                                  setTargetConn(conn);
+                                }}
+                                className={`relative px-2 py-1.5 rounded-lg cursor-grab active:cursor-grabbing font-medium flex items-center justify-between transition-all duration-150 select-none group ${
+                                  isSelected
+                                    ? 'bg-sky-100 dark:bg-sky-500/20 text-sky-900 dark:text-sky-200 border border-sky-300 dark:border-sky-500/40 shadow-xs'
+                                    : 'hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                } ${
+                                  isConnDragged
+                                    ? 'opacity-40 scale-[0.98] border border-dashed border-sky-400 bg-sky-950/20'
+                                    : ''
+                                }`}
+                              >
+                                {isConnDropTarget && dropTarget.position === 'before' && (
+                                  <div className="absolute -top-1 left-1 right-1 h-0.5 bg-sky-400 rounded-full shadow-[0_0_8px_rgba(56,189,248,0.9)] z-20 pointer-events-none" />
+                                )}
+                                {isConnDropTarget && dropTarget.position === 'after' && (
+                                  <div className="absolute -bottom-1 left-1 right-1 h-0.5 bg-sky-400 rounded-full shadow-[0_0_8px_rgba(56,189,248,0.9)] z-20 pointer-events-none" />
+                                )}
+
+                                <div className="flex items-center space-x-1.5 truncate">
+                                  <span title="Drag to reorder or move to another group" className="inline-flex items-center">
+                                    <GripVertical
+                                      className="w-3 h-3 text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 opacity-20 group-hover:opacity-90 transition-opacity flex-shrink-0 cursor-grab active:cursor-grabbing"
+                                    />
+                                  </span>
+                                  <ConnectorIcon engine={conn.engine} size="xs" />
+                                  <span className="truncate">{conn.name}</span>
+                                </div>
+
+                                <div className="flex items-center space-x-1" onMouseDown={(e) => e.stopPropagation()}>
+                                  {isConnActive && (
+                                    <HeartbeatDot color="green" size="xs" showWave={true} />
+                                  )}
+                                  <button
+                                    type="button"
+                                    draggable={false}
+                                    onClick={(e) => handleDeleteConnection(conn.id, e)}
+                                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 rounded opacity-0 group-hover:opacity-100 transition ml-1 active:scale-95 cursor-pointer"
+                                    title="Delete connection"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Quick button to create new connection at bottom */}
@@ -1265,9 +1438,9 @@ export const ConnectionModal = () => {
                 /* ========================================================================= */
                 <div className="space-y-4">
 
-                {/* Connection Name & Group Selection */}
+                {/* Connection Name & Flexible Target Group Selection */}
                 <div className="grid grid-cols-12 gap-3">
-                  <div className="col-span-8">
+                  <div className="col-span-12 sm:col-span-7">
                     <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
                       Connection Name
                     </label>
@@ -1280,24 +1453,254 @@ export const ConnectionModal = () => {
                     />
                   </div>
 
-                  <div className="col-span-4">
+                  <div className="col-span-12 sm:col-span-5 relative" ref={groupDropdownRef}>
                     <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
                       Target Group
                     </label>
-                    <div className="relative">
-                      <select
-                        value={formData.groupId}
-                        onChange={(e) => setFormData({ ...formData, groupId: e.target.value })}
-                        className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg pl-3 pr-8 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs appearance-none cursor-pointer"
-                      >
-                        {connectionGroups.map((g) => (
-                          <option key={g.id} value={g.id}>
-                            {g.name} ({g.tag})
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
+                    
+                    {/* Trigger Button: Shows selected group dot, name, tag */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsGroupDropdownOpen(!isGroupDropdownOpen);
+                        setIsCreatingCustomGroup(false);
+                      }}
+                      className={`w-full h-9 bg-white dark:bg-slate-950 border rounded-lg px-2.5 flex items-center justify-between text-xs font-medium transition-colors shadow-2xs cursor-pointer select-none ${
+                        isGroupDropdownOpen
+                          ? 'border-sky-500 ring-1 ring-sky-500/20 text-slate-900 dark:text-white'
+                          : 'border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:border-slate-400 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 truncate">
+                        {(() => {
+                          const grp = connectionGroups.find((g) => g.id === formData.groupId);
+                          if (!grp || formData.groupId === 'ungrouped') {
+                            return (
+                              <>
+                                <FolderOpen className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span className="text-slate-500 dark:text-slate-400">None (Ungrouped)</span>
+                              </>
+                            );
+                          }
+                          const col = COLOR_MAP[grp.color] || COLOR_MAP.rose;
+                          return (
+                            <>
+                              <span className={`w-2 h-2 rounded-full ${col.dot} shrink-0`} />
+                              <span className="truncate">{grp.name}</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60 shrink-0">
+                                {grp.tag}
+                              </span>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${
+                          isGroupDropdownOpen ? 'rotate-180 text-sky-500' : 'text-slate-400'
+                        }`}
+                      />
+                    </button>
+
+                    {/* Flexible Creatable Popover */}
+                    {isGroupDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-1.5 z-50 w-full min-w-[280px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-2xl p-2 space-y-2 animate-in fade-in zoom-in-95 duration-100 ring-1 ring-black/5 dark:ring-white/10 font-sans">
+                        {/* Search or Quick-type input */}
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            ref={groupSearchInputRef}
+                            type="text"
+                            value={groupSearchQuery}
+                            onChange={(e) => setGroupSearchQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const trimmed = groupSearchQuery.trim();
+                                if (!trimmed) return;
+                                const match = connectionGroups.find(
+                                  (g) => g.name.toLowerCase() === trimmed.toLowerCase()
+                                );
+                                if (match) {
+                                  handleSelectGroup(match.id);
+                                } else {
+                                  handleCreateGroupInline(trimmed);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setIsGroupDropdownOpen(false);
+                              }
+                            }}
+                            placeholder="Filter or type new group..."
+                            className="w-full h-8 pl-8 pr-3 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20"
+                          />
+                        </div>
+
+                        {/* Quick Create Button when query doesn't match an existing group */}
+                        {(() => {
+                          const query = groupSearchQuery.trim();
+                          if (!query) return null;
+                          const exact = connectionGroups.some(
+                            (g) => g.name.toLowerCase() === query.toLowerCase()
+                          );
+                          if (exact) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => handleCreateGroupInline(query)}
+                              className="w-full px-2.5 py-1.5 text-left flex items-center justify-between text-xs font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 rounded-lg transition active:scale-[0.99] cursor-pointer border border-sky-200/60 dark:border-sky-800/60"
+                            >
+                              <div className="flex items-center space-x-1.5 truncate">
+                                <Plus className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">Create "{query}"</span>
+                              </div>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-medium bg-sky-200/70 dark:bg-sky-800/60 text-sky-800 dark:text-sky-200 shrink-0">
+                                {query.slice(0, 4).toUpperCase()}
+                              </span>
+                            </button>
+                          );
+                        })()}
+
+                        {/* Existing Groups List */}
+                        <div className="max-h-44 overflow-y-auto space-y-0.5 pr-0.5">
+                          {connectionGroups
+                            .filter((g) => {
+                              const q = groupSearchQuery.trim().toLowerCase();
+                              return !q || g.name.toLowerCase().includes(q) || g.tag.toLowerCase().includes(q);
+                            })
+                            .map((grp) => {
+                              const isSelected = formData.groupId === grp.id;
+                              const col = COLOR_MAP[grp.color] || COLOR_MAP.rose;
+                              const count = connections.filter((c) => c.groupId === grp.id).length;
+                              return (
+                                <button
+                                  key={grp.id}
+                                  type="button"
+                                  onClick={() => handleSelectGroup(grp.id)}
+                                  className={`w-full px-2.5 py-1.5 text-left flex items-center justify-between text-xs rounded-lg transition cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-900 dark:text-sky-200 font-semibold border border-sky-200 dark:border-sky-800/60'
+                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-2 truncate">
+                                    <span className={`w-2 h-2 rounded-full ${col.dot} shrink-0`} />
+                                    <span className="truncate">{grp.name}</span>
+                                    <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0">
+                                      {grp.tag}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                                      {count}
+                                    </span>
+                                    {isSelected && <Check className="w-3.5 h-3.5 text-sky-500" />}
+                                  </div>
+                                </button>
+                              );
+                            })}
+
+                          {/* Ungrouped option */}
+                          <button
+                            type="button"
+                            onClick={() => handleSelectGroup('ungrouped')}
+                            className={`w-full px-2.5 py-1.5 text-left flex items-center justify-between text-xs rounded-lg transition cursor-pointer ${
+                              formData.groupId === 'ungrouped' || !formData.groupId
+                                ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-900 dark:text-sky-200 font-semibold border border-sky-200 dark:border-sky-800/60'
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <FolderOpen className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>None (Ungrouped)</span>
+                            </div>
+                            {(formData.groupId === 'ungrouped' || !formData.groupId) && (
+                              <Check className="w-3.5 h-3.5 text-sky-500" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Custom Group Creation Expandable Section */}
+                        <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                          {!isCreatingCustomGroup ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsCreatingCustomGroup(true);
+                                setCustomGroupName(groupSearchQuery.trim());
+                                setCustomGroupTag(groupSearchQuery.trim().slice(0, 4).toUpperCase() || 'DEV');
+                              }}
+                              className="w-full px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 flex items-center space-x-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/70 transition cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Custom group with color & tag...</span>
+                            </button>
+                          ) : (
+                            <div className="p-2 bg-slate-50 dark:bg-slate-950/80 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-2 text-xs">
+                              <div className="font-semibold text-slate-800 dark:text-slate-200 text-[11px] flex items-center justify-between">
+                                <span>Create New Group</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsCreatingCustomGroup(false)}
+                                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                value={customGroupName}
+                                onChange={(e) => {
+                                  setCustomGroupName(e.target.value);
+                                  if (!customGroupTag || customGroupTag === 'DEV') {
+                                    setCustomGroupTag(e.target.value.slice(0, 4).toUpperCase());
+                                  }
+                                }}
+                                placeholder="Group name (e.g. Analytics DB)"
+                                className="w-full h-7 px-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 focus:outline-none focus:border-sky-500"
+                              />
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="text"
+                                  value={customGroupTag}
+                                  onChange={(e) => setCustomGroupTag(e.target.value.toUpperCase())}
+                                  placeholder="Tag (e.g. QA)"
+                                  maxLength={6}
+                                  className="w-20 h-7 px-2 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 uppercase focus:outline-none focus:border-sky-500"
+                                />
+                                <div className="flex items-center space-x-1 flex-1 justify-end">
+                                  {(['rose', 'amber', 'emerald', 'sky', 'purple'] as const).map((col) => (
+                                    <button
+                                      key={col}
+                                      type="button"
+                                      onClick={() => setCustomGroupColor(col)}
+                                      className={`w-4 h-4 rounded-full ${COLOR_MAP[col]?.dot} transition-transform cursor-pointer ${
+                                        customGroupColor === col ? 'ring-2 ring-white scale-110' : 'opacity-70 hover:opacity-100'
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex justify-end space-x-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsCreatingCustomGroup(false)}
+                                  className="px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCreateGroupInline(customGroupName, customGroupTag, customGroupColor)}
+                                  disabled={!customGroupName.trim()}
+                                  className="px-2.5 py-1 text-[11px] font-semibold bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded transition shadow-xs"
+                                >
+                                  Create & Select
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
