@@ -24,7 +24,6 @@ import {
   FileKey,
   Eye,
   EyeOff,
-  Lock,
   Search,
   ArrowLeft,
   ArrowRight,
@@ -999,12 +998,15 @@ export const ConnectionModal = () => {
             
             {/* Unified, Persistent Header (fixed h-12, never unmounts, never jitters) */}
             <div className="h-12 px-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 select-none bg-slate-50/60 dark:bg-slate-950/40">
-              <div className="flex items-center space-x-2.5">
-                <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
+              <div className="flex items-center space-x-2.5 min-w-0">
+                {!isCreatingNew && (
+                  <ConnectorIcon engine={formData.engine} size="sm" className="w-5 h-5 shrink-0" />
+                )}
+                <span className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
                   {isCreatingNew ? '✨ Create New Connection' : `Editing: ${formData.name}`}
                 </span>
                 {!isCreatingNew && selectedConnId && (
-                  <span className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-slate-600 dark:text-slate-400 font-mono">
+                  <span className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-slate-600 dark:text-slate-400 font-mono shrink-0">
                     ID: {selectedConnId}
                   </span>
                 )}
@@ -1058,9 +1060,22 @@ export const ConnectionModal = () => {
                   </button>
                 </div>
               ) : (
-                <span className="text-[10px] px-2.5 py-1 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 rounded-md font-medium">
-                  Saved Connection
-                </span>
+                <div className="flex items-center space-x-2 shrink-0">
+                  {(() => {
+                    const currentMeta = CONNECTOR_METADATA[formData.engine] || CONNECTOR_METADATA.generic;
+                    return (
+                      <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-2xs">
+                        <ConnectorIcon engine={formData.engine} size="xs" className="w-3.5 h-3.5 shrink-0" />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                          {currentMeta.label}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                          {currentMeta.tag}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
               )}
             </div>
 
@@ -1204,10 +1219,10 @@ export const ConnectionModal = () => {
                   </div>
                 </div>
 
-                {/* Engine Banner: Editable with Change button when Creating, or Locked when Editing */}
-                {(() => {
+                {/* Engine Banner: Shown in create mode to allow changing connector; in edit mode connector is shown in the header */}
+                {isCreatingNew && (() => {
                   const meta = CONNECTOR_METADATA[formData.engine] || CONNECTOR_METADATA.generic;
-                  return isCreatingNew ? (
+                  return (
                     <div className="bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-500/30 rounded-xl p-3 flex items-center justify-between shadow-2xs">
                       <div className="flex items-center space-x-3">
                         <ConnectorIcon engine={formData.engine} size="md" />
@@ -1235,31 +1250,6 @@ export const ConnectionModal = () => {
                         <RefreshCw className="w-3 h-3" />
                         <span>Change Connector</span>
                       </button>
-                    </div>
-                  ) : (
-                    /* In Edit Mode: Engine is fixed / locked */
-                    <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex items-center justify-between shadow-2xs">
-                      <div className="flex items-center space-x-3">
-                        <ConnectorIcon engine={formData.engine} size="md" />
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
-                              {meta.label}
-                            </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-medium bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
-                              {meta.tag} • {getCategoryLabel(meta.category)}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                            Connector driver {formData.port > 0 ? `• Default port :${formData.port}` : ''}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-[11px] font-medium select-none">
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        <span>Connector Fixed</span>
-                      </div>
                     </div>
                   );
                 })()}
