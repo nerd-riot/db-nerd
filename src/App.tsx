@@ -22,6 +22,7 @@ import { HeartbeatDot } from './components/HeartbeatDot';
 import { DisconnectedBanner } from './components/DisconnectedBanner';
 import { DisconnectedModal } from './components/DisconnectedModal';
 import { SafetyVerificationModal } from './components/SafetyVerificationModal';
+import { TableActionModal } from './components/TableActionModal';
 import { heartbeatService } from './services/heartbeatService';
 import { Table, Terminal, Activity, FileCode, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info, Scissors, ClipboardPaste, Trash2, Database, SlidersHorizontal, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
 import {
@@ -1164,6 +1165,7 @@ export function App() {
       <SettingsModal />
       <DisconnectedModal />
       <SafetyVerificationModal />
+      <TableActionModal />
 
     </div>
   );

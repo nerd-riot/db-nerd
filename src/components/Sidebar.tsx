@@ -80,8 +80,7 @@ export const Sidebar = () => {
     history,
     showToast,
     reloadData,
-    truncateTable,
-    dropTable,
+    openTableActionModal,
     deletedTables,
     settings,
     setTableViewMode,
@@ -738,10 +737,7 @@ export const Sidebar = () => {
             label="Truncate Table..."
             danger
             onClick={() => {
-              const shouldConfirm = settings.confirmDestructive;
-              if (!shouldConfirm || confirm(`Are you sure you want to TRUNCATE table "${targetTable}"? All data will be deleted.`)) {
-                truncateTable(targetTable);
-              }
+              openTableActionModal('truncate', targetTable);
             }}
           />
           <ContextMenuItem
@@ -749,10 +745,7 @@ export const Sidebar = () => {
             label="Drop Table..."
             danger
             onClick={() => {
-              const shouldConfirm = settings.confirmDestructive;
-              if (!shouldConfirm || confirm(`Are you sure you want to DROP table "${targetTable}"? This action cannot be undone.`)) {
-                dropTable(targetTable);
-              }
+              openTableActionModal('delete', targetTable);
             }}
           />
         </ContextMenuContainer>

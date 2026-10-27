@@ -12,6 +12,8 @@ import {
   ExternalLink,
   Code,
   Layers,
+  Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { BorderChase } from './BorderChase';
 import {
@@ -85,6 +87,7 @@ export const AllTableStatsView: React.FC = () => {
     openNewQueryTab,
     setSelectedRowData,
     showToast,
+    openTableActionModal,
   } = useAppStore();
 
   const [stats, setStats] = useState<TableStatRow[]>([]);
@@ -584,6 +587,26 @@ export const AllTableStatsView: React.FC = () => {
             label="Refresh Stats"
             onClick={() => {
               fetchStats();
+            }}
+          />
+
+          <ContextMenuDivider />
+
+          <ContextMenuItem
+            icon={<Sparkles className="w-3.5 h-3.5 text-rose-400" />}
+            label="Truncate Table..."
+            danger
+            onClick={() => {
+              openTableActionModal('truncate', contextRow.name);
+            }}
+          />
+
+          <ContextMenuItem
+            icon={<Trash2 className="w-3.5 h-3.5 text-rose-400" />}
+            label="Drop Table..."
+            danger
+            onClick={() => {
+              openTableActionModal('delete', contextRow.name);
             }}
           />
         </ContextMenuContainer>

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag, TableSchemaInfo } from '../types';
-import { getTablesForConnection } from '../data/schemas';
 import { getDefaultRowsForTable } from '../data/mockRows';
 import { closeRealConnection, executeRealQuery, getRealTables, getRealFunctions, getRealTableSchema, getRealDatabases, RealTableSummary, testRealConnection } from '../services/dbService';
 import { heartbeatService } from '../services/heartbeatService';
@@ -14,11 +13,14 @@ import {
   boundSqlQueryResultTabs,
   boundSqlResultRows,
   buildPendingTransactionSql,
+  buildTruncateTableSql,
+  buildDropTableSql,
+  TruncateTableOptions,
+  DropTableOptions,
   persistSessionTabs,
   loadSessionTabs,
   removeSessionTabsStorage,
   safeSetLocalStorage,
-  quoteIdentifier,
 } from '../lib';
 import {
   buildPaginatedSelectSql,
@@ -209,8 +211,17 @@ interface AppState {
 
   truncatedTables: Record<string, boolean>;
   deletedTables: Record<string, string[]>;
-  truncateTable: (tableName: string) => Promise<void>;
-  dropTable: (tableName: string) => Promise<void>;
+  tableActionTarget: { type: 'truncate' | 'delete'; tableName: string } | null;
+  openTableActionModal: (type: 'truncate' | 'delete', tableName: string) => void;
+  closeTableActionModal: () => void;
+  truncateTable: (
+    tableName: string,
+    options?: TruncateTableOptions
+  ) => Promise<{ success: boolean; error?: string }>;
+  dropTable: (
+    tableName: string,
+    options?: DropTableOptions
+  ) => Promise<{ success: boolean; error?: string }>;
 
   processes: ProcessItem[];
   killProcess: (pid: number) => void;
@@ -2206,81 +2217,100 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   truncatedTables: {},
   deletedTables: {},
+  tableActionTarget: null,
+  openTableActionModal: (type, tableName) => set({ tableActionTarget: { type, tableName } }),
+  closeTableActionModal: () => set({ tableActionTarget: null }),
 
-  truncateTable: async (tableName: string) => {
-    const { activeConnection, selectedTable, requestSafetyConfirmation } = get();
-    const quotedTbl = quoteIdentifier(tableName, activeConnection.engine);
-    const query = `TRUNCATE TABLE ${quotedTbl};`;
-    const approved = await requestSafetyConfirmation({
-      sqlText: query,
-      title: `Confirm TRUNCATE Table "${tableName}"`,
-      actionLabel: 'Truncate Table (↵)',
-    });
-    if (!approved) return;
+  truncateTable: async (tableName: string, options?: TruncateTableOptions) => {
+    const { activeConnection, selectedTable, liveTables } = get();
+    const connId = activeConnection.id;
+    const tableSummary = liveTables[connId]?.find((t) => t.name === tableName);
+    const schema = tableSummary?.schema || (activeConnection.engine === 'postgres' ? 'public' : undefined);
+    const query = buildTruncateTableSql(tableName, activeConnection.engine, schema, options);
 
-    try {
-      await executeRealQuery(activeConnection, query);
-    } catch (e) {
-      console.warn('Real truncate failed:', e);
+    const res = await executeRealQuery(activeConnection, query);
+    if (!res.success) {
+      const errMsg = res.error || 'Truncate operation failed';
+      get().showToast(`❌ Truncate failed: ${errMsg}`, 'error');
+      return { success: false, error: errMsg };
     }
 
-    set((state) => ({
-      truncatedTables: { ...state.truncatedTables, [tableName]: true },
-      ...(selectedTable === tableName
-        ? {
-            rows: [],
-            originalRows: [],
-            pendingEditsCount: 0,
-            selectedRowData: null,
-            isTransactionOpen: false,
-          }
-        : {}),
-      history: [
-        {
-          id: `hist-${Date.now()}`,
-          connectionName: state.activeConnection.name,
-          env: state.activeConnection.env,
-          sql: query,
-          timestamp: 'Just now',
-          durationMs: 1.1,
-          rowsAffected: 0,
-          status: 'success' as const,
-          isFavorite: false,
+    set((state) => {
+      const prevLive = state.liveTables[connId] || [];
+      const nextLive = prevLive.map((t) =>
+        t.name === tableName ? { ...t, estimated_rows: 0, total_size: '0 bytes', data_size: '0 bytes' } : t
+      );
+
+      return {
+        truncatedTables: { ...state.truncatedTables, [tableName]: true },
+        liveTables: {
+          ...state.liveTables,
+          [connId]: nextLive,
         },
-        ...state.history,
-      ].slice(0, 200),
-    }));
+        ...(selectedTable === tableName
+          ? {
+              rows: [],
+              originalRows: [],
+              pendingEditsCount: 0,
+              selectedRowData: null,
+              isTransactionOpen: false,
+              gridTotalCount: 0,
+            }
+          : {}),
+        history: [
+          {
+            id: `hist-${Date.now()}`,
+            connectionName: state.activeConnection.name,
+            env: state.activeConnection.env,
+            sql: query,
+            timestamp: 'Just now',
+            durationMs: res.duration_ms || 1.1,
+            rowsAffected: 0,
+            status: 'success' as const,
+            isFavorite: false,
+          },
+          ...state.history,
+        ].slice(0, 200),
+      };
+    });
+
     get().showToast(`⚡ Truncated table "${tableName}" (0 rows)`);
+    return { success: true };
   },
 
-  dropTable: async (tableName: string) => {
-    const { activeConnection, selectedTable, tabs, closeTab, showToast, requestSafetyConfirmation } = get();
+  dropTable: async (tableName: string, options?: DropTableOptions) => {
+    const { activeConnection, selectedTable, tabs, closeTab, liveTables, showToast } = get();
     const connId = activeConnection.id;
-    const quotedTbl = quoteIdentifier(tableName, activeConnection.engine);
-    const query = `DROP TABLE IF EXISTS ${quotedTbl};`;
+    const tableSummary = liveTables[connId]?.find((t) => t.name === tableName);
+    const schema = tableSummary?.schema || (activeConnection.engine === 'postgres' ? 'public' : undefined);
+    const query = buildDropTableSql(tableName, activeConnection.engine, schema, options);
 
-    const approved = await requestSafetyConfirmation({
-      sqlText: query,
-      title: `Confirm DROP Table "${tableName}"`,
-      actionLabel: 'Drop Table (↵)',
-    });
-    if (!approved) return;
-
-    try {
-      await executeRealQuery(activeConnection, query);
-    } catch (e) {
-      console.warn('Real drop failed:', e);
+    const res = await executeRealQuery(activeConnection, query);
+    if (!res.success) {
+      const errMsg = res.error || 'Drop table operation failed';
+      showToast(`❌ Drop failed: ${errMsg}`, 'error');
+      return { success: false, error: errMsg };
     }
+
+    // Invalidate caches
+    metadataCache.tables.deleteByPrefix(`${connId}:`);
+    metadataCache.schemas.deleteByPrefix(`${connId}:`);
 
     // Close any tabs for this table
     const tabsToClose = tabs.filter((t) => t.tableName === tableName);
     tabsToClose.forEach((t) => closeTab(t.id));
 
     set((state) => {
+      const prevLive = state.liveTables[connId] || [];
+      const nextLive = prevLive.filter((t) => t.name !== tableName);
       const prevDeleted = state.deletedTables[connId] || [];
       const nextDeleted = Array.from(new Set([...prevDeleted, tableName]));
 
       return {
+        liveTables: {
+          ...state.liveTables,
+          [connId]: nextLive,
+        },
         deletedTables: {
           ...state.deletedTables,
           [connId]: nextDeleted,
@@ -2292,7 +2322,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             env: state.activeConnection.env,
             sql: query,
             timestamp: 'Just now',
-            durationMs: 1.8,
+            durationMs: res.duration_ms || 1.8,
             rowsAffected: 0,
             status: 'success' as const,
             isFavorite: false,
@@ -2304,15 +2334,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // If current selectedTable was dropped, switch to next available table
     if (selectedTable === tableName) {
-      const allTables = getTablesForConnection(activeConnection.name, activeConnection.engine);
-      const deletedForConn = get().deletedTables[connId] || [];
-      const remaining = allTables.filter((t) => !deletedForConn.includes(t.name));
-      const nextTbl = remaining.length > 0 ? remaining[0].name : 'user_orders';
-      get().setSelectedTable(nextTbl);
-      get().openTableGridTab(nextTbl);
+      const currentLive = get().liveTables[connId] || [];
+      const nextTbl = currentLive.length > 0 ? currentLive[0].name : '';
+      if (nextTbl) {
+        get().setSelectedTable(nextTbl);
+        get().openTableGridTab(nextTbl);
+      } else {
+        set({ selectedTable: '', rows: [], originalRows: [], selectedRowData: null });
+      }
     }
 
     showToast(`🗑️ Dropped table "${tableName}"`);
+    return { success: true };
   },
 
   setSelectedTable: (tbl) => {
@@ -2500,6 +2533,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const liveRows: GridRow[] = res.rows.map((r, idx) => ({
           ...sanitizeRowCells(r),
           id: r.id !== undefined ? r.id : offset + idx + 1,
+          _syntheticId: r.id === undefined,
           isDirty: false,
           dirtyFields: {},
           rowState: 'clean',
@@ -2960,8 +2994,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   getPendingSQL: () => {
-    const { rows, selectedTable, activeConnection } = get();
-    return buildPendingTransactionSql(rows, selectedTable, activeConnection?.engine || 'postgres');
+    const { rows, selectedTable, activeConnection, liveSchemas, liveTables } = get();
+    const connId = activeConnection?.id;
+    const schemaInfo = connId ? liveSchemas[connId]?.[selectedTable] : undefined;
+    const tableSummary = connId ? liveTables[connId]?.find((t) => t.name === selectedTable) : undefined;
+    const pkCol = schemaInfo?.columns?.find((c) => c.isPrimaryKey)?.name;
+    const schema = schemaInfo?.schema || tableSummary?.schema || (activeConnection?.engine === 'postgres' ? 'public' : undefined);
+    return buildPendingTransactionSql(
+      rows,
+      selectedTable,
+      activeConnection?.engine || 'postgres',
+      pkCol,
+      schema
+    );
   },
 
   processes: [

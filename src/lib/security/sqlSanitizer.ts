@@ -18,6 +18,9 @@ export function normalizeDatabaseEngine(rawEngine?: string): DatabaseEngine {
   if (lower.startsWith('snowflake')) {
     return 'snowflake';
   }
+  if (lower.startsWith('sqlite')) {
+    return 'sqlite';
+  }
   return 'postgres';
 }
 
