@@ -23,6 +23,7 @@ import {
   ContextMenuHeader,
   ContextMenuPosition,
 } from './ContextMenu';
+import { formatByteSize, parseSizeToBytes } from '../lib/memory/memoryGuard';
 
 export interface TableStatRow {
   name: string;
@@ -34,6 +35,9 @@ export interface TableStatRow {
   data_size: string;
   index_size: string;
   comment: string;
+  total_bytes?: number;
+  data_bytes?: number;
+  index_bytes?: number;
 }
 
 const FALLBACK_STATS: Record<string, TableStatRow[]> = {
@@ -116,33 +120,47 @@ export const AllTableStatsView: React.FC = () => {
               WHEN 'r' THEN 'TABLE' 
               WHEN 'v' THEN 'VIEW' 
               WHEN 'm' THEN 'MATERIALIZED VIEW' 
+              WHEN 'p' THEN 'PARTITIONED'
               ELSE 'OTHER' 
             END AS kind,
             pg_catalog.pg_get_userbyid(c.relowner) AS owner,
-            COALESCE(c.reltuples::bigint, 0) AS estimated_row,
-            pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
-            pg_size_pretty(pg_relation_size(c.oid)) AS data_size,
-            pg_size_pretty(pg_indexes_size(c.oid)) AS index_size,
+            CASE
+              WHEN c.reltuples > 0 THEN c.reltuples::bigint
+              WHEN COALESCE(s.n_live_tup, 0) > 0 THEN s.n_live_tup
+              ELSE 0
+            END AS estimated_row,
+            pg_total_relation_size(c.oid) AS total_bytes,
+            pg_table_size(c.oid) AS data_bytes,
+            pg_indexes_size(c.oid) AS index_bytes,
             COALESCE(d.description, '--') AS comment
           FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
+          LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
           LEFT JOIN pg_description d ON d.objoid = c.oid AND d.objsubid = 0
-          WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v', 'm')
+          WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v', 'm', 'p')
           ORDER BY c.relname ASC;
         `;
         const res = await executeRealQuery(activeConnection, query);
         if (res.success && res.rows && res.rows.length > 0) {
-          loadedStats = res.rows.map((r: any) => ({
-            name: String(r.name || ''),
-            schema: String(r.schema || 'public'),
-            kind: String(r.kind || 'TABLE'),
-            owner: String(r.owner || 'postgres'),
-            estimated_row: r.estimated_row !== undefined ? r.estimated_row : 0,
-            total_size: String(r.total_size || '0 KB'),
-            data_size: String(r.data_size || '0 KB'),
-            index_size: String(r.index_size || '--'),
-            comment: String(r.comment || '--'),
-          }));
+          loadedStats = res.rows.map((r: any) => {
+            const totalBytes = Number(r.total_bytes ?? 0);
+            const dataBytes = Number(r.data_bytes ?? 0);
+            const indexBytes = Number(r.index_bytes ?? 0);
+            return {
+              name: String(r.name || ''),
+              schema: String(r.schema || 'public'),
+              kind: String(r.kind || 'TABLE'),
+              owner: String(r.owner || 'postgres'),
+              estimated_row: r.estimated_row !== undefined ? Number(r.estimated_row) : 0,
+              total_size: formatByteSize(totalBytes),
+              data_size: formatByteSize(dataBytes),
+              index_size: formatByteSize(indexBytes),
+              comment: String(r.comment || '--'),
+              total_bytes: totalBytes,
+              data_bytes: dataBytes,
+              index_bytes: indexBytes,
+            };
+          });
         }
       } else if (engine === 'mysql') {
         const query = `
@@ -152,9 +170,9 @@ export const AllTableStatsView: React.FC = () => {
             TABLE_TYPE AS kind,
             'dev_user' AS owner,
             COALESCE(TABLE_ROWS, 0) AS estimated_row,
-            CONCAT(ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024, 0), ' KB') AS total_size,
-            CONCAT(ROUND(DATA_LENGTH / 1024, 0), ' KB') AS data_size,
-            CONCAT(ROUND(INDEX_LENGTH / 1024, 0), ' KB') AS index_size,
+            (COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0)) AS total_bytes,
+            COALESCE(DATA_LENGTH, 0) AS data_bytes,
+            COALESCE(INDEX_LENGTH, 0) AS index_bytes,
             COALESCE(TABLE_COMMENT, '--') AS comment
           FROM information_schema.TABLES
           WHERE TABLE_SCHEMA = DATABASE()
@@ -162,17 +180,25 @@ export const AllTableStatsView: React.FC = () => {
         `;
         const res = await executeRealQuery(activeConnection, query);
         if (res.success && res.rows && res.rows.length > 0) {
-          loadedStats = res.rows.map((r: any) => ({
-            name: String(r.name || ''),
-            schema: String(r.schema || activeConnection.database || 'mysql'),
-            kind: String(r.kind || 'BASE TABLE'),
-            owner: String(r.owner || 'dev_user'),
-            estimated_row: r.estimated_row !== undefined ? r.estimated_row : 0,
-            total_size: String(r.total_size || '0 KB'),
-            data_size: String(r.data_size || '0 KB'),
-            index_size: String(r.index_size || '--'),
-            comment: String(r.comment || '--'),
-          }));
+          loadedStats = res.rows.map((r: any) => {
+            const totalBytes = Number(r.total_bytes ?? 0);
+            const dataBytes = Number(r.data_bytes ?? 0);
+            const indexBytes = Number(r.index_bytes ?? 0);
+            return {
+              name: String(r.name || ''),
+              schema: String(r.schema || activeConnection.database || 'mysql'),
+              kind: String(r.kind || 'BASE TABLE'),
+              owner: String(r.owner || 'dev_user'),
+              estimated_row: r.estimated_row !== undefined ? Number(r.estimated_row) : 0,
+              total_size: formatByteSize(totalBytes),
+              data_size: formatByteSize(dataBytes),
+              index_size: formatByteSize(indexBytes),
+              comment: String(r.comment || '--'),
+              total_bytes: totalBytes,
+              data_bytes: dataBytes,
+              index_bytes: indexBytes,
+            };
+          });
         }
       }
     } catch (e) {
@@ -220,6 +246,15 @@ export const AllTableStatsView: React.FC = () => {
       if (sortField === 'estimated_row') {
         valA = Number(valA) || 0;
         valB = Number(valB) || 0;
+      } else if (sortField === 'total_size') {
+        valA = a.total_bytes ?? parseSizeToBytes(a.total_size);
+        valB = b.total_bytes ?? parseSizeToBytes(b.total_size);
+      } else if (sortField === 'data_size') {
+        valA = a.data_bytes ?? parseSizeToBytes(a.data_size);
+        valB = b.data_bytes ?? parseSizeToBytes(b.data_size);
+      } else if (sortField === 'index_size') {
+        valA = a.index_bytes ?? parseSizeToBytes(a.index_size);
+        valB = b.index_bytes ?? parseSizeToBytes(b.index_size);
       } else {
         valA = String(valA || '').toLowerCase();
         valB = String(valB || '').toLowerCase();

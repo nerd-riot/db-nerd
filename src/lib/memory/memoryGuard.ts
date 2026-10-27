@@ -92,3 +92,66 @@ export function boundSqlQueryResultTabs(
 
   return [...pinned.slice(-maxTabs), ...keptUnpinned].slice(-maxTabs);
 }
+
+/**
+ * Formats a raw byte count into human-readable TablePlus size string:
+ * - 0: "0 bytes"
+ * - < 1 KB: "X bytes"
+ * - < 1 MB: "X KB" (rounded or 1 decimal if small)
+ * - < 1 GB: "X MB" (e.g. "834 MB", "779 MB", "449 MB")
+ * - >= 1 GB: "X.XX GB" (e.g. "1.04 GB", "5.94 GB", "6.72 GB")
+ * - >= 1 TB: "X.XX TB"
+ */
+export function formatByteSize(bytes: number | string | null | undefined): string {
+  if (bytes === null || bytes === undefined || bytes === '' || bytes === '--') return '--';
+  const n = typeof bytes === 'number' ? bytes : parseFloat(String(bytes));
+  if (isNaN(n) || n <= 0) return '0 bytes';
+
+  const KB = 1024;
+  const MB = 1024 * 1024;
+  const GB = 1024 * 1024 * 1024;
+  const TB = 1024 * 1024 * 1024 * 1024;
+
+  const trimZero = (v: string, unit: string) => {
+    const trimmed = v.replace(/\.0+$/, '').replace(/(\.[0-9])0$/, '$1');
+    return `${trimmed} ${unit}`;
+  };
+
+  if (n >= TB) {
+    const val = n / TB;
+    return val >= 10 ? trimZero(val.toFixed(1), 'TB') : trimZero(val.toFixed(2), 'TB');
+  }
+  if (n >= GB) {
+    const val = n / GB;
+    return val >= 10 ? trimZero(val.toFixed(1), 'GB') : trimZero(val.toFixed(2), 'GB');
+  }
+  if (n >= MB) {
+    const val = n / MB;
+    return val >= 10 ? `${Math.round(val)} MB` : trimZero(val.toFixed(1), 'MB');
+  }
+  if (n >= KB) {
+    const val = n / KB;
+    return `${Math.round(val)} KB`;
+  }
+  return `${Math.round(n)} bytes`;
+}
+
+/**
+ * Parses size strings like "5.94 GB", "834 MB", "96 KB", "8192 bytes" back to raw bytes for accurate numeric sorting.
+ */
+export function parseSizeToBytes(sizeStr: string | number | null | undefined): number {
+  if (typeof sizeStr === 'number') return isFinite(sizeStr) ? Math.round(sizeStr) : 0;
+  if (!sizeStr || sizeStr === '--') return 0;
+
+  const s = String(sizeStr).trim().toLowerCase();
+  const num = parseFloat(s);
+  if (isNaN(num)) return 0;
+
+  if (s.endsWith('tb')) return Math.round(num * 1024 * 1024 * 1024 * 1024);
+  if (s.endsWith('gb')) return Math.round(num * 1024 * 1024 * 1024);
+  if (s.endsWith('mb')) return Math.round(num * 1024 * 1024);
+  if (s.endsWith('kb') || s.endsWith('k') || s.endsWith('kib')) return Math.round(num * 1024);
+  if (s.endsWith('bytes') || s.endsWith('b')) return Math.round(num);
+
+  return Math.round(num);
+}

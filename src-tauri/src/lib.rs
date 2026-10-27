@@ -176,7 +176,65 @@ pub struct TableSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index_size: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_bytes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index_bytes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+}
+
+pub fn format_byte_size(bytes: i64) -> String {
+    if bytes <= 0 {
+        return "0 bytes".to_string();
+    }
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+    const TB: f64 = 1024.0 * 1024.0 * 1024.0 * 1024.0;
+
+    let b = bytes as f64;
+    let raw = if b >= TB {
+        let val = b / TB;
+        if val >= 10.0 {
+            format!("{:.1} TB", val)
+        } else {
+            format!("{:.2} TB", val)
+        }
+    } else if b >= GB {
+        let val = b / GB;
+        if val >= 10.0 {
+            format!("{:.1} GB", val)
+        } else {
+            format!("{:.2} GB", val)
+        }
+    } else if b >= MB {
+        let val = b / MB;
+        if val >= 10.0 {
+            format!("{:.0} MB", val.round())
+        } else if (val.fract() * 10.0).round() == 0.0 {
+            format!("{:.0} MB", val)
+        } else {
+            format!("{:.1} MB", val)
+        }
+    } else if b >= KB {
+        format!("{:.0} KB", (b / KB).round())
+    } else {
+        format!("{} bytes", bytes)
+    };
+
+    if let Some(space_idx) = raw.find(' ') {
+        let (num_part, unit_part) = raw.split_at(space_idx);
+        let trimmed_num = if num_part.contains('.') {
+            num_part.trim_end_matches('0').trim_end_matches('.')
+        } else {
+            num_part
+        };
+        format!("{}{}", trimmed_num, unit_part)
+    } else {
+        raw
+    }
 }
 
 fn format_compact_table_badge(estimated_rows: i64, total_size: &str) -> String {
@@ -627,9 +685,9 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                         WHEN COALESCE(s.n_live_tup, 0) > 0 THEN s.n_live_tup
                         ELSE 0
                     END AS estimated_rows,
-                    pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
-                    pg_size_pretty(pg_relation_size(c.oid)) AS data_size,
-                    pg_size_pretty(pg_indexes_size(c.oid)) AS index_size,
+                    pg_total_relation_size(c.oid) AS total_bytes,
+                    pg_table_size(c.oid) AS data_bytes,
+                    pg_indexes_size(c.oid) AS index_bytes,
                     COALESCE(d.description, '') AS comment
                 FROM pg_class c
                 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -649,19 +707,23 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                                 .get("estimated_rows")
                                 .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
                                 .unwrap_or(0);
-                            let total_size = r
-                                .get("total_size")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            let data_size = r
-                                .get("data_size")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                            let index_size = r
-                                .get("index_size")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
+                            let total_bytes = r
+                                .get("total_bytes")
+                                .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                                .unwrap_or(0);
+                            let data_bytes = r
+                                .get("data_bytes")
+                                .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                                .unwrap_or(0);
+                            let index_bytes = r
+                                .get("index_bytes")
+                                .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                                .unwrap_or(0);
+
+                            let total_size = format_byte_size(total_bytes);
+                            let data_size = format_byte_size(data_bytes);
+                            let index_size = format_byte_size(index_bytes);
+
                             let schema = r
                                 .get("schema_name")
                                 .and_then(|v| v.as_str())
@@ -687,9 +749,12 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                                 kind,
                                 owner,
                                 estimated_rows: Some(est_rows),
-                                total_size: if total_size.is_empty() { None } else { Some(total_size) },
-                                data_size,
-                                index_size,
+                                total_size: if total_size.is_empty() || total_size == "0 bytes" { None } else { Some(total_size) },
+                                data_size: Some(data_size),
+                                index_size: Some(index_size),
+                                total_bytes: Some(total_bytes),
+                                data_bytes: Some(data_bytes),
+                                index_bytes: Some(index_bytes),
                                 comment,
                             });
                         }
@@ -725,9 +790,9 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                     TABLE_TYPE AS kind,
                     COALESCE(ENGINE, 'InnoDB') AS owner,
                     COALESCE(TABLE_ROWS, 0) AS estimated_rows,
-                    CONCAT(ROUND((COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0)) / 1024, 0), ' KB') AS total_size,
-                    CONCAT(ROUND(COALESCE(DATA_LENGTH, 0) / 1024, 0), ' KB') AS data_size,
-                    CONCAT(ROUND(COALESCE(INDEX_LENGTH, 0) / 1024, 0), ' KB') AS index_size,
+                    (COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0)) AS total_bytes,
+                    COALESCE(DATA_LENGTH, 0) AS data_bytes,
+                    COALESCE(INDEX_LENGTH, 0) AS index_bytes,
                     COALESCE(TABLE_COMMENT, '') AS comment
                 FROM information_schema.TABLES
                 WHERE TABLE_SCHEMA = DATABASE()
@@ -745,19 +810,23 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                         .get("estimated_rows")
                         .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
                         .unwrap_or(0);
-                    let total_size = r
-                        .get("total_size")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let data_size = r
-                        .get("data_size")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    let index_size = r
-                        .get("index_size")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
+                    let total_bytes = r
+                        .get("total_bytes")
+                        .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                        .unwrap_or(0);
+                    let data_bytes = r
+                        .get("data_bytes")
+                        .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                        .unwrap_or(0);
+                    let index_bytes = r
+                        .get("index_bytes")
+                        .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                        .unwrap_or(0);
+
+                    let total_size = format_byte_size(total_bytes);
+                    let data_size = format_byte_size(data_bytes);
+                    let index_size = format_byte_size(index_bytes);
+
                     let schema = r
                         .get("schema_name")
                         .and_then(|v| v.as_str())
@@ -783,9 +852,12 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                         kind,
                         owner,
                         estimated_rows: Some(est_rows),
-                        total_size: if total_size.is_empty() { None } else { Some(total_size) },
-                        data_size,
-                        index_size,
+                        total_size: if total_size.is_empty() || total_size == "0 bytes" { None } else { Some(total_size) },
+                        data_size: Some(data_size),
+                        index_size: Some(index_size),
+                        total_bytes: Some(total_bytes),
+                        data_bytes: Some(data_bytes),
+                        index_bytes: Some(index_bytes),
                         comment,
                     });
                 }
@@ -1067,6 +1139,20 @@ mod tests {
         assert_eq!(format_compact_table_badge(350, "16 KB"), "350");
         assert_eq!(format_compact_table_badge(0, "8192 bytes"), "8192 B");
         assert_eq!(format_compact_table_badge(0, ""), "0");
+    }
+
+    #[test]
+    fn test_format_byte_size() {
+        assert_eq!(format_byte_size(0), "0 bytes");
+        assert_eq!(format_byte_size(512), "512 bytes");
+        assert_eq!(format_byte_size(1024), "1 KB");
+        assert_eq!(format_byte_size(98304), "96 KB");
+        assert_eq!(format_byte_size(8 * 1024 * 1024), "8 MB");
+        assert_eq!(format_byte_size(834 * 1024 * 1024), "834 MB");
+        assert_eq!(format_byte_size(950 * 1024 * 1024), "950 MB");
+        // 5.94 GB = 6_378_041_344 bytes
+        assert_eq!(format_byte_size(6_378_041_344), "5.94 GB");
+        assert_eq!(format_byte_size(1_116_691_497), "1.04 GB");
     }
 }
 

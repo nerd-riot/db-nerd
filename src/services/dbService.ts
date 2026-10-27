@@ -52,6 +52,9 @@ export interface RealTableSummary {
   total_size?: string;
   data_size?: string;
   index_size?: string;
+  total_bytes?: number;
+  data_bytes?: number;
+  index_bytes?: number;
   comment?: string;
 }
 
