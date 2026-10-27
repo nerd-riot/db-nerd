@@ -92,6 +92,7 @@ export const AllTableStatsView: React.FC = () => {
     setSelectedRowData,
     showToast,
     openTableActionModal,
+    openSessionIds,
   } = useAppStore();
 
   const [stats, setStats] = useState<TableStatRow[]>([]);
@@ -106,6 +107,13 @@ export const AllTableStatsView: React.FC = () => {
   const [contextRow, setContextRow] = useState<TableStatRow | null>(null);
 
   const fetchStats = useCallback(async () => {
+    const hasActiveSession = Boolean(activeConnection?.id && openSessionIds.includes(activeConnection.id));
+    if (!hasActiveSession) {
+      setStats([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const engine = activeConnection.engine;
     let loadedStats: TableStatRow[] = [];
@@ -205,7 +213,7 @@ export const AllTableStatsView: React.FC = () => {
       console.warn('Live table stats query fallback:', e);
     }
 
-    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    const isMock = Boolean(activeConnection?.id && (activeConnection.id === 'demo' || activeConnection.id.startsWith('mock')));
     if (isMock && (!loadedStats || loadedStats.length === 0)) {
       loadedStats = FALLBACK_STATS[engine] || FALLBACK_STATS.postgres;
     }
@@ -216,7 +224,7 @@ export const AllTableStatsView: React.FC = () => {
       setSelectedRowData(loadedStats[0]);
     }
     setLoading(false);
-  }, [activeConnection, selectedRowName, setSelectedRowData]);
+  }, [activeConnection, openSessionIds, selectedRowName, setSelectedRowData]);
 
   useEffect(() => {
     fetchStats();

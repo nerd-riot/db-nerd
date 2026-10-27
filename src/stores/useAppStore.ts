@@ -518,11 +518,11 @@ const getInitialConnId = (): string => {
       }
     }
   } catch {}
-  return INITIAL_CONNECTIONS[0]?.id || '';
+  return '';
 };
 
 const INITIAL_ACTIVE_CONN_ID = getInitialConnId();
-const INITIAL_ACTIVE_CONN = (INITIAL_CONNECTIONS.length > 0 ? (INITIAL_CONNECTIONS.find((c) => c.id === INITIAL_ACTIVE_CONN_ID) || INITIAL_CONNECTIONS[0]) : null) || EMPTY_CONNECTION;
+const INITIAL_ACTIVE_CONN = (INITIAL_ACTIVE_CONN_ID ? (INITIAL_CONNECTIONS.find((c) => c.id === INITIAL_ACTIVE_CONN_ID) || null) : null) || EMPTY_CONNECTION;
 const INITIAL_ACTIVE_SESSION = (INITIAL_ACTIVE_CONN.id && INITIAL_SESSIONS[INITIAL_ACTIVE_CONN.id]) ? INITIAL_SESSIONS[INITIAL_ACTIVE_CONN.id] : EMPTY_SESSION;
 
 const getInitialActiveTabId = () => {
@@ -612,7 +612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateResolvedTheme: (resolved) => set({ resolvedTheme: resolved }),
 
-  openSessionIds: (INITIAL_CONNECTIONS.length > 0 && INITIAL_ACTIVE_CONN.id) ? [INITIAL_ACTIVE_CONN.id] : [],
+  openSessionIds: INITIAL_ACTIVE_CONN.id ? [INITIAL_ACTIVE_CONN.id] : [],
   sessions: INITIAL_SESSIONS,
 
   openSession: (connId) => {
@@ -658,10 +658,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           selectedRowData: null,
           activeTabId: '',
           activeTab: 'default',
-          isConnectionModalOpen: true,
+          activeConnection: EMPTY_CONNECTION,
+          selectedTable: '',
+          isConnectionModalOpen: false,
         };
       });
-      showToast('All connections closed — returned to Connection Manager');
+      showToast('All sessions closed — returned to Home');
       return;
     }
     if (activeConnection.id === connId) {
@@ -789,20 +791,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const cacheKey = `${targetConn.id}:${targetConn.database || 'default'}`;
       const tables = await metadataCache.tables.getOrFetch(cacheKey, () => getRealTables(targetConn));
-      if (tables !== undefined) {
-        set((state) => ({
-          liveTables: {
-            ...state.liveTables,
-            [targetConn.id]: tables,
-          },
-        }));
-        const currentSelected = get().selectedTable;
-        if (currentSelected) {
-          get().fetchLiveTableSchema(currentSelected, targetConn);
-        }
+      set((state) => ({
+        liveTables: {
+          ...state.liveTables,
+          [targetConn.id]: tables || [],
+        },
+      }));
+      const currentSelected = get().selectedTable;
+      if (currentSelected) {
+        get().fetchLiveTableSchema(currentSelected, targetConn);
       }
     } catch (e) {
       console.warn('Fetch live tables failed:', e);
+      set((state) => ({
+        liveTables: {
+          ...state.liveTables,
+          [targetConn.id]: [],
+        },
+      }));
     }
   },
 
@@ -840,16 +846,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const cacheKey = `${targetConn.id}:${targetConn.database || 'default'}`;
       const funcs = await metadataCache.functions.getOrFetch(cacheKey, () => getRealFunctions(targetConn));
-      if (funcs !== undefined) {
-        set((state) => ({
-          liveFunctions: {
-            ...state.liveFunctions,
-            [targetConn.id]: funcs,
-          },
-        }));
-      }
+      set((state) => ({
+        liveFunctions: {
+          ...state.liveFunctions,
+          [targetConn.id]: funcs || [],
+        },
+      }));
     } catch (e) {
       console.warn('Fetch live functions failed:', e);
+      set((state) => ({
+        liveFunctions: {
+          ...state.liveFunctions,
+          [targetConn.id]: [],
+        },
+      }));
     }
   },
 
@@ -1782,7 +1792,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       let nextActive = state.activeConnection;
       if (state.activeConnection.id === id) {
-        nextActive = nextConnections.length > 0 ? nextConnections[0] : EMPTY_CONNECTION;
+        nextActive = nextOpenSessionIds.length > 0
+          ? (nextConnections.find((c) => c.id === nextOpenSessionIds[0]) || EMPTY_CONNECTION)
+          : EMPTY_CONNECTION;
       }
       persistConnections(nextConnections);
       return {

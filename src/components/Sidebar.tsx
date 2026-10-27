@@ -92,6 +92,7 @@ export const Sidebar = () => {
     toggleSidebar,
     tabs,
     activeTabId,
+    openSessionIds,
   } = useAppStore();
 
   const [sidebarTab, setSidebarTab] = useState<'items' | 'queries' | 'history'>('items');
@@ -111,18 +112,20 @@ export const Sidebar = () => {
   const [functionContextPos, setFunctionContextPos] = useState<ContextMenuPosition | null>(null);
   const [targetFunction, setTargetFunction] = useState<any | null>(null);
 
+  const hasActiveSession = Boolean(activeConnection?.id && openSessionIds.includes(activeConnection.id));
+
   useEffect(() => {
-    if (activeConnection?.id) {
+    if (hasActiveSession && activeConnection?.id) {
       fetchLiveTables(activeConnection);
       fetchLiveFunctions(activeConnection);
     }
-  }, [activeConnection?.id, activeConnection?.database]);
+  }, [hasActiveSession, activeConnection?.id, activeConnection?.database]);
 
   const deletedForConn = deletedTables[activeConnection?.id || ''] || [];
   const isMockConn = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
-  const liveForConn = activeConnection?.id ? liveTables[activeConnection.id] : undefined;
-  const isTablesLoading = Boolean(activeConnection?.id && !isMockConn && liveForConn === undefined);
-  const connectionTables = (!activeConnection?.id
+  const liveForConn = hasActiveSession && activeConnection?.id ? liveTables[activeConnection.id] : undefined;
+  const isTablesLoading = Boolean(hasActiveSession && !isMockConn && liveForConn === undefined);
+  const connectionTables = (!hasActiveSession
     ? []
     : (liveForConn !== undefined
         ? liveForConn
@@ -134,9 +137,9 @@ export const Sidebar = () => {
     t.name.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  const liveFuncsForConn = activeConnection?.id ? liveFunctions[activeConnection.id] : undefined;
-  const isFunctionsLoading = Boolean(activeConnection?.id && !isMockConn && liveFuncsForConn === undefined);
-  const connectionFunctions = !activeConnection?.id
+  const liveFuncsForConn = hasActiveSession && activeConnection?.id ? liveFunctions[activeConnection.id] : undefined;
+  const isFunctionsLoading = Boolean(hasActiveSession && !isMockConn && liveFuncsForConn === undefined);
+  const connectionFunctions = !hasActiveSession
     ? []
     : (liveFuncsForConn !== undefined
         ? liveFuncsForConn
@@ -242,17 +245,23 @@ export const Sidebar = () => {
         
         {/* Tab 1: Database Items (Functions & Tables) */}
         {sidebarTab === 'items' && (
-          !activeConnection?.id ? (
-            <div className="p-4 mx-1 my-6 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-center space-y-2 animate-in fade-in duration-200">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 mx-auto flex items-center justify-center">
+          !hasActiveSession ? (
+            <div className="p-4 mx-1 my-6 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-center space-y-2.5 animate-in fade-in duration-200">
+              <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 mx-auto flex items-center justify-center border border-slate-200 dark:border-slate-800">
                 <Database className="w-4 h-4" />
               </div>
               <div className="space-y-0.5">
-                <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400">No Connection</h3>
+                <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300">No Connection</h3>
                 <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                  Press <kbd className="font-mono text-slate-600 dark:text-slate-300 font-bold">⌘K</kbd> to connect
+                  Connect to view tables & functions
                 </p>
               </div>
+              <button
+                onClick={() => setConnectionModalOpen(true)}
+                className="w-full py-1.5 px-2 bg-sky-50 dark:bg-sky-500/10 hover:bg-sky-100 dark:hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/30 rounded-lg text-xs font-medium transition cursor-pointer flex items-center justify-center space-x-1"
+              >
+                <span>Connect (⌘K)</span>
+              </button>
             </div>
           ) : (
           <div className="space-y-1">

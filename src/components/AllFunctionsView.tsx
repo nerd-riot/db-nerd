@@ -28,6 +28,7 @@ export const AllFunctionsView: React.FC = () => {
     openNewQueryTab,
     setSelectedRowData,
     showToast,
+    openSessionIds,
   } = useAppStore();
 
   const [functions, setFunctions] = useState<FunctionItem[]>([]);
@@ -42,6 +43,13 @@ export const AllFunctionsView: React.FC = () => {
   const [contextRow, setContextRow] = useState<FunctionItem | null>(null);
 
   const fetchFunctions = useCallback(async () => {
+    const hasActiveSession = Boolean(activeConnection?.id && openSessionIds.includes(activeConnection.id));
+    if (!hasActiveSession) {
+      setFunctions([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     let loaded: FunctionItem[] = [];
 
@@ -51,7 +59,7 @@ export const AllFunctionsView: React.FC = () => {
       console.warn('Real functions query failed:', e);
     }
 
-    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    const isMock = Boolean(activeConnection?.id && (activeConnection.id === 'demo' || activeConnection.id.startsWith('mock')));
     if (isMock && (!loaded || loaded.length === 0)) {
       loaded = getFunctionsForConnection(activeConnection.name, activeConnection.engine);
     }
@@ -63,7 +71,7 @@ export const AllFunctionsView: React.FC = () => {
       setSelectedRowData(initial);
     }
     setLoading(false);
-  }, [activeConnection, setSelectedRowData]);
+  }, [activeConnection, openSessionIds, setSelectedRowData]);
 
   useEffect(() => {
     fetchFunctions();
