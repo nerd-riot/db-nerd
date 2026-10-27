@@ -5,8 +5,9 @@ import {
   sanitizeFilterClause,
 } from '../../lib/security/sqlSanitizer.ts';
 
+export const MAX_GRID_PAGE_SIZE = 300;
 export const DEFAULT_GRID_PAGE_SIZE = 300;
-export const SUPPORTED_GRID_PAGE_SIZES = [100, 200, 300, 500, 1000] as const;
+export const SUPPORTED_GRID_PAGE_SIZES = [50, 100, 200, 300] as const;
 
 export interface PaginationMetadata {
   page: number;
@@ -108,7 +109,7 @@ export function buildPaginatedSelectSql(params: {
   }
 
   const quotedTable = quoteIdentifier(params.tableName, normEngine);
-  const pageSize = Math.max(1, Math.min(5000, Math.floor(params.pageSize || DEFAULT_GRID_PAGE_SIZE)));
+  const pageSize = Math.max(1, Math.min(MAX_GRID_PAGE_SIZE, Math.floor(params.pageSize || DEFAULT_GRID_PAGE_SIZE)));
   const offset = Math.max(0, Math.floor(params.page || 0) * pageSize);
 
   const cleanWhere = sanitizeFilterClause(params.whereClause ?? params.whereText ?? '');

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { getTableSchema, TABLE_SCHEMAS } from '../data/schemas';
 import {
@@ -29,7 +29,8 @@ import { TableStructureView } from './TableStructureView';
 import { TableIndexesView } from './TableIndexesView';
 import { ColumnTypeIcon } from './ColumnTypeIcon';
 import { BorderChase } from './BorderChase';
-import { InlineCellEditor } from './InlineCellEditor';
+import { GridRowItem } from './GridRowItem';
+import { DataGridErrorBoundary } from './DataGridErrorBoundary';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -173,7 +174,7 @@ export const TableGrid: React.FC = () => {
     showToast(`🗑️ Marked ${rowsToDelete.length} row(s) for deletion`);
   };
 
-  const handleRowClick = (row: GridRow, e: React.MouseEvent) => {
+  const handleRowClick = useCallback((row: GridRow, e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey) {
       setSelectedRowIds((prev) => {
         const next = new Set(prev);
@@ -185,21 +186,32 @@ export const TableGrid: React.FC = () => {
       setSelectedRowIds(new Set([row.id]));
     }
     setSelectedRowData(row);
-  };
+  }, [setSelectedRowData]);
 
-  const startEditing = (id: number, field: string) => {
+  const handleRowContextMenu = useCallback((row: GridRow, e: React.MouseEvent) => {
+    e.preventDefault();
+    setSelectedRowIds((prev) => {
+      if (!prev.has(row.id)) return new Set([row.id]);
+      return prev;
+    });
+    setSelectedRowData(row);
+    setTargetContextMenuRows([row]);
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+  }, [setSelectedRowData]);
+
+  const startEditing = useCallback((id: number | string, field: string) => {
     // Prevent editing the primary key directly
     if (field === 'id' && resolvedColumns.find((c) => c.name === 'id')?.isPrimaryKey) return;
-    setEditingCell({ id, field });
-  };
+    setEditingCell({ id: Number(id) || (id as any), field });
+  }, [resolvedColumns]);
 
-  const handleSaveCell = (id: number, field: string, newVal: any) => {
-    updateCell(id, field as keyof GridRow, newVal);
+  const handleSaveCell = useCallback((id: number | string, field: string, newVal: any) => {
+    updateCell(Number(id) || (id as any), field as keyof GridRow, newVal);
     if (selectedRowData && selectedRowData.id === id) {
       setSelectedRowData({ ...selectedRowData, [field]: newVal });
     }
     setEditingCell(null);
-  };
+  }, [updateCell, selectedRowData, setSelectedRowData]);
 
   const toggleColumnVisibility = (colName: string) => {
     setVisibleColumns((prev) => {
@@ -244,6 +256,47 @@ export const TableGrid: React.FC = () => {
   const safePage = Math.min(gridPage, totalPages - 1);
   const paginatedRows = processedRows;
 
+  // Lightweight Virtual Windowing Engine for pinned 120 FPS rendering
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(700);
+  const ROW_HEIGHT = 28;
+  const OVERSCAN = 10;
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    requestAnimationFrame(() => {
+      setScrollTop(target.scrollTop);
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const updateHeight = () => {
+      if (el) setViewportHeight(el.clientHeight || 700);
+    };
+    updateHeight();
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Reset scroll to top when table or page changes to prevent blank canvas offset
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+    setScrollTop(0);
+  }, [selectedTable, safePage]);
+
+  const totalRows = paginatedRows.length;
+  const visibleStartIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const visibleEndIndex = Math.min(totalRows, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+  const virtualRows = paginatedRows.slice(visibleStartIndex, visibleEndIndex);
+  const topPadding = visibleStartIndex * ROW_HEIGHT;
+  const bottomPadding = Math.max(0, (totalRows - visibleEndIndex) * ROW_HEIGHT);
+
   const handleApplyFilter = () => {
     const orderMatch = filterOrderByText.trim().match(/^([a-zA-Z0-9_]+)\s*(ASC|DESC)?$/i);
     if (orderMatch) {
@@ -257,7 +310,8 @@ export const TableGrid: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900/60 overflow-hidden relative">
+    <DataGridErrorBoundary tableName={selectedTable} onReset={() => reloadData(selectedTable)}>
+      <div className="flex-1 flex flex-col bg-white dark:bg-slate-900/60 overflow-hidden relative">
       {/* Live Table Reloading Overlay with Border Chase */}
       {isReloading && (
         <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs z-30 flex items-center justify-center p-4">
@@ -387,8 +441,12 @@ export const TableGrid: React.FC = () => {
       ) : tableViewMode === 'index' ? (
         <TableIndexesView />
       ) : (
-        /* DATA GRID VIEW (TablePlus Canvas style) */
-        <div className="flex-1 overflow-auto bg-white dark:bg-slate-950/80 text-xs font-mono select-text">
+        /* DATA GRID VIEW (TablePlus Canvas style with Virtual Windowing) */
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-auto bg-white dark:bg-slate-950/80 text-xs font-mono select-text"
+        >
           <table className="w-full border-collapse">
             {/* Header */}
             <thead className="sticky top-0 bg-slate-100 dark:bg-slate-950/95 backdrop-blur-md z-10 border-b border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 select-none shadow-sm text-[11px]">
@@ -447,92 +505,44 @@ export const TableGrid: React.FC = () => {
               </tr>
             </thead>
 
-            {/* Rows */}
+            {/* Virtualized Rows */}
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800/40 text-[11px]">
-              {paginatedRows.map((row, index) => {
+              {topPadding > 0 && (
+                <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
+                  <td colSpan={activeCols.length + 1} style={{ padding: 0, border: 0 }} />
+                </tr>
+              )}
+
+              {virtualRows.map((row, idx) => {
+                const index = visibleStartIndex + idx;
                 const absoluteIndex = safePage * gridPageSize + index;
                 const isSelected = selectedRowIds.has(row.id) || (selectedRowData && selectedRowData.id === row.id);
                 const isEven = absoluteIndex % 2 === 0;
 
                 return (
-                  <tr
+                  <GridRowItem
                     key={row.id ?? absoluteIndex}
-                    onClick={(e) => handleRowClick(row, e)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      let nextSelected = selectedRowIds;
-                      if (!selectedRowIds.has(row.id)) {
-                        nextSelected = new Set([row.id]);
-                        setSelectedRowIds(nextSelected);
-                      }
-                      setSelectedRowData(row);
-                      const matched = rows.filter((r) => nextSelected.has(r.id));
-                      setTargetContextMenuRows(matched.length > 0 ? matched : [row]);
-                      setContextMenuPos({ x: e.clientX, y: e.clientY });
-                    }}
-                    className={`cursor-pointer transition-colors ${
-                      isSelected
-                        ? 'bg-[#eff6ff] dark:bg-sky-600/30 text-[#1d4ed8] dark:text-white font-medium shadow-2xs border-y border-[#dbeafe] dark:border-sky-500/30'
-                        : isEven
-                        ? 'bg-[#fcfdfd] dark:bg-slate-900/40 hover:bg-[#f0f7ff] dark:hover:bg-slate-800/50 text-slate-800 dark:text-slate-200'
-                        : 'bg-white dark:bg-slate-950/60 hover:bg-[#f0f7ff] dark:hover:bg-slate-800/50 text-slate-800 dark:text-slate-200'
-                    }`}
-                  >
-                    {/* Row Index */}
-                    <td className="px-3 py-1.5 border-r border-slate-200 dark:border-slate-800/60 text-center text-slate-500 dark:text-slate-500 select-none font-medium">
-                      {absoluteIndex + 1}
-                    </td>
-
-                    {/* Columns */}
-                    {activeCols.map((col) => {
-                      const val = row[col.name];
-                      const isEditing = editingCell?.id === row.id && editingCell?.field === col.name;
-                      const isDirty = row.dirtyFields?.[col.name];
-
-                      return (
-                        <td
-                          key={col.name}
-                          onDoubleClick={() => startEditing(row.id, col.name)}
-                          className={`px-3 py-1.5 border-r border-slate-200 dark:border-slate-800/60 relative ${
-                            isEditing
-                              ? 'overflow-visible'
-                              : wrapText
-                              ? 'whitespace-pre-wrap break-words min-w-[120px] max-w-lg align-top'
-                              : 'truncate max-w-xs'
-                          } ${isDirty ? 'bg-amber-500/15' : ''}`}
-                        >
-                          {/* Dirty indicator dot */}
-                          {isDirty && (
-                            <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-rose-500 rounded-full" />
-                          )}
-
-                          {isEditing ? (
-                            <InlineCellEditor
-                              col={col}
-                              initialValue={val}
-                              onSave={(newVal) => handleSaveCell(row.id, col.name, newVal)}
-                              onCancel={() => setEditingCell(null)}
-                            />
-                          ) : val === null || val === undefined ? (
-                            <span className="text-slate-400 dark:text-slate-500 italic select-none font-mono">NULL</span>
-                          ) : typeof val === 'boolean' ? (
-                            <span className="text-slate-700 dark:text-slate-300 font-medium">{val ? 'TRUE' : 'FALSE'}</span>
-                          ) : typeof val === 'object' ? (
-                            <span className={`font-mono text-slate-700 dark:text-slate-300 ${wrapText ? 'whitespace-pre-wrap break-words leading-relaxed select-text' : 'truncate block'}`}>
-                              {JSON.stringify(val)}
-                            </span>
-                          ) : (
-                            <span className={`text-slate-800 dark:text-slate-200 ${wrapText ? 'whitespace-pre-wrap break-words leading-relaxed select-text' : 'truncate block'}`}>
-                              {String(val)}
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
+                    row={row}
+                    absoluteIndex={absoluteIndex}
+                    isSelected={isSelected}
+                    isEven={isEven}
+                    activeCols={activeCols}
+                    editingCellField={editingCell?.id === row.id ? editingCell.field : null}
+                    wrapText={wrapText}
+                    onRowClick={handleRowClick}
+                    onRowContextMenu={handleRowContextMenu}
+                    onStartEditing={startEditing}
+                    onSaveCell={handleSaveCell}
+                    onCancelEditing={() => setEditingCell(null)}
+                  />
                 );
               })}
 
+              {bottomPadding > 0 && (
+                <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
+                  <td colSpan={activeCols.length + 1} style={{ padding: 0, border: 0 }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -780,7 +790,7 @@ export const TableGrid: React.FC = () => {
                       <div className="px-2 py-1 text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">
                         Rows Per Page
                       </div>
-                      {[100, 200, 300, 500, 1000].map((sz) => (
+                      {[50, 100, 200, 300].map((sz) => (
                         <button
                           key={sz}
                           onClick={() => {
@@ -794,7 +804,7 @@ export const TableGrid: React.FC = () => {
                           }`}
                         >
                           <span>{sz} rows</span>
-                          {sz === 300 && <span className="text-[9px] text-slate-400 font-mono">(default)</span>}
+                          {sz === 300 && <span className="text-[9px] text-slate-400 font-mono">(default / max)</span>}
                           {gridPageSize === sz && <Check className="w-3 h-3 text-sky-500" />}
                         </button>
                       ))}
@@ -1030,6 +1040,7 @@ export const TableGrid: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </DataGridErrorBoundary>
   );
 };

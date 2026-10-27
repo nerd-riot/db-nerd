@@ -151,7 +151,7 @@ interface AppState {
   resetPending: () => void;
 
   selectedTable: string;
-  setSelectedTable: (tbl: string) => void;
+  setSelectedTable: (tbl: string, pageReset?: boolean) => void;
 
   isSidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
@@ -1353,7 +1353,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedTable: tableName,
         tableViewMode: 'data',
       });
-      get().setSelectedTable(tableName);
+      get().setSelectedTable(tableName, true);
       persistSessionTabs(activeConnection.id, tabs, existing.id, tableName, sqlTabStates);
     } else {
       const newTab: TabItem = {
@@ -1371,7 +1371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedTable: tableName,
         tableViewMode: 'data',
       });
-      get().setSelectedTable(tableName);
+      get().setSelectedTable(tableName, true);
       persistSessionTabs(activeConnection.id, nextTabs, newTab.id, tableName, sqlTabStates);
     }
   },
@@ -2348,17 +2348,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { success: true };
   },
 
-  setSelectedTable: (tbl) => {
-    const { truncatedTables, selectedTable, liveTables, activeConnection } = get();
+  setSelectedTable: (tbl, pageReset = true) => {
+    const { truncatedTables, liveTables, activeConnection } = get();
     const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
     const targetRows = isMock ? getDefaultRowsForTable(tbl, truncatedTables[tbl]) : [];
     const liveSummary = liveTables[activeConnection?.id]?.find((t) => t.name === tbl);
     const initialEst = liveSummary?.estimated_rows && liveSummary.estimated_rows > 0 ? liveSummary.estimated_rows : null;
+    const targetPage = pageReset ? 0 : get().gridPage;
 
     set({
       selectedTable: tbl,
       selectedRowData: null,
-      gridPage: tbl !== selectedTable ? 0 : get().gridPage,
+      gridPage: targetPage,
       gridTotalCount: initialEst,
       gridIsEstimatedCount: true,
       rows: isMock ? cloneGridRows(targetRows) : [],
@@ -2367,7 +2368,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isReloading: !isMock,
     });
     // Asynchronously fetch live rows & schema metadata from database
-    get().reloadData(tbl, tbl !== selectedTable ? 0 : get().gridPage);
+    get().reloadData(tbl, targetPage);
     get().fetchLiveTableSchema(tbl);
   },
 
@@ -2428,8 +2429,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setGridPageSize: async (pageSize: number) => {
     const { selectedTable } = get();
-    set({ gridPageSize: pageSize, gridPage: 0 });
-    await get().reloadData(selectedTable, 0, pageSize);
+    const clampedSize = Math.max(1, Math.min(300, pageSize));
+    set({ gridPageSize: clampedSize, gridPage: 0 });
+    await get().reloadData(selectedTable, 0, clampedSize);
   },
 
   goToGridPage: async (page: number) => {
@@ -2503,7 +2505,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const currentPage = pageOverride !== undefined ? pageOverride : gridPage;
-    const currentPageSize = pageSizeOverride !== undefined ? pageSizeOverride : gridPageSize;
+    const currentPageSize = Math.max(1, Math.min(300, pageSizeOverride !== undefined ? pageSizeOverride : gridPageSize));
     const offset = Math.max(0, currentPage * currentPageSize);
 
     try {

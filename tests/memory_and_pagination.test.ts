@@ -5,7 +5,9 @@ import {
   cloneGridRows,
   boundSqlResultRows,
   boundSqlQueryResultTabs,
+  safeFormatCellValue,
   MAX_CELL_STRING_LENGTH,
+  MAX_CLIENT_GRID_ROWS,
 } from '../src/lib/memory/memoryGuard.ts';
 import {
   calculatePaginationMeta,
@@ -13,6 +15,8 @@ import {
   buildExactCountSql,
   buildEstimatedCountCatalogSql,
   formatCompactBadge,
+  MAX_GRID_PAGE_SIZE,
+  SUPPORTED_GRID_PAGE_SIZES,
 } from '../src/modules/grid/pagination.ts';
 
 describe('Memory Guard & Client RAM Protection', () => {
@@ -144,4 +148,36 @@ describe('TablePlus-style Server-Side Pagination', () => {
     assert.equal(formatCompactBadge(15_200, '400 KB'), '15.2K');
     assert.equal(formatCompactBadge(0, '8192 bytes'), '8192 B');
   });
+
+  it('enforces maximum 300 items per page limit across grid pagination', () => {
+    assert.equal(MAX_GRID_PAGE_SIZE, 300);
+    assert.equal(MAX_CLIENT_GRID_ROWS, 300);
+    assert.deepEqual(SUPPORTED_GRID_PAGE_SIZES, [50, 100, 200, 300]);
+
+    // Over-limit requests (e.g. 1000 or 5000 items) are strictly capped at LIMIT 300
+    const cappedSql = buildPaginatedSelectSql({
+      tableName: 'picklists',
+      engine: 'postgres',
+      page: 0,
+      pageSize: 1000,
+    });
+    assert.equal(cappedSql, 'SELECT * FROM "picklists" LIMIT 300 OFFSET 0;');
+  });
+
+  it('safeFormatCellValue stringifies primitives, BigInt, objects without throwing', () => {
+    assert.equal(safeFormatCellValue(null), '');
+    assert.equal(safeFormatCellValue(undefined), '');
+    assert.equal(safeFormatCellValue('hello'), 'hello');
+    assert.equal(safeFormatCellValue(12345), '12345');
+    assert.equal(safeFormatCellValue(true), 'TRUE');
+    assert.equal(safeFormatCellValue(false), 'FALSE');
+    assert.equal(safeFormatCellValue(9007199254740993n), '9007199254740993');
+    assert.equal(safeFormatCellValue({ a: 1 }), '{"a":1}');
+
+    // Circular reference should not crash React render
+    const circular: any = { a: 'ok' };
+    circular.self = circular;
+    assert.doesNotThrow(() => safeFormatCellValue(circular));
+  });
 });
+

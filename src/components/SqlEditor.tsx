@@ -56,6 +56,7 @@ import { QueryHistoryPanel } from './QueryHistoryPanel';
 import { QueryChartView } from './QueryChartView';
 import { executeRealQuery } from '../services/dbService';
 import { ColumnDefinition, PendingQueryEdit } from '../types';
+import { safeFormatCellValue } from '../lib/memory/memoryGuard';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -1554,7 +1555,7 @@ export const SqlEditor: React.FC = () => {
                                     <span className="text-slate-700 dark:text-slate-300 font-medium">{val ? 'TRUE' : 'FALSE'}</span>
                                   ) : typeof val === 'object' ? (
                                     <span className={`font-mono text-slate-700 dark:text-slate-300 ${shouldWrap ? 'whitespace-pre-wrap break-words' : 'truncate block'}`}>
-                                      {JSON.stringify(val, null, shouldWrap ? 2 : undefined)}
+                                      {safeFormatCellValue(val)}
                                     </span>
                                   ) : isErrorCol ? (
                                     <div className="flex items-start space-x-2 text-rose-700 dark:text-rose-300">

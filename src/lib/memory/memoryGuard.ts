@@ -1,10 +1,10 @@
 import type { GridRow, SqlQueryResultItem } from '../../types/index.ts';
 
 /** Maximum rows kept in client state for a single grid page */
-export const MAX_CLIENT_GRID_ROWS = 1_000;
+export const MAX_CLIENT_GRID_ROWS = 300;
 
 /** Maximum rows kept in client state per SQL result tab */
-export const MAX_CLIENT_SQL_RESULT_ROWS = 2_000;
+export const MAX_CLIENT_SQL_RESULT_ROWS = 1_000;
 
 /** Maximum SQL result sub-tabs kept per SQL editor tab */
 export const MAX_SQL_RESULT_TABS = 10;
@@ -15,6 +15,25 @@ export const MAX_CELL_STRING_LENGTH = MAX_CLIENT_CELL_CHARS;
 
 /** Maximum open background session snapshots kept in memory */
 export const MAX_IN_MEMORY_SESSIONS = 12;
+
+/**
+ * Safely formats and stringifies cell values without throwing on BigInt, Symbol,
+ * circular structures, or unhandled objects. Protects React rendering lifecycle.
+ */
+export function safeFormatCellValue(val: any): string {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+  if (typeof val === 'bigint') return val.toString();
+  if (typeof val === 'symbol') return val.toString();
+  if (val instanceof Date) return val.toISOString();
+  try {
+    return JSON.stringify(val);
+  } catch {
+    return String(val);
+  }
+}
 
 /**
  * Truncates oversized string fields on a row object so large TEXT/JSONB blobs
