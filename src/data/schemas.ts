@@ -657,7 +657,8 @@ export const getTableSchema = (tableName: string): TableSchemaInfo => {
         return liveSchema;
       }
 
-      if (safeName in TABLE_SCHEMAS && !liveSummary) {
+      const isMockConn = !connId || connId === 'demo' || connId.startsWith('mock');
+      if (isMockConn && safeName in TABLE_SCHEMAS && !liveSummary) {
         return TABLE_SCHEMAS[safeName];
       }
 
@@ -726,7 +727,12 @@ export const getTableSchema = (tableName: string): TableSchemaInfo => {
       }
     }
   } catch {
-    // Fallback to static dictionary
+    // Fallback
+  }
+  const store = typeof window !== 'undefined' ? (window as any).__APP_STORE__?.getState?.() : null;
+  const isRealConn = Boolean(store?.activeConnection?.id && store.activeConnection.id !== 'demo' && !store.activeConnection.id.startsWith('mock'));
+  if (isRealConn) {
+    return EMPTY_TABLE_SCHEMA;
   }
   return TABLE_SCHEMAS[safeName] || EMPTY_TABLE_SCHEMA;
 };

@@ -1,4 +1,4 @@
-import { ConnectionProfile, DatabaseEngine, EnvironmentTag } from '../types';
+import type { ConnectionProfile, DatabaseEngine, EnvironmentTag } from '../types/index.ts';
 
 export interface ParsedConnectionUrl {
   name?: string;
@@ -260,3 +260,6 @@ export function serializeConnectionUrl(conn: ConnectionProfile): string {
 
   return `${engine}://${creds}@${hostPort}/${db}?${params.toString()}`;
 }
+
+export const buildConnectionUrl = serializeConnectionUrl;
+

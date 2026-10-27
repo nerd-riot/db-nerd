@@ -45,6 +45,19 @@ pub fn percent_encode_credential(input: &str) -> String {
     encoded
 }
 
+pub fn normalize_engine_str(engine: &str) -> &'static str {
+    let lower = engine.trim().to_lowercase();
+    if lower.starts_with("postgres") || lower.contains("pg") || lower == "cockroachdb" {
+        "postgres"
+    } else if lower.starts_with("mysql") || lower.contains("maria") || lower == "tidb" {
+        "mysql"
+    } else if lower.starts_with("redis") || lower == "valkey" || lower == "dragonfly" {
+        "redis"
+    } else {
+        "postgres"
+    }
+}
+
 fn cache_key(config: &DbConfig, target_host: &str, target_port: u16) -> String {
     let mut hasher = DefaultHasher::new();
     config.password.as_deref().unwrap_or_default().hash(&mut hasher);
@@ -53,10 +66,11 @@ fn cache_key(config: &DbConfig, target_host: &str, target_port: u16) -> String {
     config.ssh_user.as_deref().unwrap_or_default().hash(&mut hasher);
     config.ssh_port.unwrap_or(22).hash(&mut hasher);
     let cred_hash = hasher.finish();
+    let engine = normalize_engine_str(&config.engine);
 
     format!(
         "{}://{}@{}:{}/{}?h={:016x}",
-        config.engine,
+        engine,
         config.username.as_deref().unwrap_or_default(),
         target_host,
         target_port,
@@ -66,7 +80,11 @@ fn cache_key(config: &DbConfig, target_host: &str, target_port: u16) -> String {
 }
 
 pub fn build_pg_options(config: &DbConfig, host: &str, port: u16) -> PgConnectOptions {
-    let user = config.username.as_deref().unwrap_or("postgres");
+    let user = config
+        .username
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or("postgres");
     let pass = config.password.as_deref().unwrap_or_default();
     let db = if config.database.trim().is_empty() {
         "postgres"
@@ -87,7 +105,11 @@ pub fn build_pg_options(config: &DbConfig, host: &str, port: u16) -> PgConnectOp
 }
 
 pub fn build_mysql_options(config: &DbConfig, host: &str, port: u16) -> MySqlConnectOptions {
-    let user = config.username.as_deref().unwrap_or("root");
+    let user = config
+        .username
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or("root");
     let pass = config.password.as_deref().unwrap_or_default();
     let db = config.database.trim();
 
@@ -251,15 +273,16 @@ pub async fn get_or_create_redis_connection(
 
 /// Closes cached connection pools and SSH tunnels matching the given configuration.
 pub async fn close_pool(config: &DbConfig) {
+    let engine = normalize_engine_str(&config.engine);
     let db_trimmed = config.database.trim();
     let user_prefix = format!(
         "{}://{}@",
-        config.engine,
+        engine,
         config.username.as_deref().unwrap_or_default()
     );
     let db_suffix = format!("/{}?h=", db_trimmed);
 
-    match config.engine.as_str() {
+    match engine {
         "postgres" => {
             let mut write_guard = registry().pg_pools.write().await;
             let keys_to_remove: Vec<String> = write_guard
@@ -317,6 +340,16 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_engine_str() {
+        assert_eq!(normalize_engine_str("PostgreSQL"), "postgres");
+        assert_eq!(normalize_engine_str("postgres"), "postgres");
+        assert_eq!(normalize_engine_str("MariaDB"), "mysql");
+        assert_eq!(normalize_engine_str("MySQL"), "mysql");
+        assert_eq!(normalize_engine_str("Redis"), "redis");
+        assert_eq!(normalize_engine_str("valkey"), "redis");
+    }
+
+    #[test]
     fn test_build_redis_url_encodes_credentials() {
         let cfg = DbConfig {
             engine: "redis".into(),
@@ -325,16 +358,48 @@ mod tests {
             database: "0".into(),
             username: Some("default".into()),
             password: Some("my@secret:pass#1".into()),
-            use_ssh: None,
-            ssh_host: None,
-            ssh_user: None,
-            ssh_port: None,
-            ssh_password: None,
-            use_ssh_key: None,
-            ssh_key_path: None,
-            ssh_passphrase: None,
+            ..Default::default()
         };
         let url = build_redis_url(&cfg, "localhost", 6379);
         assert_eq!(url, "redis://:my%40secret%3Apass%231@localhost:6379/0");
+
+        let cfg_acl = DbConfig {
+            engine: "redis".into(),
+            host: "10.0.0.5".into(),
+            port: 6380,
+            database: "2".into(),
+            username: Some("acl_user".into()),
+            password: Some("sec/ret".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            build_redis_url(&cfg_acl, "10.0.0.5", 6380),
+            "redis://acl_user:sec%2Fret@10.0.0.5:6380/2"
+        );
+    }
+
+    #[test]
+    fn test_cache_key_differentiates_databases_and_credentials() {
+        let cfg1 = DbConfig {
+            engine: "PostgreSQL".into(),
+            host: "db.internal".into(),
+            port: 5432,
+            database: "db_a".into(),
+            username: Some("postgres".into()),
+            password: Some("pass1".into()),
+            ..Default::default()
+        };
+        let cfg2 = DbConfig {
+            database: "db_b".into(),
+            ..cfg1.clone()
+        };
+        let cfg3 = DbConfig {
+            password: Some("pass2".into()),
+            ..cfg1.clone()
+        };
+        assert_ne!(cache_key(&cfg1, "db.internal", 5432), cache_key(&cfg2, "db.internal", 5432));
+        assert_ne!(cache_key(&cfg1, "db.internal", 5432), cache_key(&cfg3, "db.internal", 5432));
+        assert!(cache_key(&cfg1, "db.internal", 5432).starts_with("postgres://"));
     }
 }
+

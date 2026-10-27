@@ -7,6 +7,7 @@ import {
   TableIndexDefinition,
   TableForeignKeyDefinition,
 } from '../types';
+import { escapeSqlStringLiteral, normalizeDatabaseEngine } from '../lib/security/sqlSanitizer';
 
 export interface DbConfigPayload {
   engine: string;
@@ -55,11 +56,12 @@ export interface RealTableSummary {
 }
 
 export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => {
+  const normalizedEngine = normalizeDatabaseEngine(profile.engine);
   // If user has default placeholder password and host is localhost without SSH, resolve to docker dev credentials
   let password = profile.password;
   const isLocalDocker = !profile.useSsh && (profile.host === 'localhost' || profile.host === '127.0.0.1');
   if (!password || (password === '••••••••••••' && isLocalDocker)) {
-    if (profile.engine === 'postgres' || profile.engine === 'mysql') {
+    if (normalizedEngine === 'postgres' || normalizedEngine === 'mysql') {
       password = 'dev_password';
     } else {
       password = '';
@@ -68,14 +70,14 @@ export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => 
 
   let username = profile.username;
   if (!username) {
-    username = profile.engine === 'postgres' ? 'dev_user' : profile.engine === 'mysql' ? 'dev_user' : 'default';
+    username = normalizedEngine === 'postgres' ? 'dev_user' : normalizedEngine === 'mysql' ? 'dev_user' : 'default';
   }
 
   return {
-    engine: profile.engine,
+    engine: normalizedEngine,
     host: profile.host === '127.0.0.1' ? 'localhost' : (profile.host || 'localhost'),
-    port: profile.port,
-    database: profile.database || (profile.engine === 'postgres' ? 'ecom_prod_db' : profile.engine === 'mysql' ? 'analytics_staging' : '0'),
+    port: Number(profile.port) || (normalizedEngine === 'mysql' ? 3306 : normalizedEngine === 'redis' ? 6379 : 5432),
+    database: profile.database || (normalizedEngine === 'postgres' ? 'postgres' : normalizedEngine === 'mysql' ? '' : '0'),
     username,
     password,
     use_ssh: profile.useSsh,
@@ -175,12 +177,13 @@ export async function getRealDatabases(profile: ConnectionProfile): Promise<stri
     }
   } catch (e) {
     try {
-      if (profile.engine === 'postgres') {
+      const normEngine = normalizeDatabaseEngine(profile.engine);
+      if (normEngine === 'postgres') {
         const q = await executeRealQuery(profile, 'SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname ASC;');
         if (q.success && q.rows && q.rows.length > 0) {
           return q.rows.map((r: any) => String(r.datname || Object.values(r)[0]));
         }
-      } else if (profile.engine === 'mysql') {
+      } else if (normEngine === 'mysql') {
         const q = await executeRealQuery(profile, 'SHOW DATABASES;');
         if (q.success && q.rows && q.rows.length > 0) {
           return q.rows.map((r: any) => String(r.Database || Object.values(r)[0]));
@@ -190,12 +193,13 @@ export async function getRealDatabases(profile: ConnectionProfile): Promise<stri
   }
   return profile.databases && profile.databases.length > 0
     ? profile.databases
-    : [profile.database || (profile.engine === 'postgres' ? 'postgres' : 'default')];
+    : [profile.database || (normalizeDatabaseEngine(profile.engine) === 'postgres' ? 'postgres' : 'default')];
 }
 
 export async function getRealFunctions(profile: ConnectionProfile): Promise<FunctionItem[]> {
   try {
-    if (profile.engine === 'postgres') {
+    const normEngine = normalizeDatabaseEngine(profile.engine);
+    if (normEngine === 'postgres') {
       const sql = `
         SELECT 
           p.proname AS name,
@@ -235,7 +239,7 @@ export async function getRealFunctions(profile: ConnectionProfile): Promise<Func
           definition: String(r.definition || ''),
         }));
       }
-    } else if (profile.engine === 'mysql') {
+    } else if (normEngine === 'mysql') {
       const sql = `
         SELECT 
           ROUTINE_NAME AS name,
@@ -281,10 +285,11 @@ export async function getRealTableSchema(
   summary?: RealTableSummary
 ): Promise<TableSchemaInfo | null> {
   if (!tableName || tableName.startsWith('__')) return null;
-  const safeTable = tableName.replace(/'/g, "''");
+  const safeTable = escapeSqlStringLiteral(tableName);
+  const normEngine = normalizeDatabaseEngine(profile.engine);
 
   try {
-    if (profile.engine === 'postgres') {
+    if (normEngine === 'postgres') {
       const colSql = `
         SELECT
           c.column_name AS name,
@@ -456,7 +461,7 @@ export async function getRealTableSchema(
         foreignKeys,
         ddl,
       };
-    } else if (profile.engine === 'mysql') {
+    } else if (normEngine === 'mysql') {
       const colSql = `
         SELECT
           COLUMN_NAME AS name,

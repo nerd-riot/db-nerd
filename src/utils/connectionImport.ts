@@ -1,5 +1,5 @@
-import { DatabaseEngine, EnvironmentTag } from '../types';
-import { normalizeEngine } from './connectionUrl';
+import type { DatabaseEngine, EnvironmentTag } from '../types/index.ts';
+import { normalizeEngine, parseConnectionUrl } from './connectionUrl.ts';
 
 export interface ImportedConnectionItem {
   id?: string;
@@ -21,6 +21,14 @@ export interface ImportedConnectionItem {
   groupName?: string;
   sourceTool: 'tableplus' | 'dbeaver' | 'pgadmin' | 'dbnerd' | 'generic';
   rawParams?: Record<string, any>;
+}
+
+export type ImportedConnectionResult = ImportedConnectionItem[] & { connections: ImportedConnectionItem[] };
+
+function wrapResult(items: ImportedConnectionItem[]): ImportedConnectionResult {
+  const res = items as ImportedConnectionResult;
+  res.connections = items;
+  return res;
 }
 
 const DEFAULT_PORTS: Record<string, number> = {
@@ -149,7 +157,7 @@ function transformTablePlusItem(obj: Record<string, any>): ImportedConnectionIte
  * Main parser entry point: supports TablePlus (*.tableplusconnection, JSON, plist),
  * DBeaver (data-sources.json), pgAdmin 4 (servers.json), and generic DBNerd JSON.
  */
-export function parseConnectionFile(content: string, filename?: string): ImportedConnectionItem[] {
+export function parseConnectionFile(content: string, filename?: string): ImportedConnectionResult {
   const trimmed = content.trim();
   if (!trimmed) {
     throw new Error('File content is empty');
@@ -158,10 +166,53 @@ export function parseConnectionFile(content: string, filename?: string): Importe
   const fnLower = (filename || '').toLowerCase();
 
   // 1. Check if XML/plist
-  if (trimmed.startsWith('<?xml') || trimmed.startsWith('<plist') || fnLower.endsWith('.plist')) {
+  if (trimmed.startsWith('<?xml') || trimmed.startsWith('<plist') || fnLower.endsWith('.plist') || fnLower.endsWith('.tableplusconnection')) {
     const plistItems = parsePlistXml(trimmed);
     if (plistItems.length > 0) {
-      return plistItems.map(transformTablePlusItem);
+      return wrapResult(plistItems.map(transformTablePlusItem));
+    }
+  }
+
+  // 1b. Check if .env / key=value lines
+  if (fnLower.endsWith('.env') || (!trimmed.startsWith('{') && !trimmed.startsWith('[') && trimmed.includes('='))) {
+    const lines = trimmed.split(/\r?\n/);
+    const envResults: ImportedConnectionItem[] = [];
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eqIdx = line.indexOf('=');
+      if (eqIdx === -1) continue;
+      const key = line.slice(0, eqIdx).trim();
+      let val = line.slice(eqIdx + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (val.includes('://')) {
+        try {
+          const parsed = parseConnectionUrl(val);
+          const engine = parsed.engine;
+          const niceName = key.replace(/_URL$/i, '').replace(/_/g, ' ').toLowerCase();
+          const capName = niceName.charAt(0).toUpperCase() + niceName.slice(1);
+          envResults.push({
+            name: parsed.name || capName || `${engine} - ${parsed.database}`,
+            engine,
+            env: parsed.env || mapEnv(undefined, parsed.host),
+            host: parsed.host,
+            port: parsed.port,
+            database: parsed.database,
+            username: parsed.username,
+            password: parsed.password,
+            groupName: '.env Imports',
+            sourceTool: 'generic',
+            rawParams: { envKey: key, url: val },
+          });
+        } catch {
+          // ignore invalid url
+        }
+      }
+    }
+    if (envResults.length > 0) {
+      return wrapResult(envResults);
     }
   }
 
@@ -176,7 +227,7 @@ export function parseConnectionFile(content: string, filename?: string): Importe
 
   // CASE A: TablePlus single connection or array
   if (Array.isArray(parsedJson)) {
-    return parsedJson.map((item) => {
+    return wrapResult(parsedJson.map((item) => {
       if (item.Driver || item.DatabaseHost || item.ConnectionName) {
         return transformTablePlusItem(item);
       }
@@ -203,12 +254,12 @@ export function parseConnectionFile(content: string, filename?: string): Importe
         sourceTool: 'generic',
         rawParams: item,
       };
-    });
+    }));
   }
 
   // CASE B: Single TablePlus item (e.g. *.tableplusconnection)
   if (parsedJson.Driver || parsedJson.DatabaseHost || parsedJson.ConnectionName) {
-    return [transformTablePlusItem(parsedJson)];
+    return wrapResult([transformTablePlusItem(parsedJson)]);
   }
 
   // CASE C: DBeaver data-sources.json
@@ -242,7 +293,7 @@ export function parseConnectionFile(content: string, filename?: string): Importe
         rawParams: connObj,
       });
     }
-    if (results.length > 0) return results;
+    if (results.length > 0) return wrapResult(results);
   }
 
   // CASE D: pgAdmin 4 servers.json
@@ -272,22 +323,22 @@ export function parseConnectionFile(content: string, filename?: string): Importe
         rawParams: srv,
       });
     }
-    if (results.length > 0) return results;
+    if (results.length > 0) return wrapResult(results);
   }
 
   // CASE E: DBNerd backup format { connections: [...] }
   if (Array.isArray(parsedJson.connections)) {
-    return parsedJson.connections.map((c: any) => ({
+    return wrapResult(parsedJson.connections.map((c: any) => ({
       ...c,
       engine: mapDriverToEngine(c.engine || 'postgres'),
       sourceTool: 'dbnerd',
-    }));
+    })));
   }
 
   // CASE F: Single generic connection JSON
   if (parsedJson.host || parsedJson.database || parsedJson.name) {
     const engine = mapDriverToEngine(parsedJson.engine || parsedJson.driver || 'postgres');
-    return [
+    return wrapResult([
       {
         id: parsedJson.id,
         name: parsedJson.name || `${engine} - ${parsedJson.database || 'database'}`,
@@ -309,8 +360,10 @@ export function parseConnectionFile(content: string, filename?: string): Importe
         sourceTool: 'generic',
         rawParams: parsedJson,
       },
-    ];
+    ]);
   }
 
   throw new Error('Unsupported connection file format. Please check file content.');
 }
+
+export const parseConnectionImportFile = parseConnectionFile;

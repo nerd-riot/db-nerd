@@ -17,6 +17,29 @@ class HeartbeatService {
   private consecutiveFailures: number = 0;
   private isRunning: boolean = false;
   private latencyHistory: number[] = [];
+  private listenersAttached: boolean = false;
+
+  private readonly onVisibilityChange = () => {
+    if (typeof document === 'undefined') return;
+    if (document.hidden) {
+      if (this.timerId) {
+        clearTimeout(this.timerId);
+        this.timerId = null;
+      }
+    } else if (this.isRunning) {
+      if (Date.now() - this.lastActivityTimestamp > 30000) {
+        this.checkNow();
+      } else {
+        this.scheduleNext(30000);
+      }
+    }
+  };
+
+  private readonly onWindowFocus = () => {
+    if (this.isRunning && Date.now() - this.lastActivityTimestamp > 30000) {
+      this.checkNow();
+    }
+  };
 
   constructor() {
     this.setupListeners();
@@ -34,6 +57,7 @@ class HeartbeatService {
   public start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.setupListeners();
     this.scheduleNext(15000); // Initial health check after 15s
   }
 
@@ -43,33 +67,21 @@ class HeartbeatService {
       clearTimeout(this.timerId);
       this.timerId = null;
     }
+    this.teardownListeners();
   }
 
   private setupListeners(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || this.listenersAttached) return;
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    window.addEventListener('focus', this.onWindowFocus);
+    this.listenersAttached = true;
+  }
 
-    // Immediately suspend all activity when window is minimized or tab is hidden
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        if (this.timerId) {
-          clearTimeout(this.timerId);
-          this.timerId = null;
-        }
-      } else {
-        // Upon returning, if inactive for > 30s, verify instance once
-        if (Date.now() - this.lastActivityTimestamp > 30000) {
-          this.checkNow();
-        } else {
-          this.scheduleNext(30000);
-        }
-      }
-    });
-
-    window.addEventListener('focus', () => {
-      if (Date.now() - this.lastActivityTimestamp > 30000) {
-        this.checkNow();
-      }
-    });
+  private teardownListeners(): void {
+    if (typeof window === 'undefined' || !this.listenersAttached) return;
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    window.removeEventListener('focus', this.onWindowFocus);
+    this.listenersAttached = false;
   }
 
   private scheduleNext(delayMs: number): void {

@@ -176,7 +176,8 @@ export const AllTableStatsView: React.FC = () => {
       console.warn('Live table stats query fallback:', e);
     }
 
-    if (!loadedStats || loadedStats.length === 0) {
+    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    if (isMock && (!loadedStats || loadedStats.length === 0)) {
       loadedStats = FALLBACK_STATS[engine] || FALLBACK_STATS.postgres;
     }
 

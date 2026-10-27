@@ -92,6 +92,8 @@ export function App() {
     showToast,
     reloadData,
     sqlTabStates,
+    openSessionIds,
+    activeConnection,
   } = useAppStore();
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
@@ -774,29 +776,31 @@ export function App() {
 
         </main>
 
-        {/* Right Inspector Panel (Collapsible with ⌘I and Resizable) */}
-        {isRightInspectorOpen ? (
-          <>
-            <div
-              onMouseDown={handleInspectorResizeStart}
-              onDoubleClick={() => setRightInspectorWidth(320)}
-              className="w-1 hover:w-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-col-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
-              title="Drag to resize inspector • Double-click to reset (320px)"
-            >
-              <div className="absolute top-1/2 -translate-y-1/2 -left-1 -right-1 h-8 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
-                <div className="w-0.5 h-3 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+        {/* Right Inspector Panel (Collapsible with ⌘I and Resizable, active when connected) */}
+        {openSessionIds.length > 0 && Boolean(activeConnection?.id) && (
+          isRightInspectorOpen ? (
+            <>
+              <div
+                onMouseDown={handleInspectorResizeStart}
+                onDoubleClick={() => setRightInspectorWidth(320)}
+                className="w-1 hover:w-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-col-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
+                title="Drag to resize inspector • Double-click to reset (320px)"
+              >
+                <div className="absolute top-1/2 -translate-y-1/2 -left-1 -right-1 h-8 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
+                  <div className="w-0.5 h-3 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+                </div>
               </div>
-            </div>
-            <RightInspector />
-          </>
-        ) : (
-          <button
-            onClick={toggleRightInspector}
-            className="w-4 hover:w-5 bg-slate-100 dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-l border-slate-300 dark:border-slate-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-300 flex items-center justify-center transition-all cursor-pointer group flex-shrink-0 z-10"
-            title="Expand Right Inspector (⌘I)"
-          >
-            <ChevronLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
-          </button>
+              <RightInspector />
+            </>
+          ) : (
+            <button
+              onClick={toggleRightInspector}
+              className="w-4 hover:w-5 bg-slate-100 dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-l border-slate-300 dark:border-slate-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-300 flex items-center justify-center transition-all cursor-pointer group flex-shrink-0 z-10"
+              title="Expand Right Inspector (⌘I)"
+            >
+              <ChevronLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+            </button>
+          )
         )}
       </div>
 

@@ -209,15 +209,11 @@ export const SqlEditor: React.FC = () => {
 
   const tabState = sqlTabStates[activeTabId] || {
     tabId: activeTabId,
-    query: `SELECT u.id, u.email, COUNT(o.id) AS total_orders, SUM(o.total_amount) AS total_spend\nFROM users u\nLEFT JOIN user_orders o ON o.user_id = u.id\nWHERE u.status = 'active'\nGROUP BY u.id, u.email\nORDER BY total_spend DESC LIMIT 50;`,
-    results: [
-      { id: 501, email: 'alex.turner@corp.io', total_orders: 14, total_spend: 2030.0 },
-      { id: 502, email: 'sarah.connor@cyberdyne.net', total_orders: 29, total_spend: 4210.5 },
-      { id: 503, email: 'khoa.nguyen@ai.lab', total_orders: 102, total_spend: 12450.0 },
-    ],
-    columns: ['id', 'email', 'total_orders', 'total_spend'],
-    durationMs: 1.4,
-    rowsCount: 3,
+    query: '',
+    results: [],
+    columns: [],
+    durationMs: 0,
+    rowsCount: 0,
     isExecuting: false,
   };
 
@@ -1449,8 +1445,12 @@ export const SqlEditor: React.FC = () => {
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50 text-[11px]">
                     {results.length === 0 ? (
                       <tr>
-                        <td colSpan={columns.length + 1} className="py-8 text-center text-slate-500">
-                          No records returned from query execution.
+                        <td colSpan={Math.max(1, columns.length + 1)} className="py-12 text-center text-slate-400 dark:text-slate-500 font-sans">
+                          {tabState.isExecuting
+                            ? 'Executing query...'
+                            : tabState.lastExecutedQuery
+                            ? 'No records returned from query execution.'
+                            : 'Press ⌘Enter to run SQL query.'}
                         </td>
                       </tr>
                     ) : (

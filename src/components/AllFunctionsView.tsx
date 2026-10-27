@@ -51,7 +51,8 @@ export const AllFunctionsView: React.FC = () => {
       console.warn('Real functions query failed:', e);
     }
 
-    if (!loaded || loaded.length === 0) {
+    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    if (isMock && (!loaded || loaded.length === 0)) {
       loaded = getFunctionsForConnection(activeConnection.name, activeConnection.engine);
     }
 

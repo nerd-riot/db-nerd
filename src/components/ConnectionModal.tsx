@@ -58,6 +58,14 @@ interface DropIndicator {
   position: 'before' | 'after' | 'inside';
 }
 
+const formatLatency = (ms: number): string => {
+  if (typeof ms !== 'number' || isNaN(ms) || ms <= 0) return '0ms';
+  if (ms >= 1000) {
+    return `${(ms / 1000).toFixed(2)}s`;
+  }
+  return `${ms.toFixed(1)}ms`;
+};
+
 import {
   ConnectorIcon,
   CONNECTOR_METADATA,
@@ -2572,7 +2580,7 @@ export const ConnectionModal = () => {
                     className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center space-x-1.5 active:scale-95 cursor-pointer mr-1"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back to Methods</span>
+                    <span>Back</span>
                   </button>
                 )}
 
@@ -2584,32 +2592,14 @@ export const ConnectionModal = () => {
                   {isTesting && (
                     <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
                   )}
-                  <span className="relative z-1">{isTesting ? 'Pinging host...' : 'Test Connection'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const currentProfile: ConnectionProfile = {
-                      ...formData,
-                      id: selectedConnId || 'temp',
-                    };
-                    const url = serializeConnectionUrl(currentProfile);
-                    navigator.clipboard.writeText(url);
-                    showToast('📋 Copied Connection URL');
-                  }}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs rounded-xl transition active:scale-95 cursor-pointer flex items-center space-x-1.5 border border-slate-300 dark:border-transparent"
-                  title="Copy connection as TablePlus / standard URL"
-                >
-                  <Link className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                  <span>Copy as URL</span>
+                  <span className="relative z-1">{isTesting ? 'Testing...' : 'Test Connection'}</span>
                 </button>
 
                 {testSuccess && (
                   <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center space-x-1.5 animate-in fade-in duration-200">
                     <HeartbeatDot color="green" size="xs" showWave={true} />
                     <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>Connected in {testLatency}ms (TLSv1.3 Handshake OK)</span>
+                    <span>Connected ({formatLatency(testLatency)})</span>
                   </span>
                 )}
 
@@ -2624,25 +2614,56 @@ export const ConnectionModal = () => {
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    const currentProfile: ConnectionProfile = {
+                      ...formData,
+                      id: selectedConnId || 'temp',
+                    };
+                    const url = serializeConnectionUrl(currentProfile);
+                    navigator.clipboard.writeText(url);
+                    showToast('📋 Copied Connection URL');
+                  }}
+                  className="px-2.5 py-1.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-xs rounded-lg transition active:scale-95 cursor-pointer flex items-center space-x-1"
+                  title="Copy connection as TablePlus / standard URL"
+                >
+                  <Link className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Copy URL</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setConnectionModalOpen(false)}
                   className="px-3.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition active:scale-95 cursor-pointer"
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSaveOnly}
-                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveAndConnect}
-                  className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer"
-                >
-                  Save & Connect
-                </button>
+
+                {isCreatingNew ? (
+                  <button
+                    type="button"
+                    onClick={handleSaveAndConnect}
+                    className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer"
+                  >
+                    Save &amp; Connect
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSaveOnly}
+                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveAndConnect}
+                      className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer"
+                    >
+                      Connect
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}

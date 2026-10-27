@@ -1,4 +1,4 @@
-import { EnvironmentTag } from '../types';
+import type { EnvironmentTag } from '../types/index.ts';
 
 export interface SqlSafetyIssue {
   type: 'UNRESTRICTED_UPDATE' | 'UNRESTRICTED_DELETE' | 'DROP' | 'TRUNCATE' | 'COMMIT' | 'ALTER' | 'WRITE';

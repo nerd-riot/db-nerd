@@ -1,11 +1,30 @@
 import { create } from 'zustand';
 import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag, TableSchemaInfo } from '../types';
-import { STOCK_ITEMS_ROWS, WAREHOUSES_ROWS, getTablesForConnection } from '../data/schemas';
+import { getTablesForConnection } from '../data/schemas';
+import { getDefaultRowsForTable } from '../data/mockRows';
 import { closeRealConnection, executeRealQuery, getRealTables, getRealFunctions, getRealTableSchema, getRealDatabases, RealTableSummary, testRealConnection } from '../services/dbService';
 import { heartbeatService } from '../services/heartbeatService';
 import { getThemeDefinition } from '../themes/themeRegistry';
 import { splitSqlStatements } from '../utils/sqlParser';
 import { isReadOnlySql } from '../utils/sqlSafety';
+import {
+  metadataCache,
+  cloneGridRows,
+  sanitizeRowCells,
+  boundSqlQueryResultTabs,
+  boundSqlResultRows,
+  buildPendingTransactionSql,
+  persistSessionTabs,
+  loadSessionTabs,
+  removeSessionTabsStorage,
+  safeSetLocalStorage,
+  quoteIdentifier,
+} from '../lib';
+import {
+  buildPaginatedSelectSql,
+  buildExactCountSql,
+  buildEstimatedCountCatalogSql,
+} from '../modules/grid/pagination';
 
 interface AppState {
   tabs: TabItem[];
@@ -229,245 +248,6 @@ interface AppState {
   reloadData: (tableName?: string, pageOverride?: number, pageSizeOverride?: number) => Promise<void>;
 }
 
-const INITIAL_ROWS: GridRow[] = [
-  {
-    id: 1034,
-    user_id: 501,
-    customer_name: 'Alex Turner',
-    product_sku: 'SKU-8902-M',
-    order_details: { items: 3, total: 145.0, express: true },
-    total_amount: 145.0,
-    created_at: '2026-10-20 14:30:00',
-    status: 'shipped',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1035,
-    user_id: 502,
-    customer_name: 'Sarah Connor',
-    product_sku: 'SKU-1239-X',
-    order_details: { items: 1, total: 89.5, reason: 'size_mismatch' },
-    total_amount: 89.5,
-    created_at: '2026-10-21 09:15:00',
-    status: 'processing_refund',
-    isDirty: true,
-    dirtyFields: { status: true },
-    rowState: 'modified',
-  },
-  {
-    id: 1036,
-    user_id: 503,
-    customer_name: 'Khoa Nguyen',
-    product_sku: 'SKU-4560-L',
-    order_details: { items: 5, total: 1200.0, vip: true },
-    total_amount: 1200.0,
-    created_at: '2026-10-21 11:00:00',
-    status: 'completed',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1037,
-    user_id: 504,
-    customer_name: 'Elena Rostova',
-    product_sku: 'SKU-9901-S',
-    order_details: { items: 2, total: 340.0 },
-    total_amount: 340.0,
-    created_at: '2026-10-21 13:45:00',
-    status: 'pending',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1038,
-    user_id: 505,
-    customer_name: 'Marcus Vance',
-    product_sku: 'SKU-3321-XL',
-    order_details: { items: 4, total: 580.0 },
-    total_amount: 580.0,
-    created_at: '2026-10-21 15:20:00',
-    status: 'completed',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1039,
-    user_id: 506,
-    customer_name: 'Chloe Bennett',
-    product_sku: 'SKU-7721-M',
-    order_details: { items: 2, total: 210.0, coupon: 'SAVE20' },
-    total_amount: 210.0,
-    created_at: '2026-10-21 16:05:00',
-    status: 'shipped',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1040,
-    user_id: 507,
-    customer_name: 'David Kim',
-    product_sku: 'SKU-1082-S',
-    order_details: { items: 1, total: 65.0 },
-    total_amount: 65.0,
-    created_at: '2026-10-21 17:30:00',
-    status: 'delivered',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1041,
-    user_id: 508,
-    customer_name: 'Emma Watson',
-    product_sku: 'SKU-4402-L',
-    order_details: { items: 6, total: 890.0, express: true },
-    total_amount: 890.0,
-    created_at: '2026-10-21 18:15:00',
-    status: 'processing',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1042,
-    user_id: 509,
-    customer_name: 'Liam Gallagher',
-    product_sku: 'SKU-9021-XS',
-    order_details: { items: 1, total: 45.0 },
-    total_amount: 45.0,
-    created_at: '2026-10-21 19:40:00',
-    status: 'completed',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1043,
-    user_id: 510,
-    customer_name: 'Sophia Chen',
-    product_sku: 'SKU-5510-M',
-    order_details: { items: 3, total: 315.0, giftWrap: true },
-    total_amount: 315.0,
-    created_at: '2026-10-21 20:00:00',
-    status: 'shipped',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1044,
-    user_id: 511,
-    customer_name: 'Oliver Queen',
-    product_sku: 'SKU-8820-XXL',
-    order_details: { items: 2, total: 195.0 },
-    total_amount: 195.0,
-    created_at: '2026-10-21 21:10:00',
-    status: 'pending',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1045,
-    user_id: 512,
-    customer_name: 'Amara Thorne',
-    product_sku: 'SKU-2091-S',
-    order_details: { items: 4, total: 440.0 },
-    total_amount: 440.0,
-    created_at: '2026-10-21 22:25:00',
-    status: 'delivered',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1046,
-    user_id: 513,
-    customer_name: 'Noah Patel',
-    product_sku: 'SKU-6632-L',
-    order_details: { items: 1, total: 120.0 },
-    total_amount: 120.0,
-    created_at: '2026-10-22 08:05:00',
-    status: 'completed',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1047,
-    user_id: 514,
-    customer_name: 'Isabella Silva',
-    product_sku: 'SKU-3140-M',
-    order_details: { items: 3, total: 275.0, express: true },
-    total_amount: 275.0,
-    created_at: '2026-10-22 09:40:00',
-    status: 'processing',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-  {
-    id: 1048,
-    user_id: 515,
-    customer_name: 'Lucas Wright',
-    product_sku: 'SKU-9944-XL',
-    order_details: { items: 2, total: 160.0 },
-    total_amount: 160.0,
-    created_at: '2026-10-22 10:15:00',
-    status: 'delivered',
-    isDirty: false,
-    dirtyFields: {},
-    rowState: 'clean',
-  },
-];
-
-const GOOSE_ROWS: GridRow[] = [
-  { id: 1, version_id: 0, is_applied: true, tstamp: '2026-09-20 11:05:42.760469', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 2, version_id: 1, is_applied: true, tstamp: '2026-09-20 11:05:42.791719', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 3, version_id: 2, is_applied: true, tstamp: '2026-09-20 11:05:42.919323', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 4, version_id: 3, is_applied: true, tstamp: '2026-09-20 11:05:42.934156', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 5, version_id: 4, is_applied: true, tstamp: '2026-09-20 11:05:42.975246', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 6, version_id: 5, is_applied: true, tstamp: '2026-09-20 11:05:42.985788', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-];
-
-const TUPLE_ROWS: GridRow[] = [
-  { id: 1, store: '01M2Z8794GWTS8MMZKGD922YX9', object_type: 'connector_tool', object_id: '0bef96c9-a2a1-4c42-bd12-e69a59a29647_r2770', relation: 'organisation', _user: 'organisation:5e4d3eb5-53af-4a0f-98a8-355ee55b326b_r2770#member', user_type: 'userset', ulid: '01M2Z8794GWTS8MMZKGD922YX9', inserted_at: '2026-10-21 11:20:10+00', condition_name: '', condition_context: null, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 2, store: '01M2Z8794GWTS8MMZKGD922YX9', object_type: 'connector_tool', object_id: '0bef96c9-a2a1-4c42-bd12-e69a59a29647_r2782', relation: 'organisation', _user: 'organisation:5e4d3eb5-53af-4a0f-98a8-355ee55b326b_r2782#member', user_type: 'userset', ulid: '01M2Z8794GWTS8MMZKGD922YXA', inserted_at: '2026-10-21 11:22:15+00', condition_name: '', condition_context: null, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 3, store: '01M2Z8794GWTS8MMZKGD922YX9', object_type: 'connector_tool', object_id: '0bef96c9-a2a1-4c42-bd12-e69a59a29647_r2806', relation: 'organisation', _user: 'organisation:5e4d3eb5-53af-4a0f-98a8-355ee55b326b_r2806#member', user_type: 'userset', ulid: '01M2Z8794GWTS8MMZKGD922YXB', inserted_at: '2026-10-21 11:25:30+00', condition_name: '', condition_context: null, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 4, store: '01M2Z8794GWTS8MMZKGD922YX9', object_type: 'connector_tool', object_id: '0da14052-e311-4305-ae60-71d157ab9587_r2770', relation: 'organisation', _user: 'organisation:5e4d3eb5-53af-4a0f-98a8-355ee55b326b_r2770#member', user_type: 'userset', ulid: '01M2Z8794GWTS8MMZKGD922YXC', inserted_at: '2026-10-21 11:30:00+00', condition_name: '', condition_context: null, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 5, store: '01M2Z8794GWTS8MMZKGD922YX9', object_type: 'connector_tool', object_id: '0fde576c-344d-45d8-879b-fcf8aa1ee2f3_r2782', relation: 'everyone', _user: 'organisation:5e4d3eb5-53af-4a0f-98a8-355ee55b326b_r2782#active_member', user_type: 'userset', ulid: '01M5FB8XBAJQ406DP5PVW247CQ', inserted_at: '2026-10-21 13:44:07+00', condition_name: 'EMPTY', condition_context: null, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 6, store: '01M2Z8794GWTS8MMZKGD922YX9', object_type: 'connector_tool', object_id: '15453fec-4d45-4954-9dcc-923120562ec6_r2770', relation: 'organisation', _user: 'grantee:user:76adbfc3-ae54-469b', user_type: 'userset', ulid: '01M5FB8XBAJQ406DP5PVW247CR', inserted_at: '2026-10-21 13:48:00+00', condition_name: '', condition_context: null, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-];
-
-const USERS_ROWS: GridRow[] = [
-  { id: 501, email: 'alex.turner@corp.io', full_name: 'Alex Turner', role: 'admin', status: 'active', created_at: '2026-01-10 09:20:00', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 502, email: 'sarah.connor@cyberdyne.net', full_name: 'Sarah Connor', role: 'member', status: 'active', created_at: '2026-02-15 14:10:00', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 503, email: 'khoa.nguyen@ai.lab', full_name: 'Khoa Nguyen', role: 'superadmin', status: 'active', created_at: '2026-03-01 11:45:00', dirtyFields: {}, isDirty: false, rowState: 'clean' },
-];
-
-const PRODUCTS_ROWS: GridRow[] = [
-  { id: 101, sku: 'PROD-MAC-M4', title: 'MacBook Pro M4 Max', category_id: 1, price: 3499.00, stock: 45, is_active: true, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 102, sku: 'PROD-DISP-5K', title: 'Studio Display 5K Retina', category_id: 2, price: 1599.00, stock: 28, is_active: true, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-  { id: 103, sku: 'PROD-KEY-TOUCH', title: 'Magic Keyboard with Touch ID', category_id: 3, price: 199.00, stock: 120, is_active: true, dirtyFields: {}, isDirty: false, rowState: 'clean' },
-];
-
-const getDefaultRowsForTable = (tbl: string, isTruncated?: boolean): GridRow[] => {
-  if (isTruncated) return [];
-  if (tbl === 'goose_db_version') return GOOSE_ROWS;
-  if (tbl === 'tuple') return TUPLE_ROWS;
-  if (tbl === 'stock_items') return STOCK_ITEMS_ROWS;
-  if (tbl === 'warehouses') return WAREHOUSES_ROWS;
-  if (tbl === 'users') return USERS_ROWS;
-  if (tbl === 'products') return PRODUCTS_ROWS;
-  return INITIAL_ROWS;
-};
-
 export const EMPTY_CONNECTION: ConnectionProfile = {
   id: '',
   name: '',
@@ -530,65 +310,15 @@ const loadSavedConnections = (): ConnectionProfile[] => {
 };
 
 const persistGroups = (groups: ConnectionGroup[]) => {
-  try {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('dbnerd_groups', JSON.stringify(groups));
-    }
-  } catch {}
+  safeSetLocalStorage('dbnerd_groups', JSON.stringify(groups));
 };
 
 const persistConnections = (connections: ConnectionProfile[]) => {
-  try {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('dbnerd_connections', JSON.stringify(connections));
-    }
-  } catch {}
+  safeSetLocalStorage('dbnerd_connections', JSON.stringify(connections));
 };
 
 const INITIAL_GROUPS: ConnectionGroup[] = loadSavedGroups();
 const INITIAL_CONNECTIONS: ConnectionProfile[] = loadSavedConnections();
-
-
-const persistSessionTabs = (
-  connId: string,
-  tabs: TabItem[],
-  activeTabId: string,
-  selectedTable: string,
-  sqlTabStates: Record<string, SqlTabState>
-) => {
-  try {
-    if (typeof window !== 'undefined' && connId) {
-      const sqlQueries: Record<string, string> = {};
-      for (const [tId, sState] of Object.entries(sqlTabStates)) {
-        if (sState?.query) sqlQueries[tId] = sState.query;
-      }
-      localStorage.setItem(
-        `dbnerd_session_tabs_${connId}`,
-        JSON.stringify({
-          tabs,
-          activeTabId,
-          selectedTable,
-          sqlQueries,
-        })
-      );
-    }
-  } catch {}
-};
-
-const loadSessionTabs = (
-  connId: string
-): { tabs: TabItem[]; activeTabId: string; selectedTable: string; sqlQueries?: Record<string, string> } | null => {
-  try {
-    if (typeof window !== 'undefined' && connId) {
-      const raw = localStorage.getItem(`dbnerd_session_tabs_${connId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed?.tabs)) return parsed;
-      }
-    }
-  } catch {}
-  return null;
-};
 
 const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionSession => {
   const saved = loadSessionTabs(conn.id);
@@ -888,19 +618,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (targetConn) {
       closeRealConnection(targetConn);
     }
+    metadataCache.evictConnection(connId);
     const nextSessions = { ...sessions };
     delete nextSessions[connId];
 
     const nextOpen = openSessionIds.filter((id) => id !== connId);
     if (nextOpen.length === 0) {
-      set({
-        openSessionIds: [],
-        sessions: nextSessions,
-        tabs: [],
-        sqlTabStates: {},
-        activeTabId: '',
-        activeTab: 'default',
-        isConnectionModalOpen: true,
+      set((state) => {
+        const nextLiveTables = { ...state.liveTables };
+        const nextLiveSchemas = { ...state.liveSchemas };
+        const nextLiveFunctions = { ...state.liveFunctions };
+        const nextLiveDatabases = { ...state.liveDatabases };
+        delete nextLiveTables[connId];
+        delete nextLiveSchemas[connId];
+        delete nextLiveFunctions[connId];
+        delete nextLiveDatabases[connId];
+        return {
+          openSessionIds: [],
+          sessions: nextSessions,
+          liveTables: nextLiveTables,
+          liveSchemas: nextLiveSchemas,
+          liveFunctions: nextLiveFunctions,
+          liveDatabases: nextLiveDatabases,
+          tabs: [],
+          sqlTabStates: {},
+          rows: [],
+          originalRows: [],
+          selectedRowData: null,
+          activeTabId: '',
+          activeTab: 'default',
+          isConnectionModalOpen: true,
+        };
       });
       showToast('All connections closed — returned to Connection Manager');
       return;
@@ -910,8 +658,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set((state) => {
       const updatedSessions = { ...state.sessions };
+      const nextLiveTables = { ...state.liveTables };
+      const nextLiveSchemas = { ...state.liveSchemas };
+      const nextLiveFunctions = { ...state.liveFunctions };
+      const nextLiveDatabases = { ...state.liveDatabases };
       delete updatedSessions[connId];
-      return { openSessionIds: nextOpen, sessions: updatedSessions };
+      delete nextLiveTables[connId];
+      delete nextLiveSchemas[connId];
+      delete nextLiveFunctions[connId];
+      delete nextLiveDatabases[connId];
+      return {
+        openSessionIds: nextOpen,
+        sessions: updatedSessions,
+        liveTables: nextLiveTables,
+        liveSchemas: nextLiveSchemas,
+        liveFunctions: nextLiveFunctions,
+        liveDatabases: nextLiveDatabases,
+      };
     });
     showToast('Session disconnected');
   },
@@ -920,8 +683,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeTabId: INITIAL_TAB_ID,
   activeTab: INITIAL_ACTIVE_TAB?.type || 'default',
   selectedTable: INITIAL_ACTIVE_TAB?.tableName || INITIAL_ACTIVE_SESSION.selectedTable,
-  rows: JSON.parse(JSON.stringify(INITIAL_ACTIVE_SESSION.rows)),
-  originalRows: JSON.parse(JSON.stringify(INITIAL_ACTIVE_SESSION.originalRows)),
+  rows: cloneGridRows(INITIAL_ACTIVE_SESSION.rows),
+  originalRows: cloneGridRows(INITIAL_ACTIVE_SESSION.originalRows),
   selectedRowData: getInitialSelectedRow(),
 
   setActiveTabId: (id) => {
@@ -986,7 +749,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const targetConn = conn || get().activeConnection;
     if (!targetConn || !targetConn.id) return;
     try {
-      const dbs = await getRealDatabases(targetConn);
+      const cacheKey = `${targetConn.id}:databases`;
+      const dbs = await metadataCache.databases.getOrFetch(cacheKey, () => getRealDatabases(targetConn));
       if (dbs && dbs.length > 0) {
         set((state) => ({
           liveDatabases: {
@@ -1012,8 +776,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const targetConn = conn || get().activeConnection;
     if (!targetConn || !targetConn.id) return;
     try {
-      const tables = await getRealTables(targetConn);
-      if (tables && tables.length > 0) {
+      const cacheKey = `${targetConn.id}:${targetConn.database || 'default'}`;
+      const tables = await metadataCache.tables.getOrFetch(cacheKey, () => getRealTables(targetConn));
+      if (tables !== undefined) {
         set((state) => ({
           liveTables: {
             ...state.liveTables,
@@ -1037,7 +802,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!targetConn || !targetConn.id) return;
     const summary = get().liveTables[targetConn.id]?.find((t) => t.name === tableName);
     try {
-      const schemaInfo = await getRealTableSchema(targetConn, tableName, summary);
+      const cacheKey = `${targetConn.id}:${targetConn.database || 'default'}:${tableName}`;
+      const schemaInfo = await metadataCache.schemas.getOrFetch(cacheKey, () =>
+        getRealTableSchema(targetConn, tableName, summary)
+      );
       if (schemaInfo) {
         set((state) => ({
           liveSchemas: {
@@ -1059,8 +827,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const targetConn = conn || get().activeConnection;
     if (!targetConn || !targetConn.id) return;
     try {
-      const funcs = await getRealFunctions(targetConn);
-      if (funcs && funcs.length > 0) {
+      const cacheKey = `${targetConn.id}:${targetConn.database || 'default'}`;
+      const funcs = await metadataCache.functions.getOrFetch(cacheKey, () => getRealFunctions(targetConn));
+      if (funcs !== undefined) {
         set((state) => ({
           liveFunctions: {
             ...state.liveFunctions,
@@ -1354,15 +1123,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         const res = await executeRealQuery(activeConn, currentStmt.trimmedText);
         let duration = res.duration_ms || +(performance.now() - startMs).toFixed(1) || 1.1;
         let isSuccess = res.success && !res.error;
-        let rows = isSuccess ? res.rows : (res.error ? [{ error: res.error }] : []);
+        let rawRows = isSuccess ? res.rows : (res.error ? [{ error: res.error }] : []);
         let errorMsg = isSuccess ? undefined : res.error;
 
-        // In browser / test mode without Tauri desktop runtime, provide realistic table rows
-        if (!isSuccess && res.error && (res.error.includes("reading 'invoke'") || res.error.includes("__TAURI__"))) {
+        // In browser / test mode without Tauri desktop runtime, provide realistic table rows ONLY for demo/mock connections
+        const isMockConn = !activeConn?.id || activeConn.id === 'demo' || activeConn.id.startsWith('mock');
+        if (isMockConn && !isSuccess && res.error && (res.error.includes("reading 'invoke'") || res.error.includes("__TAURI__"))) {
           const tblMatch = currentStmt.trimmedText.match(/FROM\s+([a-zA-Z0-9_]+)/i);
           const tbl = tblMatch ? tblMatch[1].toLowerCase() : (i === 0 ? 'users' : i === 1 ? 'user_orders' : 'products');
           const mockRows = getDefaultRowsForTable(tbl);
-          rows = mockRows && mockRows.length > 0 ? mockRows : [
+          rawRows = mockRows && mockRows.length > 0 ? mockRows : [
             { id: 101, name: 'Sample Record 1', status: 'active', created_at: new Date().toISOString() },
             { id: 102, name: 'Sample Record 2', status: 'completed', created_at: new Date().toISOString() },
           ];
@@ -1370,6 +1140,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           errorMsg = undefined;
           duration = +(Math.random() * 2 + 1.2).toFixed(1);
         }
+
+        const rows = boundSqlResultRows(rawRows);
+        const wasTruncated = Array.isArray(rawRows) && rawRows.length > rows.length;
 
         const columns = (isSuccess && rows.length > 0)
           ? Object.keys(rows[0])
@@ -1386,7 +1159,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         } else if (upperStmt.startsWith('ROLLBACK')) {
           statusMsg = `Query ${i + 1} OK: ROLLBACK`;
         } else if (upperStmt.startsWith('SELECT')) {
-          statusMsg = `Query ${i + 1} OK: ${rows.length} rows`;
+          statusMsg = wasTruncated
+            ? `Query ${i + 1} OK: ${rows.length} rows (capped from ${rawRows.length})`
+            : `Query ${i + 1} OK: ${rows.length} rows`;
         } else if (upperStmt.startsWith('INSERT') || upperStmt.startsWith('UPDATE') || upperStmt.startsWith('DELETE')) {
           statusMsg = `Query ${i + 1} OK: ${res.rows_affected || rows.length || 1} rows affected`;
         } else {
@@ -1451,7 +1226,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     activeCancelledTabs.delete(tabId);
 
     const pinnedResults = (currentState?.queryResults || []).filter((r) => r.isPinned);
-    const mergedResults = [...pinnedResults, ...finalQueryResults];
+    const mergedResults = boundSqlQueryResultTabs([...pinnedResults, ...finalQueryResults]);
 
     const targetResultId = firstErrorResultId || (mergedResults.length > 0 ? mergedResults[mergedResults.length - 1].id : 'q-1');
     const activeRes = mergedResults.find((r) => r.id === targetResultId) || mergedResults[0];
@@ -1706,7 +1481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeOtherTabs: (id) => {
-    const { tabs, selectedTable, sqlTabStates } = get();
+    const { tabs, selectedTable, sqlTabStates, activeConnection } = get();
     const target = tabs.find((t) => t.id === id);
     if (!target) return;
     const nextTabs = tabs.filter((t) => t.id === id || t.canClose === false);
@@ -1715,17 +1490,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const [k, v] of Object.entries(sqlTabStates)) {
       if (keptIds.has(k)) nextSqlStates[k] = v;
     }
+    const nextTable = target.tableName || selectedTable;
+    persistSessionTabs(activeConnection.id, nextTabs, target.id, nextTable, nextSqlStates);
     set({
       tabs: nextTabs,
       sqlTabStates: nextSqlStates,
       activeTabId: target.id,
       activeTab: target.type,
-      selectedTable: target.tableName || selectedTable,
+      selectedTable: nextTable,
     });
   },
 
   closeTabsToRight: (id) => {
-    const { tabs, activeTabId, selectedTable, sqlTabStates } = get();
+    const { tabs, activeTabId, selectedTable, sqlTabStates, activeConnection } = get();
     const idx = tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
     const nextTabs = tabs.filter((t, i) => i <= idx || t.canClose === false);
@@ -1739,17 +1516,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextActiveId = id;
     }
     const nextActive = nextTabs.find((t) => t.id === nextActiveId) || nextTabs[0];
+    const nextTable = nextActive?.tableName || selectedTable;
+    persistSessionTabs(activeConnection.id, nextTabs, nextActive ? nextActive.id : '', nextTable, nextSqlStates);
     set({
       tabs: nextTabs,
       sqlTabStates: nextSqlStates,
       activeTabId: nextActive ? nextActive.id : '',
       activeTab: nextActive ? nextActive.type : 'default',
-      selectedTable: nextActive?.tableName || selectedTable,
+      selectedTable: nextTable,
     });
   },
 
   closeAllTabs: () => {
-    const { tabs, sqlTabStates } = get();
+    const { tabs, sqlTabStates, activeConnection } = get();
     const remaining = tabs.filter((t) => t.canClose === false);
     const keptIds = new Set(remaining.map((t) => t.id));
     const nextSqlStates: Record<string, SqlTabState> = {};
@@ -1757,6 +1536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (keptIds.has(k)) nextSqlStates[k] = v;
     }
     if (remaining.length === 0) {
+      persistSessionTabs(activeConnection.id, [], '', '', nextSqlStates);
       set({
         tabs: [],
         sqlTabStates: nextSqlStates,
@@ -1764,12 +1544,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeTab: 'default',
       });
     } else {
+      const nextTable = remaining[0].tableName || get().selectedTable;
+      persistSessionTabs(activeConnection.id, remaining, remaining[0].id, nextTable, nextSqlStates);
       set({
         tabs: remaining,
         sqlTabStates: nextSqlStates,
         activeTabId: remaining[0].id,
         activeTab: remaining[0].type,
-        selectedTable: remaining[0].tableName || get().selectedTable,
+        selectedTable: nextTable,
       });
     }
   },
@@ -1900,7 +1682,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteConnectionGroup: (id) => {
     const state = get();
     const removedConns = state.connections.filter((c) => c.groupId === id);
-    removedConns.forEach((c) => closeRealConnection(c));
+    removedConns.forEach((c) => {
+      closeRealConnection(c);
+      metadataCache.evictConnection(c.id);
+      removeSessionTabsStorage(c.id);
+    });
     const removedIds = new Set(removedConns.map((c) => c.id));
 
     set((s) => {
@@ -1909,11 +1695,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextOpenSessionIds = s.openSessionIds.filter((sid) => !removedIds.has(sid));
       const nextSessions = { ...s.sessions };
       const nextLiveTables = { ...s.liveTables };
+      const nextLiveSchemas = { ...s.liveSchemas };
       const nextLiveFunctions = { ...s.liveFunctions };
+      const nextLiveDatabases = { ...s.liveDatabases };
       removedIds.forEach((rid) => {
         delete nextSessions[rid];
         delete nextLiveTables[rid];
+        delete nextLiveSchemas[rid];
         delete nextLiveFunctions[rid];
+        delete nextLiveDatabases[rid];
       });
       let nextActive = s.activeConnection;
       if (removedIds.has(s.activeConnection.id)) {
@@ -1927,7 +1717,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         openSessionIds: nextOpenSessionIds,
         sessions: nextSessions,
         liveTables: nextLiveTables,
+        liveSchemas: nextLiveSchemas,
         liveFunctions: nextLiveFunctions,
+        liveDatabases: nextLiveDatabases,
         activeConnection: nextActive,
       };
     });
@@ -1961,15 +1753,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (target) {
       closeRealConnection(target);
     }
+    metadataCache.evictConnection(id);
+    removeSessionTabsStorage(id);
     set((state) => {
       const nextConnections = state.connections.filter((c) => c.id !== id);
       const nextOpenSessionIds = state.openSessionIds.filter((sid) => sid !== id);
       const nextSessions = { ...state.sessions };
       const nextLiveTables = { ...state.liveTables };
+      const nextLiveSchemas = { ...state.liveSchemas };
       const nextLiveFunctions = { ...state.liveFunctions };
+      const nextLiveDatabases = { ...state.liveDatabases };
       delete nextSessions[id];
       delete nextLiveTables[id];
+      delete nextLiveSchemas[id];
       delete nextLiveFunctions[id];
+      delete nextLiveDatabases[id];
 
       let nextActive = state.activeConnection;
       if (state.activeConnection.id === id) {
@@ -1981,7 +1779,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         openSessionIds: nextOpenSessionIds,
         sessions: nextSessions,
         liveTables: nextLiveTables,
+        liveSchemas: nextLiveSchemas,
         liveFunctions: nextLiveFunctions,
+        liveDatabases: nextLiveDatabases,
         activeConnection: nextActive,
       };
     });
@@ -2160,11 +1960,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextConnections = connections.map((c) =>
       c.id === activeConnection.id ? { ...c, database: dbName } : c
     );
-    set({
-      activeConnection: nextConn,
-      connections: nextConnections,
-      isDatabaseModalOpen: false,
+    set((state) => {
+      const nextLiveSchemas = { ...state.liveSchemas };
+      delete nextLiveSchemas[activeConnection.id];
+      return {
+        activeConnection: nextConn,
+        connections: nextConnections,
+        liveSchemas: nextLiveSchemas,
+        isDatabaseModalOpen: false,
+      };
     });
+    persistConnections(nextConnections);
     get().fetchLiveTables(nextConn);
     get().fetchLiveFunctions(nextConn);
     get().fetchLiveDatabases(nextConn);
@@ -2403,8 +2209,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   truncateTable: async (tableName: string) => {
     const { activeConnection, selectedTable, requestSafetyConfirmation } = get();
-    const quote = activeConnection.engine === 'mysql' ? '`' : '"';
-    const query = `TRUNCATE TABLE ${quote}${tableName}${quote};`;
+    const quotedTbl = quoteIdentifier(tableName, activeConnection.engine);
+    const query = `TRUNCATE TABLE ${quotedTbl};`;
     const approved = await requestSafetyConfirmation({
       sqlText: query,
       title: `Confirm TRUNCATE Table "${tableName}"`,
@@ -2434,7 +2240,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           id: `hist-${Date.now()}`,
           connectionName: state.activeConnection.name,
           env: state.activeConnection.env,
-          sql: `TRUNCATE TABLE "${tableName}";`,
+          sql: query,
           timestamp: 'Just now',
           durationMs: 1.1,
           rowsAffected: 0,
@@ -2450,8 +2256,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   dropTable: async (tableName: string) => {
     const { activeConnection, selectedTable, tabs, closeTab, showToast, requestSafetyConfirmation } = get();
     const connId = activeConnection.id;
-    const quote = activeConnection.engine === 'mysql' ? '`' : '"';
-    const query = `DROP TABLE IF EXISTS ${quote}${tableName}${quote};`;
+    const quotedTbl = quoteIdentifier(tableName, activeConnection.engine);
+    const query = `DROP TABLE IF EXISTS ${quotedTbl};`;
 
     const approved = await requestSafetyConfirmation({
       sqlText: query,
@@ -2484,7 +2290,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             id: `hist-${Date.now()}`,
             connectionName: state.activeConnection.name,
             env: state.activeConnection.env,
-            sql: `DROP TABLE "${tableName}";`,
+            sql: query,
             timestamp: 'Just now',
             durationMs: 1.8,
             rowsAffected: 0,
@@ -2511,8 +2317,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedTable: (tbl) => {
     const { truncatedTables, selectedTable, liveTables, activeConnection } = get();
-    const targetRows = getDefaultRowsForTable(tbl, truncatedTables[tbl]);
-    const liveSummary = liveTables[activeConnection.id]?.find((t) => t.name === tbl);
+    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    const targetRows = isMock ? getDefaultRowsForTable(tbl, truncatedTables[tbl]) : [];
+    const liveSummary = liveTables[activeConnection?.id]?.find((t) => t.name === tbl);
     const initialEst = liveSummary?.estimated_rows && liveSummary.estimated_rows > 0 ? liveSummary.estimated_rows : null;
 
     set({
@@ -2521,9 +2328,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       gridPage: tbl !== selectedTable ? 0 : get().gridPage,
       gridTotalCount: initialEst,
       gridIsEstimatedCount: true,
-      rows: JSON.parse(JSON.stringify(targetRows)),
-      originalRows: JSON.parse(JSON.stringify(targetRows)),
+      rows: isMock ? cloneGridRows(targetRows) : [],
+      originalRows: isMock ? cloneGridRows(targetRows) : [],
       pendingEditsCount: 0,
+      isReloading: !isMock,
     });
     // Asynchronously fetch live rows & schema metadata from database
     get().reloadData(tbl, tbl !== selectedTable ? 0 : get().gridPage);
@@ -2607,11 +2415,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ gridIsCounting: true });
     try {
-      const quote = activeConnection.engine === 'mysql' ? '`' : '"';
-      const whereClause = (includeFilter && isFilterBarOpen && filterWhereText.trim())
-        ? ` WHERE ${filterWhereText.trim()}`
-        : '';
-      const countSql = `SELECT COUNT(*) AS total_count FROM ${quote}${targetTable}${quote}${whereClause};`;
+      const countSql = buildExactCountSql({
+        tableName: targetTable,
+        engine: activeConnection.engine,
+        whereText: includeFilter && isFilterBarOpen ? filterWhereText : '',
+      });
       const res = await executeRealQuery(activeConnection, countSql);
       if (res.success && res.rows && res.rows.length > 0) {
         const exactVal = Number(res.rows[0]?.total_count ?? Object.values(res.rows[0])[0] ?? 0);
@@ -2666,28 +2474,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     const offset = Math.max(0, currentPage * currentPageSize);
 
     try {
-      const quote = activeConnection.engine === 'mysql' ? '`' : '"';
-      let sql: string;
       const hasCustomFilter = isFilterBarOpen && (Boolean(filterWhereText.trim()) || Boolean(filterOrderByText.trim()));
-      
-      if (activeConnection.engine === 'redis') {
-        sql = `KEYS *`;
-      } else {
-        const whereClause = (hasCustomFilter && filterWhereText.trim()) ? ` WHERE ${filterWhereText.trim()}` : '';
-        const orderClause = (hasCustomFilter && filterOrderByText.trim()) ? ` ORDER BY ${filterOrderByText.trim()}` : '';
-        sql = `SELECT * FROM ${quote}${targetTable}${quote}${whereClause}${orderClause} LIMIT ${currentPageSize} OFFSET ${offset};`;
-      }
+      const sql = buildPaginatedSelectSql({
+        tableName: targetTable,
+        engine: activeConnection.engine,
+        page: currentPage,
+        pageSize: currentPageSize,
+        whereText: hasCustomFilter ? filterWhereText : '',
+        orderByText: hasCustomFilter ? filterOrderByText : '',
+      });
 
       let res = await executeRealQuery(activeConnection, sql);
       // Fallback if custom filter failed
       if (!res.success && hasCustomFilter && activeConnection.engine !== 'redis') {
-        const fallbackSql = `SELECT * FROM ${quote}${targetTable}${quote} LIMIT ${currentPageSize} OFFSET ${offset};`;
+        const fallbackSql = buildPaginatedSelectSql({
+          tableName: targetTable,
+          engine: activeConnection.engine,
+          page: currentPage,
+          pageSize: currentPageSize,
+        });
         res = await executeRealQuery(activeConnection, fallbackSql);
       }
 
       if (res.success && Array.isArray(res.rows)) {
         const liveRows: GridRow[] = res.rows.map((r, idx) => ({
-          ...r,
+          ...sanitizeRowCells(r),
           id: r.id !== undefined ? r.id : offset + idx + 1,
           isDirty: false,
           dirtyFields: {},
@@ -2712,7 +2523,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           selectedTable: targetTable,
           selectedRowData: null,
           rows: liveRows,
-          originalRows: JSON.parse(JSON.stringify(liveRows)),
+          originalRows: cloneGridRows(liveRows),
           pendingEditsCount: 0,
           gridPage: currentPage,
           gridPageSize: currentPageSize,
@@ -2725,12 +2536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (totalCount === null || totalCount === 0) {
           (async () => {
             try {
-              let estSql = '';
-              if (activeConnection.engine === 'postgres') {
-                estSql = `SELECT GREATEST(CASE WHEN c.reltuples > 0 THEN c.reltuples::bigint WHEN COALESCE(s.n_live_tup, 0) > 0 THEN s.n_live_tup ELSE 0 END, 0)::bigint AS estimated_rows FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid WHERE (n.nspname = 'public' OR n.nspname = current_schema()) AND c.relname = '${targetTable.replace(/'/g, "''")}' LIMIT 1;`;
-              } else if (activeConnection.engine === 'mysql') {
-                estSql = `SELECT COALESCE(TABLE_ROWS, 0) AS estimated_rows FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${targetTable.replace(/'/g, "''")}' LIMIT 1;`;
-              }
+              const estSql = buildEstimatedCountCatalogSql(targetTable, activeConnection.engine);
               if (estSql) {
                 const estRes = await executeRealQuery(activeConnection, estSql);
                 if (estRes.success && estRes.rows && estRes.rows.length > 0) {
@@ -2748,8 +2554,47 @@ export const useAppStore = create<AppState>((set, get) => ({
         showToast(`⚡ Loaded rows ${offset + 1}-${offset + liveRows.length}${countLabel} (${res.duration_ms}ms)`);
         return;
       }
-    } catch (e) {
+
+      const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+      if (!isMock) {
+        set({
+          selectedTable: targetTable,
+          selectedRowData: null,
+          rows: [],
+          originalRows: [],
+          pendingEditsCount: 0,
+          gridPage: currentPage,
+          gridPageSize: currentPageSize,
+          gridTotalCount: 0,
+          gridIsEstimatedCount: false,
+          isReloading: false,
+        });
+        showToast(`❌ Table error: ${res.error || 'Failed to query table data'}`, 'error');
+        return;
+      }
+    } catch (e: any) {
       console.warn('Live table load failed, fallback:', e);
+      const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+      if (!isMock) {
+        set({
+          selectedTable: targetTable,
+          selectedRowData: null,
+          rows: [],
+          originalRows: [],
+          pendingEditsCount: 0,
+          gridTotalCount: 0,
+          gridIsEstimatedCount: false,
+          isReloading: false,
+        });
+        showToast(`❌ Table query error: ${e?.message || e}`, 'error');
+        return;
+      }
+    }
+
+    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    if (!isMock) {
+      set({ isReloading: false });
+      return;
     }
 
     const targetRows = getDefaultRowsForTable(targetTable, truncatedTables[targetTable]);
@@ -2758,8 +2603,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       selectedTable: targetTable,
       selectedRowData: null,
-      rows: JSON.parse(JSON.stringify(targetRows)),
-      originalRows: JSON.parse(JSON.stringify(targetRows)),
+      rows: cloneGridRows(targetRows),
+      originalRows: cloneGridRows(targetRows),
       pendingEditsCount: 0,
       gridPage: 0,
       gridTotalCount: targetRows.length,
@@ -2813,9 +2658,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   isFilterBarOpen: false,
   toggleFilterBar: () => set((state) => ({ isFilterBarOpen: !state.isFilterBarOpen })),
-  filterWhereText: "object_type = 'connector_tool'",
+  filterWhereText: '',
   setFilterWhereText: (val) => set({ filterWhereText: val }),
-  filterOrderByText: "inserted_at DESC",
+  filterOrderByText: '',
   setFilterOrderByText: (val) => set({ filterOrderByText: val }),
 
   structureSearchColumn: '',
@@ -3051,7 +2896,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   rollbackTransaction: () => {
     const { originalRows } = get();
     set({
-      rows: JSON.parse(JSON.stringify(originalRows)),
+      rows: cloneGridRows(originalRows),
       pendingEditsCount: 0,
       isTransactionOpen: false,
     });
@@ -3103,7 +2948,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       rows: committedRows,
-      originalRows: JSON.parse(JSON.stringify(committedRows)),
+      originalRows: cloneGridRows(committedRows),
       pendingEditsCount: 0,
       isTransactionOpen: false,
       isSqlDiffModalOpen: false,
@@ -3116,62 +2961,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   getPendingSQL: () => {
     const { rows, selectedTable, activeConnection } = get();
-    const sqlStatements: string[] = [];
-    const isMysql = activeConnection?.engine === 'mysql';
-    const quote = isMysql ? '`' : '"';
-    const internalKeys = new Set(['isDirty', 'dirtyFields', 'rowState']);
-
-    const formatSqlValue = (val: any): string => {
-      if (val === null || val === undefined) return 'NULL';
-      if (typeof val === 'number') return Number.isFinite(val) ? String(val) : 'NULL';
-      if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
-      if (typeof val === 'object') {
-        const jsonStr = JSON.stringify(val).replace(/'/g, "''");
-        return isMysql ? `'${jsonStr}'` : `'${jsonStr}'::jsonb`;
-      }
-      return `'${String(val).replace(/'/g, "''")}'`;
-    };
-
-    const resolvePrimaryKey = (row: GridRow): { col: string; val: any } => {
-      for (const candidate of ['id', 'version_id', 'ulid', 'sku', 'code']) {
-        if (candidate in row && (row as any)[candidate] !== undefined) {
-          return { col: candidate, val: (row as any)[candidate] };
-        }
-      }
-      const firstKey = Object.keys(row).find((k) => !internalKeys.has(k)) || 'id';
-      return { col: firstKey, val: (row as any)[firstKey] };
-    };
-
-    rows.forEach((r) => {
-      if (r.rowState === 'inserted') {
-        const dataKeys = Object.keys(r).filter((k) => !internalKeys.has(k) && (r as any)[k] !== undefined);
-        const colsList = dataKeys.map((k) => `${quote}${k}${quote}`).join(', ');
-        const valsList = dataKeys.map((k) => formatSqlValue((r as any)[k])).join(', ');
-        sqlStatements.push(
-          `INSERT INTO ${quote}${selectedTable}${quote} (${colsList}) VALUES (${valsList});`
-        );
-      } else if (r.rowState === 'deleted') {
-        const pk = resolvePrimaryKey(r);
-        sqlStatements.push(
-          `DELETE FROM ${quote}${selectedTable}${quote} WHERE ${quote}${pk.col}${quote} = ${formatSqlValue(pk.val)};`
-        );
-      } else if (r.dirtyFields && Object.keys(r.dirtyFields).length > 0) {
-        const pk = resolvePrimaryKey(r);
-        const setClauses = Object.keys(r.dirtyFields).map((field) => {
-          const val = (r as any)[field];
-          return `${quote}${field}${quote} = ${formatSqlValue(val)}`;
-        });
-        sqlStatements.push(
-          `UPDATE ${quote}${selectedTable}${quote} SET ${setClauses.join(', ')} WHERE ${quote}${pk.col}${quote} = ${formatSqlValue(pk.val)};`
-        );
-      }
-    });
-
-    if (sqlStatements.length === 0) {
-      return '-- No pending changes in active transaction';
-    }
-
-    return `BEGIN TRANSACTION;\n\n${sqlStatements.join('\n')}\n\nCOMMIT;`;
+    return buildPendingTransactionSql(rows, selectedTable, activeConnection?.engine || 'postgres');
   },
 
   processes: [

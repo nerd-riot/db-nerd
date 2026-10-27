@@ -120,12 +120,14 @@ export const Sidebar = () => {
   }, [activeConnection?.id, activeConnection?.database]);
 
   const deletedForConn = deletedTables[activeConnection?.id || ''] || [];
+  const isMockConn = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
   const liveForConn = activeConnection?.id ? liveTables[activeConnection.id] : undefined;
+  const isTablesLoading = Boolean(activeConnection?.id && !isMockConn && liveForConn === undefined);
   const connectionTables = (!activeConnection?.id
     ? []
-    : (liveForConn && liveForConn.length > 0
+    : (liveForConn !== undefined
         ? liveForConn
-        : getTablesForConnection(activeConnection.name, activeConnection.engine)
+        : (isMockConn ? getTablesForConnection(activeConnection.name, activeConnection.engine) : [])
       )
   ).filter((t) => !deletedForConn.includes(t.name));
 
@@ -134,11 +136,12 @@ export const Sidebar = () => {
   );
 
   const liveFuncsForConn = activeConnection?.id ? liveFunctions[activeConnection.id] : undefined;
+  const isFunctionsLoading = Boolean(activeConnection?.id && !isMockConn && liveFuncsForConn === undefined);
   const connectionFunctions = !activeConnection?.id
     ? []
-    : (liveFuncsForConn && liveFuncsForConn.length > 0
+    : (liveFuncsForConn !== undefined
         ? liveFuncsForConn
-        : getFunctionsForConnection(activeConnection.name, activeConnection.engine)
+        : (isMockConn ? getFunctionsForConnection(activeConnection.name, activeConnection.engine) : [])
       );
 
   const filteredFunctions = connectionFunctions.filter((f) =>
@@ -241,36 +244,15 @@ export const Sidebar = () => {
         {/* Tab 1: Database Items (Functions & Tables) */}
         {sidebarTab === 'items' && (
           !activeConnection?.id ? (
-            <div className="p-4 mx-1 my-3 rounded-xl bg-gradient-to-b from-sky-50/80 to-white dark:from-slate-900/80 dark:to-slate-950/80 border border-sky-200/80 dark:border-sky-500/20 shadow-sm space-y-3 text-center animate-in fade-in duration-200">
-              <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-400 mx-auto flex items-center justify-center shadow-2xs">
-                <Database className="w-5 h-5" />
+            <div className="p-4 mx-1 my-6 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-center space-y-2 animate-in fade-in duration-200">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 mx-auto flex items-center justify-center">
+                <Database className="w-4 h-4" />
               </div>
-              <div className="space-y-1">
-                <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">No Connection Active</h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Connect to a database to inspect tables, browse live data, and run queries.
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400">No Connection</h3>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                  Press <kbd className="font-mono text-slate-600 dark:text-slate-300 font-bold">⌘K</kbd> to connect
                 </p>
-              </div>
-              <button
-                onClick={() => setConnectionModalOpen(true)}
-                className="w-full py-2 px-3 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white font-semibold rounded-lg text-xs transition cursor-pointer shadow-sm flex items-center justify-center space-x-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Connection (⌘K)</span>
-              </button>
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 text-left space-y-2 text-[10px] text-slate-500 dark:text-slate-400">
-                <div className="flex items-start space-x-1.5">
-                  <span className="text-amber-500 shrink-0">💡</span>
-                  <span><strong>Import tools:</strong> Drag &amp; drop TablePlus, DBeaver, or pgAdmin exports to connect instantly.</span>
-                </div>
-                <div className="flex items-start space-x-1.5">
-                  <span className="text-sky-500 shrink-0">⚡</span>
-                  <span><strong>Shortcut:</strong> Press <kbd className="px-1 py-0.5 font-mono bg-slate-200 dark:bg-slate-800 rounded text-slate-700 dark:text-slate-300 font-bold">⌘K</kbd> to open connection switcher anytime.</span>
-                </div>
-                <div className="flex items-start space-x-1.5">
-                  <span className="text-emerald-500 shrink-0">🛡️</span>
-                  <span><strong>Safety guard:</strong> Production databases have 2-step verification for safe queries.</span>
-                </div>
               </div>
             </div>
           ) : (
@@ -313,6 +295,12 @@ export const Sidebar = () => {
               {/* Function List (TablePlus Style) */}
               {isFunctionsOpen && (
                 <div className="space-y-0.5 pt-0.5 max-h-60 overflow-y-auto no-scrollbar">
+                  {isFunctionsLoading && (
+                    <div className="px-2.5 py-1.5 flex items-center space-x-2 text-[10px] text-slate-500 font-mono animate-pulse">
+                      <div className="w-2 h-2 rounded-full border border-amber-500 border-t-transparent animate-spin" />
+                      <span>Loading functions...</span>
+                    </div>
+                  )}
                   {filteredFunctions.map((fn) => {
                     return (
                       <div
@@ -376,13 +364,19 @@ export const Sidebar = () => {
                   <span className="group-hover:text-sky-600 dark:group-hover:text-sky-300 transition-colors">Tables</span>
                 </div>
                 <span className="text-[10px] text-slate-500 font-mono pr-1 group-hover:text-slate-700 dark:group-hover:text-slate-400 transition-colors">
-                  {filteredTables.length}
+                  {isTablesLoading ? '...' : filteredTables.length}
                 </span>
               </div>
 
               {/* Table List (TablePlus Style) */}
               {isTablesOpen && (
                 <div className="space-y-0.5 pt-0.5">
+                  {isTablesLoading && (
+                    <div className="px-2.5 py-1.5 flex items-center space-x-2 text-[10px] text-slate-500 font-mono animate-pulse">
+                      <div className="w-2 h-2 rounded-full border border-sky-500 border-t-transparent animate-spin" />
+                      <span>Loading tables...</span>
+                    </div>
+                  )}
                   {filteredTables.map((tbl: any) => {
                     const isSelected = selectedTable === tbl.name;
                     const displayBadge =
@@ -410,8 +404,7 @@ export const Sidebar = () => {
                       <div
                         key={tbl.name}
                         onClick={() => {
-                          setSelectedTable(tbl.name);
-                          setSelectedRowData(null);
+                          openTableGridTab(tbl.name);
                         }}
                         onDoubleClick={() => {
                           openTableGridTab(tbl.name);

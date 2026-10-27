@@ -9,6 +9,31 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
 
+  build: {
+    chunkSizeWarningLimit: 600,
+    rolldownOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes("node_modules")) {
+            if (id.includes("@codemirror") || id.includes("@lezer")) {
+              return "vendor-codemirror";
+            }
+            if (id.includes("@glideapps/glide-data-grid") || id.includes("lodash-es")) {
+              return "vendor-grid";
+            }
+            if (id.includes("sql-formatter")) {
+              return "vendor-sql-formatter";
+            }
+            if (id.includes("lucide-react")) {
+              return "vendor-icons";
+            }
+          }
+          return undefined;
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   clearScreen: false,
   server: {
@@ -27,3 +52,4 @@ export default defineConfig(() => ({
     },
   },
 }));
+

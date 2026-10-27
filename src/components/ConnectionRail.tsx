@@ -41,6 +41,10 @@ export const ConnectionRail: React.FC = () => {
     return 'green';
   };
 
+  if (openConnections.length === 0) {
+    return null;
+  }
+
   return (
     <aside className="w-16 bg-slate-100 dark:bg-[#070b14] border-r border-slate-300 dark:border-slate-800/90 flex flex-col justify-between items-center py-2.5 select-none flex-shrink-0 z-20">
       {/* Top: List of Open Connection Workspaces */}

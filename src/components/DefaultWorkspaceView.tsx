@@ -151,94 +151,63 @@ export const DefaultWorkspaceView: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-xs font-bold text-sky-950 dark:text-white block">Open Connection Manager</span>
-                  <span className="text-[11px] text-sky-700 dark:text-sky-300">Choose a database connector or import from URL / files</span>
+                  <span className="text-[11px] text-sky-700 dark:text-sky-300">Choose a connector or import connection string / files</span>
                 </div>
               </div>
               <kbd className="px-2 py-1 text-xs font-mono bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-300 border border-sky-200 dark:border-sky-700 rounded-md font-bold shadow-2xs">⌘K</kbd>
             </button>
-
-            {/* Educational Quick Start Chips */}
-            <div className="grid grid-cols-3 gap-2 text-left">
-              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1 shadow-2xs">
-                <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1">
-                  <span>🔌</span>
-                  <span>22 Engines</span>
-                </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                  Postgres, MySQL, Redis, Snowflake, and more.
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1 shadow-2xs">
-                <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1">
-                  <span>🔗</span>
-                  <span>URL Import</span>
-                </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                  Paste connection string for instant connection.
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1 shadow-2xs">
-                <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1">
-                  <span>📁</span>
-                  <span>1-Click Sync</span>
-                </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                  Import from TablePlus or DBeaver configs.
-                </p>
-              </div>
-            </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 w-full max-w-md">
-            {/* Action 1: New SQL Console */}
-            <button
-              onClick={() => openNewQueryTab()}
-              className="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/50 flex flex-col items-start transition-all duration-150 cursor-pointer group shadow-2xs text-left active:scale-[0.98]"
-            >
-              <div className="p-2 bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 rounded-lg group-hover:scale-105 transition-transform mb-2">
-                <Terminal className="w-4 h-4" />
-              </div>
-              <div className="flex items-center justify-between w-full">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-sky-700 dark:group-hover:text-white">New SQL Query</span>
-                <kbd className="text-[10px] font-mono text-slate-400 dark:text-slate-500 group-hover:text-sky-600 dark:group-hover:text-sky-300 font-bold">⌘E</kbd>
-              </div>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Write and execute raw SQL statements</span>
-            </button>
+          <>
+            <div className="grid grid-cols-2 gap-3 w-full max-w-md">
+              {/* Action 1: New SQL Console */}
+              <button
+                onClick={() => openNewQueryTab()}
+                className="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/50 flex flex-col items-start transition-all duration-150 cursor-pointer group shadow-2xs text-left active:scale-[0.98]"
+              >
+                <div className="p-2 bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 rounded-lg group-hover:scale-105 transition-transform mb-2">
+                  <Terminal className="w-4 h-4" />
+                </div>
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-sky-700 dark:group-hover:text-white">New SQL Query</span>
+                  <kbd className="text-[10px] font-mono text-slate-400 dark:text-slate-500 group-hover:text-sky-600 dark:group-hover:text-sky-300 font-bold">⌘E</kbd>
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Write and execute raw SQL statements</span>
+              </button>
 
-            {/* Action 2: Open Default Table Grid */}
-            <button
-              onClick={() => openTableGridTab(defaultSuggestedTable)}
-              className="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500/50 flex flex-col items-start transition-all duration-150 cursor-pointer group shadow-2xs text-left active:scale-[0.98]"
-            >
-              <div className="p-2 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-lg group-hover:scale-105 transition-transform mb-2">
-                <TableIcon className="w-4 h-4" />
-              </div>
-              <div className="flex items-center justify-between w-full">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-white">Open Table</span>
-                <kbd className="text-[10px] font-mono text-slate-400 dark:text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-300 font-bold">⌘O</kbd>
-              </div>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Explore {defaultSuggestedTable} data grid</span>
-            </button>
-          </div>
+              {/* Action 2: Open Default Table Grid */}
+              <button
+                onClick={() => openTableGridTab(defaultSuggestedTable)}
+                className="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500/50 flex flex-col items-start transition-all duration-150 cursor-pointer group shadow-2xs text-left active:scale-[0.98]"
+              >
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-lg group-hover:scale-105 transition-transform mb-2">
+                  <TableIcon className="w-4 h-4" />
+                </div>
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-white">Open Table</span>
+                  <kbd className="text-[10px] font-mono text-slate-400 dark:text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-300 font-bold">⌘O</kbd>
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Explore {defaultSuggestedTable} data grid</span>
+              </button>
+            </div>
+
+            {/* Hype Ping Benchmark & Shortcuts Banner */}
+            <div className="w-full max-w-md flex items-center justify-between space-x-2">
+              <button
+                onClick={() => triggerConnectingAnimation(activeConnection.id)}
+                disabled={isConnecting}
+                className="relative overflow-hidden flex-1 py-2 px-3 rounded-xl bg-white dark:bg-slate-900/70 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/40 text-xs font-mono text-sky-700 dark:text-sky-400 flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs group"
+                title="Trigger connection handshake animation & ping benchmark"
+              >
+                {isConnecting && (
+                  <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
+                )}
+                <Zap className="relative z-1 w-3.5 h-3.5 fill-current" />
+                <span className="relative z-1">⚡ Test Connection & Latency</span>
+              </button>
+            </div>
+          </>
         )}
-
-        {/* Hype Ping Benchmark & Shortcuts Banner */}
-        <div className="w-full max-w-md flex items-center justify-between space-x-2">
-          <button
-            onClick={() => triggerConnectingAnimation(activeConnection.id)}
-            disabled={isConnecting}
-            className="relative overflow-hidden flex-1 py-2 px-3 rounded-xl bg-white dark:bg-slate-900/70 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/40 text-xs font-mono text-sky-700 dark:text-sky-400 flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs group"
-            title="Trigger connection handshake animation & ping benchmark"
-          >
-            {isConnecting && (
-              <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
-            )}
-            <Zap className="relative z-1 w-3.5 h-3.5 fill-current" />
-            <span className="relative z-1">⚡ Test Connection & Latency</span>
-          </button>
-        </div>
 
         {/* Shortcuts & Navigation Hint Banner */}
         <div className="bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/80 rounded-xl p-3 w-full max-w-md text-xs text-slate-600 dark:text-slate-400 space-y-1.5 font-sans shadow-2xs">
