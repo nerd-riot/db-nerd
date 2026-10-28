@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Play, 
   Sparkles, 
@@ -28,10 +28,10 @@ import {
   Search,
   Download
 } from 'lucide-react';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, lineNumbers, keymap, highlightActiveLineGutter, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history as cmHistory, historyKeymap } from '@codemirror/commands';
-import { sql, PostgreSQL } from '@codemirror/lang-sql';
+import { sql, PostgreSQL, MySQL } from '@codemirror/lang-sql';
 import {
   autocompletion,
   completionKeymap,
@@ -44,6 +44,10 @@ import { highlightSelectionMatches } from '@codemirror/search';
 import { syntaxHighlighting, bracketMatching } from '@codemirror/language';
 import { useAppStore } from '../stores/useAppStore';
 import { TABLE_SCHEMAS } from '../data/schemas';
+import {
+  buildSqlSchemaForConnection,
+  getCustomSqlCompletions,
+} from '../lib';
 import { getThemeDefinition } from '../themes/themeRegistry';
 import { TableContextMenu } from './TableContextMenu';
 import { ColumnTypeIcon } from './ColumnTypeIcon';
@@ -65,73 +69,6 @@ import {
   ContextMenuPosition,
 } from './ContextMenu';
 
-// Build rich SQL Schema with column types, primary key badges, and descriptions for autocompletion
-const buildSqlSchema = () => {
-  const schema: Record<string, any[]> = {};
-  Object.entries(TABLE_SCHEMAS).forEach(([tbl, info]) => {
-    schema[tbl] = info.columns.map((c) => ({
-      label: c.name,
-      type: c.isPrimaryKey ? 'keyword' : 'property',
-      detail: `${c.type}${c.isPrimaryKey ? ' (PK)' : c.isForeignKey ? ' (FK)' : ''}`,
-      info: c.comment || (c.defaultValue ? `Default: ${c.defaultValue}` : undefined),
-      boost: c.isPrimaryKey ? 99 : 50,
-    }));
-  });
-  return schema;
-};
-
-const SQL_SCHEMA = buildSqlSchema();
-
-// Dynamic alias resolver: e.g. "FROM users u" or "FROM users AS u" -> u resolves to users
-function getTableForAlias(docText: string, aliasOrName: string): string | null {
-  if (SQL_SCHEMA[aliasOrName]) return aliasOrName;
-  const regex = new RegExp(`(?:FROM|JOIN)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+(?:AS\\s+)?${aliasOrName}\\b`, 'i');
-  const match = docText.match(regex);
-  if (match && SQL_SCHEMA[match[1]]) {
-    return match[1];
-  }
-  return null;
-}
-
-// Custom autocomplete provider for table.column navigation and FROM/JOIN table suggestions
-function customDotAndTableCompletion(context: CompletionContext): CompletionResult | null {
-  const line = context.state.doc.lineAt(context.pos);
-  const textBefore = line.text.slice(0, context.pos - line.from);
-
-  // 1. Triggered on typing after a dot: e.g. users. or u. or tuple. or goose_db_version.
-  const dotMatch = textBefore.match(/([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z0-9_]*)$/);
-  if (dotMatch) {
-    const [_, tableOrAlias, prefix] = dotMatch;
-    const fullDoc = context.state.doc.toString();
-    const actualTable = getTableForAlias(fullDoc, tableOrAlias);
-
-    if (actualTable && SQL_SCHEMA[actualTable]) {
-      return {
-        from: context.pos - prefix.length,
-        options: SQL_SCHEMA[actualTable],
-        validFor: /^[a-zA-Z0-9_]*$/,
-      };
-    }
-  }
-
-  // 2. Triggered on FROM / JOIN / INTO clause to suggest table names
-  const fromJoinMatch = textBefore.match(/(?:FROM|JOIN|INTO|UPDATE)\s+([a-zA-Z0-9_]*)$/i);
-  if (fromJoinMatch) {
-    const prefix = fromJoinMatch[1];
-    const tableOptions = Object.keys(SQL_SCHEMA).map((tbl) => ({
-      label: tbl,
-      type: 'type',
-      detail: 'table',
-      boost: 90,
-    }));
-    return {
-      from: context.pos - prefix.length,
-      options: tableOptions,
-    };
-  }
-
-  return null;
-}
 
 
 export const SqlEditor: React.FC = () => {
@@ -146,6 +83,8 @@ export const SqlEditor: React.FC = () => {
     togglePinQueryResultTab,
     selectedTable,
     activeConnection,
+    liveTables,
+    liveSchemas,
     setReconnectModalOpen,
     sqlEditorSplitHeight,
     setSqlEditorSplitHeight,
@@ -163,6 +102,27 @@ export const SqlEditor: React.FC = () => {
   } = useAppStore();
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+
+  const sqlConfigCompartment = useRef(new Compartment());
+
+  const activeSqlSchemaData = useMemo(() => {
+    return buildSqlSchemaForConnection(activeConnection, liveTables, liveSchemas);
+  }, [activeConnection, liveTables, liveSchemas]);
+
+  const activeSqlSchemaRef = useRef(activeSqlSchemaData);
+  activeSqlSchemaRef.current = activeSqlSchemaData;
+
+  const customDotAndTableCompletion = useCallback((context: CompletionContext): CompletionResult | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const textBefore = line.text.slice(0, context.pos - line.from);
+    const fullDoc = context.state.doc.toString();
+    const current = activeSqlSchemaRef.current;
+    return getCustomSqlCompletions(
+      { pos: context.pos, textBefore, fullDoc },
+      current.schema,
+      current.tableNames
+    );
+  }, []);
 
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1, loc: 0 });
   const [queryLimit, setQueryLimit] = useState<string>('No limit');
@@ -297,9 +257,24 @@ export const SqlEditor: React.FC = () => {
 
   // Helper to infer column type
   const inferColumnType = (val: any, colName: string): string => {
-    for (const schema of Object.values(TABLE_SCHEMAS)) {
-      const match = schema.columns.find((c) => c.name.toLowerCase() === colName.toLowerCase());
-      if (match) return match.type;
+    const connId = activeConnection?.id;
+    if (connId && liveSchemas[connId]) {
+      const activeSchemas = liveSchemas[connId];
+      if (selectedTable && activeSchemas[selectedTable]) {
+        const match = activeSchemas[selectedTable].columns.find(
+          (c) => c.name.toLowerCase() === colName.toLowerCase()
+        );
+        if (match) return match.type;
+      }
+      for (const s of Object.values(activeSchemas)) {
+        const match = s.columns.find((c) => c.name.toLowerCase() === colName.toLowerCase());
+        if (match) return match.type;
+      }
+    } else if (activeConnection?.id === 'demo' || activeConnection?.id?.startsWith('mock')) {
+      for (const schema of Object.values(TABLE_SCHEMAS)) {
+        const match = schema.columns.find((c) => c.name.toLowerCase() === colName.toLowerCase());
+        if (match) return match.type;
+      }
     }
     if (typeof val === 'number') return Number.isInteger(val) ? 'integer' : 'numeric';
     if (typeof val === 'boolean') return 'boolean';
@@ -661,6 +636,7 @@ export const SqlEditor: React.FC = () => {
     const themeDef = getThemeDefinition(currentThemeId);
     const activeHighlight = themeDef.sqlHighlight;
     const activeTheme = themeDef.sqlTheme;
+    const activeDialect = activeConnection?.engine === 'mysql' ? MySQL : PostgreSQL;
 
     const state = EditorState.create({
       doc: tabState.query,
@@ -672,15 +648,17 @@ export const SqlEditor: React.FC = () => {
         bracketMatching(),
         closeBrackets(),
         highlightSelectionMatches(),
-        sql({
-          dialect: PostgreSQL,
-          schema: SQL_SCHEMA,
-          defaultTable: selectedTable || 'users',
-          upperCaseKeywords: true,
-        }),
-        PostgreSQL.language.data.of({
-          autocomplete: customDotAndTableCompletion,
-        }),
+        sqlConfigCompartment.current.of([
+          sql({
+            dialect: activeDialect,
+            schema: activeSqlSchemaData.schema,
+            defaultTable: selectedTable || activeSqlSchemaData.tableNames[0] || '',
+            upperCaseKeywords: true,
+          }),
+          activeDialect.language.data.of({
+            autocomplete: customDotAndTableCompletion,
+          }),
+        ]),
         autocompletion({
           activateOnTyping: true,
           maxRenderedOptions: 30,
@@ -808,7 +786,33 @@ export const SqlEditor: React.FC = () => {
     return () => {
       view.destroy();
     };
-  }, [activeTabId, selectedTable, resolvedTheme, settings.appTheme]);
+  }, [activeTabId, resolvedTheme, settings.appTheme]);
+
+  useEffect(() => {
+    if (!viewRef.current) return;
+    const current = activeSqlSchemaRef.current;
+    const activeDialect = activeConnection?.engine === 'mysql' ? MySQL : PostgreSQL;
+    viewRef.current.dispatch({
+      effects: sqlConfigCompartment.current.reconfigure([
+        sql({
+          dialect: activeDialect,
+          schema: current.schema,
+          defaultTable: selectedTable || current.tableNames[0] || '',
+          upperCaseKeywords: true,
+        }),
+        activeDialect.language.data.of({
+          autocomplete: customDotAndTableCompletion,
+        }),
+      ]),
+    });
+  }, [
+    activeConnection?.id,
+    activeConnection?.engine,
+    liveTables,
+    liveSchemas,
+    selectedTable,
+    customDotAndTableCompletion,
+  ]);
 
   useEffect(() => {
     if (viewRef.current && tabState.query !== viewRef.current.state.doc.toString()) {
@@ -873,19 +877,45 @@ export const SqlEditor: React.FC = () => {
 
   const colMetaMap = useMemo(() => {
     const map: Record<string, { foundType?: string; isPk: boolean; sampleVal: any; colDef: ColumnDefinition }> = {};
+    const connId = activeConnection?.id;
+    const isDemo = activeConnection?.id === 'demo' || activeConnection?.id?.startsWith('mock');
+
     for (const col of columns) {
       const firstRowWithVal = results.find((r) => r[col] !== null && r[col] !== undefined);
       const sampleVal = firstRowWithVal ? firstRowWithVal[col] : undefined;
       let foundType: string | undefined;
       let isPk = false;
-      for (const schema of Object.values(TABLE_SCHEMAS)) {
-        const match = schema.columns.find((c) => c.name === col);
-        if (match) {
-          foundType = match.type;
-          isPk = !!match.isPrimaryKey;
-          break;
+
+      if (connId && liveSchemas[connId]) {
+        const activeSchemas = liveSchemas[connId];
+        if (selectedTable && activeSchemas[selectedTable]) {
+          const match = activeSchemas[selectedTable].columns.find((c) => c.name === col);
+          if (match) {
+            foundType = match.type;
+            isPk = !!match.isPrimaryKey;
+          }
+        }
+        if (!foundType) {
+          for (const s of Object.values(activeSchemas)) {
+            const match = s.columns.find((c) => c.name === col);
+            if (match) {
+              foundType = match.type;
+              isPk = !!match.isPrimaryKey;
+              break;
+            }
+          }
+        }
+      } else if (isDemo) {
+        for (const schema of Object.values(TABLE_SCHEMAS)) {
+          const match = schema.columns.find((c) => c.name === col);
+          if (match) {
+            foundType = match.type;
+            isPk = !!match.isPrimaryKey;
+            break;
+          }
         }
       }
+
       map[col] = {
         foundType,
         isPk,
@@ -899,7 +929,7 @@ export const SqlEditor: React.FC = () => {
       };
     }
     return map;
-  }, [columns, results]);
+  }, [columns, results, activeConnection?.id, liveSchemas, selectedTable]);
 
   const activeDuration = activeResultItem ? activeResultItem.durationMs : tabState.durationMs;
   const activeError = activeResultItem ? activeResultItem.error : tabState.error;

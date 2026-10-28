@@ -259,6 +259,22 @@ export interface TableForeignKeyDefinition {
   onDelete: string;
 }
 
+export interface RealTableSummary {
+  name: string;
+  count: string;
+  schema?: string;
+  kind?: string;
+  owner?: string;
+  estimated_rows?: number;
+  total_size?: string;
+  data_size?: string;
+  index_size?: string;
+  total_bytes?: number;
+  data_bytes?: number;
+  index_bytes?: number;
+  comment?: string;
+}
+
 export interface TableSchemaInfo {
   tableName: string;
   schema: string;

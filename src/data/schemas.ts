@@ -1,5 +1,5 @@
-import { TableSchemaInfo, FunctionItem } from '../types';
-import { isInternalRowKey, sortColumnsByDdlConvention } from '../lib/grid/columnOrdering';
+import type { TableSchemaInfo, FunctionItem } from '../types/index.ts';
+import { isInternalRowKey, sortColumnsByDdlConvention } from '../lib/grid/columnOrdering.ts';
 
 export const TABLE_SCHEMAS: Record<string, TableSchemaInfo> = {
   user_orders: {
