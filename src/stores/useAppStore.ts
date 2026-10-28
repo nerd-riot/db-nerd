@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag, TableSchemaInfo, PendingTableAction } from '../types';
+import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag, TableSchemaInfo, PendingTableAction, HistoryTtl } from '../types';
 import { getDefaultRowsForTable } from '../data/mockRows';
 import { closeRealConnection, executeRealQuery, getRealTables, getRealFunctions, getRealTableSchema, getRealDatabases, RealTableSummary, testRealConnection } from '../services/dbService';
 import { heartbeatService } from '../services/heartbeatService';
@@ -26,6 +26,11 @@ import {
   applyRowRevert,
   applyTransactionRollback,
   countDirtyEdits,
+  persistHistory,
+  loadPersistedHistory,
+  purgeHistoryByTtl,
+  clearPersistedHistory,
+  MAX_PERSISTED_HISTORY_ITEMS,
 } from '../lib';
 import {
   buildPaginatedSelectSql,
@@ -251,7 +256,8 @@ interface AppState {
     status?: 'success' | 'error';
     errorMessage?: string;
   }) => void;
-  clearHistory: () => void;
+  clearHistory: (connectionId?: string) => void;
+  purgeHistory: (ttl?: HistoryTtl) => number;
 
   isReloading: boolean;
   toast: {
@@ -378,7 +384,7 @@ const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionS
       originalRows: [],
       isTransactionOpen: false,
       pendingEditsCount: 0,
-      history: [],
+      history: INITIAL_HISTORY.filter((h) => !h.connectionId || h.connectionId === conn.id),
       selectedRowData: null,
       selectedStructureColumn: null,
       structureSearchColumn: '',
@@ -418,7 +424,7 @@ const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionS
             originalRows: [],
             isTransactionOpen: false,
             pendingEditsCount: 0,
-            history: [],
+            history: INITIAL_HISTORY.filter((h) => !h.connectionId || h.connectionId === conn.id),
             selectedRowData: null,
             selectedStructureColumn: null,
             structureSearchColumn: '',
@@ -443,7 +449,7 @@ const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionS
     originalRows: [],
     isTransactionOpen: false,
     pendingEditsCount: 0,
-    history: [],
+    history: INITIAL_HISTORY.filter((h) => !h.connectionId || h.connectionId === conn.id),
     selectedRowData: null,
     selectedStructureColumn: null,
     structureSearchColumn: '',
@@ -495,6 +501,9 @@ const getInitialSettings = (): UserSettings => {
       if (!parsed.toastPosition) {
         parsed.toastPosition = 'bottom-right';
       }
+      if (!parsed.historyTtl) {
+        parsed.historyTtl = '30-days';
+      }
       return parsed;
     }
   } catch {}
@@ -507,6 +516,7 @@ const getInitialSettings = (): UserSettings => {
     confirmDestructive: true,
     defaultQueryLimit: 100,
     toastPosition: 'bottom-right',
+    historyTtl: '30-days',
   };
 };
 
@@ -526,6 +536,7 @@ const resolveTheme = (mode: ThemeMode, appTheme?: AppThemeId): 'dark' | 'light' 
 
 const INITIAL_SETTINGS = getInitialSettings();
 const INITIAL_RESOLVED_THEME = resolveTheme(INITIAL_SETTINGS.themeMode, INITIAL_SETTINGS.appTheme);
+const INITIAL_HISTORY = loadPersistedHistory(INITIAL_SETTINGS.historyTtl);
 
 const getInitialConnId = (): string => {
   try {
@@ -601,9 +612,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         localStorage.setItem('db_nerd_user_settings', JSON.stringify(nextSettings));
       } catch {}
       const nextResolved = resolveTheme(nextSettings.themeMode, nextSettings.appTheme);
+
+      let nextHistory = state.history;
+      if (updates.historyTtl && updates.historyTtl !== state.settings.historyTtl) {
+        const { kept, purgedCount } = purgeHistoryByTtl(state.history, updates.historyTtl);
+        if (purgedCount > 0) {
+          nextHistory = kept;
+          persistHistory(kept);
+        }
+      }
+
       return {
         settings: nextSettings,
         resolvedTheme: nextResolved,
+        history: nextHistory,
       };
     });
   },
@@ -1228,22 +1250,24 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (!firstErrorResultId) firstErrorResultId = `q-${i + 1}`;
         }
 
-        set((state) => ({
-          history: [
-            {
-              id: `h-${Date.now()}-${i}`,
-              connectionName: activeConn.name,
-              env: activeConn.env,
-              sql: currentStmt.trimmedText,
-              timestamp: `Today at ${new Date().toTimeString().slice(0, 8)}`,
-              durationMs: duration,
-              rowsAffected: res.rows_affected || (isSuccess ? rows.length : 0),
-              status: (isSuccess ? 'success' : 'error') as 'success' | 'error',
-              isFavorite: false,
-            },
-            ...state.history,
-          ].slice(0, 200),
-        }));
+        const execTime = Date.now();
+        const newHistItem: QueryHistoryItem = {
+          id: `h-${execTime}-${i}`,
+          connectionId: activeConn.id,
+          connectionName: activeConn.name,
+          database: activeConn.database,
+          env: activeConn.env,
+          sql: currentStmt.trimmedText,
+          timestamp: `Today at ${new Date(execTime).toTimeString().slice(0, 8)}`,
+          timestampMs: execTime,
+          durationMs: duration,
+          rowsAffected: res.rows_affected || (isSuccess ? rows.length : 0),
+          status: (isSuccess ? 'success' : 'error') as 'success' | 'error',
+          isFavorite: false,
+        };
+        const nextHist = [newHistItem, ...get().history].slice(0, MAX_PERSISTED_HISTORY_ITEMS);
+        persistHistory(nextHist);
+        set({ history: nextHist });
       } catch (err: any) {
         const errMsg = String(err?.message || err);
         const duration = +(performance.now() - startMs).toFixed(1);
@@ -1970,7 +1994,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       originalRows: targetSession.originalRows,
       isTransactionOpen: targetSession.isTransactionOpen,
       pendingEditsCount: targetSession.pendingEditsCount,
-      history: targetSession.history,
+      history: state.history.length > 0 ? state.history : loadPersistedHistory(state.settings.historyTtl),
       selectedRowData: targetSession.selectedRowData,
       selectedStructureColumn: targetSession.selectedStructureColumn,
       structureSearchColumn: targetSession.structureSearchColumn,
@@ -2339,20 +2363,26 @@ export const useAppStore = create<AppState>((set, get) => ({
               gridTotalCount: 0,
             }
           : {}),
-        history: [
-          {
-            id: `hist-${Date.now()}`,
+        history: (() => {
+          const nowMs = Date.now();
+          const newHistItem: QueryHistoryItem = {
+            id: `hist-${nowMs}`,
+            connectionId: state.activeConnection.id,
             connectionName: state.activeConnection.name,
+            database: state.activeConnection.database,
             env: state.activeConnection.env,
             sql: query,
             timestamp: 'Just now',
+            timestampMs: nowMs,
             durationMs: res.duration_ms || 1.1,
             rowsAffected: 0,
             status: 'success' as const,
             isFavorite: false,
-          },
-          ...state.history,
-        ].slice(0, 200),
+          };
+          const nextHistory = [newHistItem, ...state.history].slice(0, MAX_PERSISTED_HISTORY_ITEMS);
+          persistHistory(nextHistory);
+          return nextHistory;
+        })(),
       };
     });
 
@@ -2397,20 +2427,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...state.deletedTables,
           [connId]: nextDeleted,
         },
-        history: [
-          {
-            id: `hist-${Date.now()}`,
+        history: (() => {
+          const nowMs = Date.now();
+          const newHistItem: QueryHistoryItem = {
+            id: `hist-${nowMs}`,
+            connectionId: state.activeConnection.id,
             connectionName: state.activeConnection.name,
+            database: state.activeConnection.database,
             env: state.activeConnection.env,
             sql: query,
             timestamp: 'Just now',
+            timestampMs: nowMs,
             durationMs: res.duration_ms || 1.8,
             rowsAffected: 0,
             status: 'success' as const,
             isFavorite: false,
-          },
-          ...state.history,
-        ].slice(0, 200),
+          };
+          const nextHistory = [newHistItem, ...state.history].slice(0, MAX_PERSISTED_HISTORY_ITEMS);
+          persistHistory(nextHistory);
+          return nextHistory;
+        })(),
       };
     });
 
@@ -2484,22 +2520,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   addHistoryItem: (item) => {
     const state = get();
+    const connId = state.activeConnection?.id;
+    const nowMs = Date.now();
     const newItem: QueryHistoryItem = {
-      id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `h-${nowMs}-${Math.random().toString(36).slice(2, 6)}`,
+      connectionId: connId,
       connectionName: item.connectionName || state.activeConnection?.name || 'database',
+      database: state.activeConnection?.database,
       env: item.env || state.activeConnection?.env || 'local',
       sql: item.sql,
-      timestamp: `Today at ${new Date().toTimeString().slice(0, 8)}`,
+      timestamp: `Today at ${new Date(nowMs).toTimeString().slice(0, 8)}`,
+      timestampMs: nowMs,
       durationMs: item.durationMs || 1.0,
       rowsAffected: item.rowsAffected || 0,
       status: item.status || 'success',
       errorMessage: item.errorMessage,
       isFavorite: false,
     };
-    set((s) => ({ history: [newItem, ...s.history].slice(0, 200) }));
+    const nextHistory = [newItem, ...state.history].slice(0, MAX_PERSISTED_HISTORY_ITEMS);
+    persistHistory(nextHistory);
+    set({ history: nextHistory });
   },
-  clearHistory: () => {
-    set({ history: [] });
+  clearHistory: (connectionId?: string) => {
+    if (connectionId) {
+      clearPersistedHistory(connectionId);
+      const remaining = get().history.filter((h) => h.connectionId !== connectionId);
+      set({ history: remaining });
+    } else {
+      clearPersistedHistory();
+      set({ history: [] });
+    }
+  },
+  purgeHistory: (ttl?: HistoryTtl) => {
+    const targetTtl = ttl || get().settings.historyTtl || '30-days';
+    const { kept, purgedCount } = purgeHistoryByTtl(get().history, targetTtl);
+    persistHistory(kept);
+    set({ history: kept });
+    if (purgedCount > 0) {
+      get().showToast(`🧹 Purged ${purgedCount} expired history record(s) older than ${targetTtl}`);
+    } else {
+      get().showToast(`✨ No history records older than ${targetTtl} to purge`);
+    }
+    return purgedCount;
   },
   gridPage: 0,
   gridPageSize: 300,
@@ -3091,19 +3153,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
     const finalRows = isCurrentTableTruncated ? [] : committedRows;
 
-    const now = new Date();
+    const nowMs = Date.now();
+    const now = new Date(nowMs);
     const timeStr = `Today at ${now.toTimeString().slice(0, 8)}`;
     const newHistoryItem: QueryHistoryItem = {
-      id: `h-${Date.now()}`,
+      id: `h-${nowMs}`,
+      connectionId: activeConnection.id,
       connectionName: activeConnection.name,
+      database: activeConnection.database,
       env: activeConnection.env,
       sql: sqlText,
       timestamp: timeStr,
+      timestampMs: nowMs,
       durationMs: 1.4,
       rowsAffected: count,
       status: 'success',
       isFavorite: false,
     };
+    const nextHist = [newHistoryItem, ...history].slice(0, MAX_PERSISTED_HISTORY_ITEMS);
+    persistHistory(nextHist);
 
     set((state) => ({
       rows: finalRows,
@@ -3116,7 +3184,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingEditsCount: 0,
       isTransactionOpen: false,
       isSqlDiffModalOpen: false,
-      history: [newHistoryItem, ...history].slice(0, 200),
+      history: nextHist,
       ...(isCurrentTableTruncated ? { gridTotalCount: 0, selectedRowData: null } : {}),
     }));
 
@@ -3189,30 +3257,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       processes: state.processes.filter((p) => p.pid !== pid),
     })),
 
-  history: [
-    {
-      id: 'h-1',
-      connectionName: 'ecom_prod_db',
-      env: 'prod',
-      sql: 'SELECT u.id, u.email, COUNT(o.id) AS total_orders\nFROM users u\nLEFT JOIN user_orders o ON u.id = o.user_id\nWHERE u.status = \'active\'\nGROUP BY u.id, u.email\nORDER BY total_orders DESC LIMIT 50;',
-      timestamp: 'Today at 14:22:15',
-      durationMs: 1.8,
-      rowsAffected: 50,
-      status: 'success',
-      isFavorite: true,
-    },
-    {
-      id: 'h-2',
-      connectionName: 'staging-mysql-8',
-      env: 'staging',
-      sql: 'UPDATE user_orders SET status = \'refunded\', updated_at = NOW() WHERE id = 1035;',
-      timestamp: 'Today at 11:05:40',
-      durationMs: 4.2,
-      rowsAffected: 1,
-      status: 'success',
-      isFavorite: false,
-    },
-  ],
+  history: INITIAL_HISTORY,
 }));
 
 if (typeof window !== 'undefined') {

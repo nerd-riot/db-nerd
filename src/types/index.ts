@@ -52,6 +52,7 @@ export type AppThemeId =
   | 'solarized-dark';
 export type RowDensity = 'compact' | 'normal' | 'relaxed';
 export type ToastPosition = 'bottom-right' | 'top-right';
+export type HistoryTtl = '1-day' | '7-days' | '30-days' | '90-days' | 'never';
 
 export interface UserSettings {
   themeMode: ThemeMode;
@@ -62,6 +63,7 @@ export interface UserSettings {
   confirmDestructive: boolean;
   defaultQueryLimit: number;
   toastPosition?: ToastPosition;
+  historyTtl?: HistoryTtl;
 }
 
 export interface ConnectionGroup {
@@ -213,10 +215,13 @@ export interface ProcessItem {
 
 export interface QueryHistoryItem {
   id: string;
+  connectionId?: string;
   connectionName: string;
+  database?: string;
   env: EnvironmentTag;
   sql: string;
   timestamp: string;
+  timestampMs?: number;
   durationMs: number;
   rowsAffected: number;
   status: 'success' | 'error';

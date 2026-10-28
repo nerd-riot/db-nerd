@@ -96,6 +96,7 @@ export const Sidebar = () => {
   } = useAppStore();
 
   const [sidebarTab, setSidebarTab] = useState<'items' | 'queries' | 'history'>('items');
+  const [historyScope, setHistoryScope] = useState<'current' | 'all'>('current');
   const [searchFilter, setSearchFilter] = useState('');
   const [isFunctionsOpen, setIsFunctionsOpen] = useState(false);
   const [isTablesOpen, setIsTablesOpen] = useState(true);
@@ -156,9 +157,15 @@ export const Sidebar = () => {
       q.desc.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  const filteredHistory = history.filter((h) =>
-    h.sql.toLowerCase().includes(searchFilter.toLowerCase())
-  );
+  const filteredHistory = history.filter((h) => {
+    if (historyScope === 'current' && activeConnection?.id) {
+      const matches =
+        h.connectionId === activeConnection.id ||
+        (!h.connectionId && h.connectionName === activeConnection.name);
+      if (!matches) return false;
+    }
+    return h.sql.toLowerCase().includes(searchFilter.toLowerCase());
+  });
 
   const activeTabObj = tabs.find((t) => t.id === activeTabId);
   const isAllTablesActive = activeTabObj?.type === 'stats' && (activeTabObj?.tableName === '__all_tables__' || activeTabObj?.title.startsWith('Tables.'));
@@ -502,9 +509,37 @@ export const Sidebar = () => {
         {sidebarTab === 'history' && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between px-1.5 py-1">
-              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Recent Executions ({filteredHistory.length})
-              </span>
+              <div className="flex items-center space-x-1.5">
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Recent ({filteredHistory.length})
+                </span>
+                {activeConnection?.id && (
+                  <div className="inline-flex rounded-md p-0.5 bg-slate-200/80 dark:bg-slate-900 border border-slate-300/80 dark:border-slate-800 text-[9px] font-medium">
+                    <button
+                      onClick={() => setHistoryScope('current')}
+                      className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
+                        historyScope === 'current'
+                          ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                      title={`Show queries for ${activeConnection.name}`}
+                    >
+                      Active DB
+                    </button>
+                    <button
+                      onClick={() => setHistoryScope('all')}
+                      className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
+                        historyScope === 'all'
+                          ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                      title="Show queries across all databases"
+                    >
+                      All
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={() => setAllHistoryExpanded(!allHistoryExpanded)}
                 className="text-[10px] text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 font-sans font-medium cursor-pointer"
@@ -512,6 +547,20 @@ export const Sidebar = () => {
                 {allHistoryExpanded ? 'Collapse All' : 'Expand All'}
               </button>
             </div>
+
+            {filteredHistory.length === 0 && (
+              <div className="py-6 px-3 text-center text-slate-400 dark:text-slate-500 text-xs space-y-1.5">
+                <div>No executions recorded for {activeConnection?.name || 'this session'}.</div>
+                {historyScope === 'current' && history.length > 0 && (
+                  <button
+                    onClick={() => setHistoryScope('all')}
+                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline cursor-pointer font-medium block mx-auto"
+                  >
+                    View all {history.length} queries across databases
+                  </button>
+                )}
+              </div>
+            )}
             {filteredHistory.map((h) => {
               const isExpanded = allHistoryExpanded || !!expandedHistory[h.id];
 

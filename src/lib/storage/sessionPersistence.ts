@@ -1,4 +1,4 @@
-import { SqlTabState, TabItem } from '../../types';
+import type { SqlTabState, TabItem } from '../../types/index.ts';
 
 /** Maximum characters per SQL query persisted in localStorage (64 KB) */
 const MAX_PERSISTED_SQL_CHARS = 65_536;
