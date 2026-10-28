@@ -285,3 +285,12 @@ export interface ConnectionSession {
   selectedStructureColumn: any | null;
   structureSearchColumn: string;
 }
+
+export interface PendingTableAction {
+  id: string;
+  type: 'truncate' | 'delete';
+  tableName: string;
+  sql: string;
+  options?: any;
+}
+

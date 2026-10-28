@@ -7,7 +7,8 @@ import {
   applyTransactionRollback,
   countDirtyEdits,
 } from '../src/lib/grid/rowEditing.ts';
-import type { GridRow } from '../src/types/index.ts';
+import { buildTruncateTableSql, buildDropTableSql } from '../src/lib/db/dmlGenerator.ts';
+import type { GridRow, PendingTableAction } from '../src/types/index.ts';
 
 describe('Inline Editing & Discard / Rollback State Engine', () => {
   const initialRows: GridRow[] = [
@@ -204,5 +205,66 @@ describe('Inline Editing & Discard / Rollback State Engine', () => {
       { id: 4, action: 'd', rowState: 'clean' },
     ];
     assert.equal(countDirtyEdits(testRows), 3);
+  });
+
+  it('combines pending table actions with row edits in pendingEditsCount and preserves them until committed or discarded', () => {
+    const { rows, originalRows, selectedRowData } = getCleanData();
+
+    // 1 staged table action (e.g. TRUNCATE TABLE users)
+    const stagedAction: PendingTableAction = {
+      id: 'action-1',
+      type: 'truncate',
+      tableName: 'users',
+      sql: 'TRUNCATE TABLE "users" RESTART IDENTITY;',
+      options: { restartIdentity: true },
+    };
+    const extraPendingCount = 1;
+
+    // Apply cell update on row 1 while 1 table action is staged
+    const editRes = applyCellUpdate(
+      rows,
+      originalRows,
+      selectedRowData,
+      1,
+      'action',
+      'updated_val',
+      extraPendingCount
+    );
+
+    // Total pending edits must be 1 (row edit) + 1 (staged table action) = 2
+    assert.equal(editRes.pendingEditsCount, 2);
+    assert.equal(editRes.isTransactionOpen, true);
+
+    // Revert cell edit: pending count should revert back to extraPendingCount (1) and remain open
+    const revertRes = applyCellRevert(
+      editRes.rows,
+      originalRows,
+      editRes.selectedRowData,
+      1,
+      'action',
+      extraPendingCount
+    );
+    assert.equal(revertRes.pendingEditsCount, 1);
+    assert.equal(revertRes.isTransactionOpen, true);
+  });
+
+  it('generates correct SQL statements for truncate and drop table actions across database engines', () => {
+    // Postgres truncate with options
+    const pgTruncate = buildTruncateTableSql('orders', 'postgres', 'public', {
+      restartIdentity: true,
+      cascade: true,
+    });
+    assert.equal(pgTruncate, 'TRUNCATE TABLE "public"."orders" RESTART IDENTITY CASCADE;');
+
+    // Postgres drop table
+    const pgDrop = buildDropTableSql('orders', 'postgres', 'public', { cascade: true });
+    assert.equal(pgDrop, 'DROP TABLE IF EXISTS "public"."orders" CASCADE;');
+
+    // MySQL drop table with ignore foreign key checks
+    const mysqlDrop = buildDropTableSql('orders', 'mysql', undefined, { ignoreFk: true });
+    assert.equal(
+      mysqlDrop,
+      'SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS `orders`; SET FOREIGN_KEY_CHECKS = 1;'
+    );
   });
 });

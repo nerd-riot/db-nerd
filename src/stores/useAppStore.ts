@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag, TableSchemaInfo } from '../types';
+import { ConnectionProfile, ConnectionGroup, GridRow, ProcessItem, QueryHistoryItem, TabItem, SqlTabState, SqlQueryResultItem, ConnectionSession, ThemeMode, AppThemeId, UserSettings, FunctionItem, HeartbeatMetrics, SafetyMode, SafetyConfirmationRequest, EnvironmentTag, TableSchemaInfo, PendingTableAction } from '../types';
 import { getDefaultRowsForTable } from '../data/mockRows';
 import { closeRealConnection, executeRealQuery, getRealTables, getRealFunctions, getRealTableSchema, getRealDatabases, RealTableSummary, testRealConnection } from '../services/dbService';
 import { heartbeatService } from '../services/heartbeatService';
@@ -25,6 +25,7 @@ import {
   applyCellRevert,
   applyRowRevert,
   applyTransactionRollback,
+  countDirtyEdits,
 } from '../lib';
 import {
   buildPaginatedSelectSql,
@@ -214,6 +215,14 @@ interface AppState {
   rollbackTransaction: () => void;
   commitTransaction: () => Promise<{ sqlText: string; count: number }>;
   getPendingSQL: () => string;
+
+  pendingTableActions: PendingTableAction[];
+  stageTableAction: (
+    type: 'truncate' | 'delete',
+    tableName: string,
+    options?: TruncateTableOptions | DropTableOptions
+  ) => void;
+  removeTableAction: (id: string) => void;
 
   truncatedTables: Record<string, boolean>;
   deletedTables: Record<string, string[]>;
@@ -2237,6 +2246,57 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingEditsCount: 0,
   resetPending: () => set({ pendingEditsCount: 0, isTransactionOpen: false }),
 
+  pendingTableActions: [],
+
+  stageTableAction: (type, tableName, options) => {
+    const { activeConnection, liveTables, liveSchemas, pendingTableActions, rows } = get();
+    const connId = activeConnection.id;
+    const tableSummary = liveTables[connId]?.find((t) => t.name === tableName);
+    const schemaInfo = connId ? liveSchemas[connId]?.[tableName] : undefined;
+    const schema = schemaInfo?.schema || tableSummary?.schema || (activeConnection.engine === 'postgres' ? 'public' : undefined);
+
+    const sql =
+      type === 'truncate'
+        ? buildTruncateTableSql(tableName, activeConnection.engine, schema, options as TruncateTableOptions)
+        : buildDropTableSql(tableName, activeConnection.engine, schema, options as DropTableOptions);
+
+    const newAction: PendingTableAction = {
+      id: `action-${Date.now()}`,
+      type,
+      tableName,
+      sql,
+      options,
+    };
+
+    const nextActions = [...pendingTableActions, newAction];
+    const dirtyRowCount = countDirtyEdits(rows);
+    const totalPending = dirtyRowCount + nextActions.length;
+
+    set({
+      pendingTableActions: nextActions,
+      pendingEditsCount: totalPending,
+      isTransactionOpen: true,
+      tableActionTarget: null,
+    });
+
+    get().showToast(
+      `⚡ Staged ${type.toUpperCase()} for "${tableName}" ➔ Press ⌘S to commit or ⌘Z to discard`
+    );
+  },
+
+  removeTableAction: (id) => {
+    const { pendingTableActions, rows } = get();
+    const nextActions = pendingTableActions.filter((a) => a.id !== id);
+    const dirtyRowCount = countDirtyEdits(rows);
+    const totalPending = dirtyRowCount + nextActions.length;
+
+    set({
+      pendingTableActions: nextActions,
+      pendingEditsCount: totalPending,
+      isTransactionOpen: totalPending > 0,
+    });
+  },
+
   truncatedTables: {},
   deletedTables: {},
   tableActionTarget: null,
@@ -2734,8 +2794,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
 
   updateCell: (id, field, value) => {
-    const { rows, originalRows, selectedTable, selectedRowData } = get();
-    const result = applyCellUpdate(rows, originalRows, selectedRowData, id, field as string, value);
+    const { rows, originalRows, selectedTable, selectedRowData, pendingTableActions } = get();
+    const extra = pendingTableActions?.length || 0;
+    const result = applyCellUpdate(rows, originalRows, selectedRowData, id, field as string, value, extra);
 
     set({
       rows: result.rows,
@@ -2889,7 +2950,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteRow: (id) => {
-    const { rows, selectedRowData } = get();
+    const { rows, selectedRowData, pendingTableActions } = get();
     let nextSelectedRow = selectedRowData;
     const nextRows = rows.map((r) => {
       if (String(r.id) !== String(id)) return r;
@@ -2910,18 +2971,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (r.rowState === 'inserted' || r.rowState === 'deleted') dirtyCount++;
       else if (r.dirtyFields) dirtyCount += Object.keys(r.dirtyFields).length;
     });
+    const totalCount = dirtyCount + (pendingTableActions?.length || 0);
 
     set({
       rows: nextRows,
       selectedRowData: nextSelectedRow,
-      pendingEditsCount: dirtyCount,
-      isTransactionOpen: dirtyCount > 0,
+      pendingEditsCount: totalCount,
+      isTransactionOpen: totalCount > 0,
     });
   },
 
   revertCell: (id, field) => {
-    const { rows, originalRows, selectedRowData } = get();
-    const result = applyCellRevert(rows, originalRows, selectedRowData, id, field);
+    const { rows, originalRows, selectedRowData, pendingTableActions } = get();
+    const extra = pendingTableActions?.length || 0;
+    const result = applyCellRevert(rows, originalRows, selectedRowData, id, field, extra);
 
     set({
       rows: result.rows,
@@ -2933,8 +2996,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   revertRow: (id) => {
-    const { rows, originalRows, selectedRowData } = get();
-    const result = applyRowRevert(rows, originalRows, selectedRowData, id);
+    const { rows, originalRows, selectedRowData, pendingTableActions } = get();
+    const extra = pendingTableActions?.length || 0;
+    const result = applyRowRevert(rows, originalRows, selectedRowData, id, extra);
 
     set({
       rows: result.rows,
@@ -2952,20 +3016,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       rows: result.rows,
       selectedRowData: result.selectedRowData,
+      pendingTableActions: [],
       pendingEditsCount: 0,
       isTransactionOpen: false,
     });
-    get().showToast('↺ Discarded all uncommitted edits');
+    get().showToast('↺ Discarded all uncommitted edits & table actions');
   },
 
   commitTransaction: async () => {
-    const { rows, getPendingSQL, activeConnection, history, showToast } = get();
+    const { rows, getPendingSQL, activeConnection, history, showToast, pendingTableActions, liveTables, selectedTable, closeTab, tabs, requestSafetyConfirmation } = get();
     const sqlText = getPendingSQL();
     const count = get().pendingEditsCount;
 
     if (!sqlText || sqlText.startsWith('--')) {
       showToast('⚠️ No pending changes in active transaction');
       return { sqlText: '', count: 0 };
+    }
+
+    // Safety verification check: prompt warning or password if mode requires it
+    const approved = await requestSafetyConfirmation({
+      sqlText,
+      title: 'Authorize Transaction Commit',
+      actionLabel: 'Commit Changes (⌘S)',
+      isCommit: true,
+    });
+    if (!approved) {
+      showToast('🛑 Transaction commit cancelled by user');
+      return { sqlText, count: 0 };
     }
 
     try {
@@ -2978,6 +3055,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn('Real commit error, proceeding with local transaction:', e);
     }
 
+    const connId = activeConnection.id;
+    let nextLive = liveTables[connId] ? [...liveTables[connId]] : [];
+
+    // Apply side effects of committed table actions
+    for (const action of pendingTableActions || []) {
+      if (action.type === 'truncate') {
+        nextLive = nextLive.map((t) =>
+          t.name === action.tableName ? { ...t, estimated_rows: 0, total_size: '0 bytes', data_size: '0 bytes' } : t
+        );
+        metadataCache.tables.deleteByPrefix(`${connId}:`);
+      } else if (action.type === 'delete') {
+        nextLive = nextLive.filter((t) => t.name !== action.tableName);
+        metadataCache.tables.deleteByPrefix(`${connId}:`);
+        metadataCache.schemas.deleteByPrefix(`${connId}:`);
+        // Close tabs of dropped table
+        const tabsToClose = tabs.filter((t) => t.tableName === action.tableName);
+        tabsToClose.forEach((t) => closeTab(t.id));
+      }
+    }
+
     // Filter out rows marked as deleted
     const committedRows = rows
       .filter((r) => r.rowState !== 'deleted')
@@ -2987,6 +3084,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         dirtyFields: {},
         rowState: 'clean' as const,
       }));
+
+    // If active table was truncated in this transaction, clear its rows
+    const isCurrentTableTruncated = (pendingTableActions || []).some(
+      (a) => a.type === 'truncate' && a.tableName === selectedTable
+    );
+    const finalRows = isCurrentTableTruncated ? [] : committedRows;
 
     const now = new Date();
     const timeStr = `Today at ${now.toTimeString().slice(0, 8)}`;
@@ -3002,33 +3105,54 @@ export const useAppStore = create<AppState>((set, get) => ({
       isFavorite: false,
     };
 
-    set({
-      rows: committedRows,
-      originalRows: cloneGridRows(committedRows),
+    set((state) => ({
+      rows: finalRows,
+      originalRows: cloneGridRows(finalRows),
+      liveTables: {
+        ...state.liveTables,
+        [connId]: nextLive,
+      },
+      pendingTableActions: [],
       pendingEditsCount: 0,
       isTransactionOpen: false,
       isSqlDiffModalOpen: false,
       history: [newHistoryItem, ...history].slice(0, 200),
-    });
+      ...(isCurrentTableTruncated ? { gridTotalCount: 0, selectedRowData: null } : {}),
+    }));
 
     showToast(`✅ Successfully committed ${count} change(s)`);
     return { sqlText, count };
   },
 
   getPendingSQL: () => {
-    const { rows, selectedTable, activeConnection, liveSchemas, liveTables } = get();
+    const { rows, selectedTable, activeConnection, liveSchemas, liveTables, pendingTableActions } = get();
     const connId = activeConnection?.id;
     const schemaInfo = connId ? liveSchemas[connId]?.[selectedTable] : undefined;
     const tableSummary = connId ? liveTables[connId]?.find((t) => t.name === selectedTable) : undefined;
     const pkCol = schemaInfo?.columns?.find((c) => c.isPrimaryKey)?.name;
     const schema = schemaInfo?.schema || tableSummary?.schema || (activeConnection?.engine === 'postgres' ? 'public' : undefined);
-    return buildPendingTransactionSql(
+
+    const rowSql = buildPendingTransactionSql(
       rows,
       selectedTable,
       activeConnection?.engine || 'postgres',
       pkCol,
       schema
     );
+
+    const tableStatements = (pendingTableActions || []).map((a) => a.sql);
+
+    if (tableStatements.length === 0) {
+      return rowSql;
+    }
+
+    // Combine table statements with row statements
+    const rowStatements = rowSql.startsWith('BEGIN TRANSACTION;')
+      ? rowSql.replace('BEGIN TRANSACTION;\n\n', '').replace('\n\nCOMMIT;', '').split('\n').filter(Boolean)
+      : [];
+
+    const allStatements = [...tableStatements, ...rowStatements];
+    return `BEGIN TRANSACTION;\n\n${allStatements.join('\n')}\n\nCOMMIT;`;
   },
 
   processes: [

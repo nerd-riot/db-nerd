@@ -32,7 +32,8 @@ export function applyCellUpdate(
   selectedRowData: GridRow | null,
   id: number | string,
   field: string,
-  value: any
+  value: any,
+  extraPendingCount: number = 0
 ): GridMutationResult {
   const origRow = originalRows.find((r) => String(r.id) === String(id));
 
@@ -74,7 +75,7 @@ export function applyCellUpdate(
     return updatedRow;
   });
 
-  const dirtyCount = countDirtyEdits(updatedRows);
+  const dirtyCount = countDirtyEdits(updatedRows) + extraPendingCount;
 
   return {
     rows: updatedRows,
@@ -92,15 +93,17 @@ export function applyCellRevert(
   originalRows: GridRow[],
   selectedRowData: GridRow | null,
   id: number | string,
-  field: string
+  field: string,
+  extraPendingCount: number = 0
 ): GridMutationResult {
   const origRow = originalRows.find((r) => String(r.id) === String(id));
   if (!origRow) {
+    const dirtyCount = countDirtyEdits(rows) + extraPendingCount;
     return {
       rows,
       selectedRowData,
-      pendingEditsCount: countDirtyEdits(rows),
-      isTransactionOpen: countDirtyEdits(rows) > 0,
+      pendingEditsCount: dirtyCount,
+      isTransactionOpen: dirtyCount > 0,
     };
   }
 
@@ -132,7 +135,7 @@ export function applyCellRevert(
     return reverted;
   });
 
-  const dirtyCount = countDirtyEdits(updatedRows);
+  const dirtyCount = countDirtyEdits(updatedRows) + extraPendingCount;
 
   return {
     rows: updatedRows,
@@ -149,15 +152,17 @@ export function applyRowRevert(
   rows: GridRow[],
   originalRows: GridRow[],
   selectedRowData: GridRow | null,
-  id: number | string
+  id: number | string,
+  extraPendingCount: number = 0
 ): GridMutationResult {
   const origRow = originalRows.find((r) => String(r.id) === String(id));
   if (!origRow) {
+    const dirtyCount = countDirtyEdits(rows) + extraPendingCount;
     return {
       rows,
       selectedRowData,
-      pendingEditsCount: countDirtyEdits(rows),
-      isTransactionOpen: countDirtyEdits(rows) > 0,
+      pendingEditsCount: dirtyCount,
+      isTransactionOpen: dirtyCount > 0,
     };
   }
 
@@ -179,7 +184,7 @@ export function applyRowRevert(
     return restored;
   });
 
-  const dirtyCount = countDirtyEdits(updatedRows);
+  const dirtyCount = countDirtyEdits(updatedRows) + extraPendingCount;
 
   return {
     rows: updatedRows,
