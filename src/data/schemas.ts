@@ -1,4 +1,5 @@
 import { TableSchemaInfo, FunctionItem } from '../types';
+import { isInternalRowKey, sortColumnsByDdlConvention } from '../lib/grid/columnOrdering';
 
 export const TABLE_SCHEMAS: Record<string, TableSchemaInfo> = {
   user_orders: {
@@ -663,11 +664,10 @@ export const getTableSchema = (tableName: string): TableSchemaInfo => {
       }
 
       if (liveSummary || !(safeName in TABLE_SCHEMAS)) {
-        const internalKeys = new Set(['isDirty', 'dirtyFields', 'rowState']);
         const currentRows: any[] = store.selectedTable === safeName && Array.isArray(store.rows) ? store.rows : [];
         const sample = currentRows[0];
-        const rowKeys = sample ? Object.keys(sample).filter((k) => !internalKeys.has(k)) : ['id'];
-        const inferredCols = rowKeys.map((key) => {
+        const rowKeys = sample ? Object.keys(sample).filter((k) => !isInternalRowKey(k)) : ['id'];
+        const rawInferredCols = rowKeys.map((key) => {
           const val = sample?.[key];
           let inferredType = 'varchar(255)';
           if (typeof val === 'number') {
@@ -688,6 +688,7 @@ export const getTableSchema = (tableName: string): TableSchemaInfo => {
             comment: '',
           };
         });
+        const inferredCols = sortColumnsByDdlConvention(rawInferredCols);
 
         const total = liveSummary?.total_size || '32 KB';
         const data = liveSummary?.data_size || '16 KB';

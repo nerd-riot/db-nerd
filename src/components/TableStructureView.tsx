@@ -5,6 +5,10 @@ import { Search, Key, Copy, Code, Filter, Terminal } from 'lucide-react';
 import { ColumnDefinition } from '../types';
 import { ColumnTypeIcon } from './ColumnTypeIcon';
 import {
+  isInternalRowKey,
+  sortColumnsByDdlConvention,
+} from '../lib';
+import {
   ContextMenuContainer,
   ContextMenuItem,
   ContextMenuDivider,
@@ -31,6 +35,8 @@ const DATA_TYPES = [
 export const TableStructureView: React.FC = () => {
   const {
     selectedTable,
+    activeConnection,
+    liveSchemas,
     structureSearchColumn,
     setStructureSearchColumn,
     selectedStructureColumn,
@@ -42,21 +48,31 @@ export const TableStructureView: React.FC = () => {
     openNewQueryTab,
     showToast,
   } = useAppStore();
-  const schemaInfo = getTableSchema(selectedTable);
 
-  const [columns, setColumns] = useState<ColumnDefinition[]>(schemaInfo.columns);
+  const liveSchema = activeConnection?.id ? liveSchemas?.[activeConnection.id]?.[selectedTable] : undefined;
+  const schemaInfo = liveSchema || getTableSchema(selectedTable);
+
+  const sortedColumns = React.useMemo(() => {
+    const raw = schemaInfo?.columns && schemaInfo.columns.length > 0 ? schemaInfo.columns : [];
+    const known = raw.filter((c) => !isInternalRowKey(c.name));
+    const ddlOrderMap = new Map<string, number>();
+    known.forEach((c, idx) => ddlOrderMap.set(c.name, idx));
+    return sortColumnsByDdlConvention(known, ddlOrderMap);
+  }, [schemaInfo]);
+
+  const [columns, setColumns] = useState<ColumnDefinition[]>(sortedColumns);
   const [tableNameInput, setTableNameInput] = useState(selectedTable);
   const [colContextPos, setColContextPos] = useState<ContextMenuPosition | null>(null);
   const [targetCol, setTargetCol] = useState<ColumnDefinition | null>(null);
 
-  // Sync columns if selectedTable changes
+  // Sync columns if selectedTable or schema changes
   React.useEffect(() => {
-    setColumns(schemaInfo.columns);
+    setColumns(sortedColumns);
     setTableNameInput(selectedTable);
-    if (schemaInfo.columns.length > 0) {
-      setSelectedStructureColumn(schemaInfo.columns[0]);
+    if (sortedColumns.length > 0) {
+      setSelectedStructureColumn(sortedColumns[0]);
     }
-  }, [selectedTable]);
+  }, [selectedTable, sortedColumns]);
 
   const primaryKeyCol = columns.find((c) => c.isPrimaryKey)?.name || 'id';
 

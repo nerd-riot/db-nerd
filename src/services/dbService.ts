@@ -8,6 +8,7 @@ import {
   TableForeignKeyDefinition,
 } from '../types';
 import { escapeSqlStringLiteral, normalizeDatabaseEngine } from '../lib/security/sqlSanitizer';
+import { sortColumnsByDdlConvention } from '../lib/grid/columnOrdering';
 
 export interface DbConfigPayload {
   engine: string;
@@ -434,8 +435,9 @@ export async function getRealTableSchema(
         }
       }
 
-      const pkCols = columns.filter((c) => c.isPrimaryKey).map((c) => `"${c.name}"`);
-      const ddlLines = columns.map((c) => {
+      const sortedColumns = sortColumnsByDdlConvention(columns);
+      const pkCols = sortedColumns.filter((c) => c.isPrimaryKey).map((c) => `"${c.name}"`);
+      const ddlLines = sortedColumns.map((c) => {
         const nullStr = c.isNullable ? '' : ' NOT NULL';
         const defStr = c.defaultValue ? ` DEFAULT ${c.defaultValue}` : '';
         return `  "${c.name}" ${c.type}${nullStr}${defStr}`;
@@ -459,7 +461,7 @@ export async function getRealTableSchema(
         engine: 'PostgreSQL (Heap)',
         rowCount: `${estRows.toLocaleString()} rows`,
         totalSize: `${totalSize} (Data: ${dataSize}, Index: ${idxSize})`,
-        columns,
+        columns: sortedColumns,
         indexes,
         foreignKeys,
         ddl,
@@ -482,7 +484,7 @@ export async function getRealTableSchema(
         return null;
       }
 
-      const columns: ColumnDefinition[] = colRes.rows.map((r: any) => ({
+      const rawColumns: ColumnDefinition[] = colRes.rows.map((r: any) => ({
         name: String(r.name || ''),
         type: String(r.data_type || 'varchar(255)'),
         isNullable: Boolean(r.is_nullable),
@@ -490,6 +492,7 @@ export async function getRealTableSchema(
         isPrimaryKey: Boolean(r.is_primary_key),
         comment: r.comment ? String(r.comment) : undefined,
       }));
+      const columns: ColumnDefinition[] = sortColumnsByDdlConvention(rawColumns);
 
       const ddlLines = columns.map((c) => {
         const nullStr = c.isNullable ? ' NULL' : ' NOT NULL';

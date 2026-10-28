@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '../stores/useAppStore';
-import { getTableSchema, TABLE_SCHEMAS } from '../data/schemas';
+import { getTableSchema } from '../data/schemas';
 import {
   Key,
   Plus,
@@ -38,8 +38,11 @@ import {
   ContextMenuHeader,
   ContextMenuPosition,
 } from './ContextMenu';
-
-const INTERNAL_ROW_KEYS = new Set(['isDirty', 'dirtyFields', 'rowState']);
+import {
+  isInternalRowKey,
+  sortColumnsByDdlConvention,
+  deriveColumnsFromRows,
+} from '../lib';
 
 export const TableGrid: React.FC = () => {
   const {
@@ -63,6 +66,7 @@ export const TableGrid: React.FC = () => {
     isReloading,
     reloadData,
     activeConnection,
+    liveSchemas,
     setConnectionModalOpen,
     reconnectActiveConnection,
     showToast,
@@ -84,45 +88,27 @@ export const TableGrid: React.FC = () => {
     [pendingTableActions, selectedTable]
   );
 
-  const schemaInfo = getTableSchema(selectedTable);
+  const liveSchema = activeConnection?.id ? liveSchemas?.[activeConnection.id]?.[selectedTable] : undefined;
+  const schemaInfo = liveSchema || getTableSchema(selectedTable);
 
-  // Dynamically derive columns when viewing live tables not in hardcoded TABLE_SCHEMAS
+  // Dynamically derive and order columns according to DDL convention
   const resolvedColumns: ColumnDefinition[] = useMemo(() => {
-    const isKnownSchema = selectedTable in TABLE_SCHEMAS;
+    const knownCols = schemaInfo?.columns && schemaInfo.columns.length > 0
+      ? schemaInfo.columns.filter((c) => !isInternalRowKey(c.name))
+      : [];
+
+    const ddlOrderMap = new Map<string, number>();
+    knownCols.forEach((c, idx) => ddlOrderMap.set(c.name, idx));
+    const schemaColMap = new Map(knownCols.map((c) => [c.name, c]));
+
     if (rows.length > 0) {
       const sample = rows[0];
-      const rowKeys = Object.keys(sample).filter((k) => !INTERNAL_ROW_KEYS.has(k));
-      const schemaColMap = new Map(schemaInfo.columns.map((c) => [c.name, c]));
-      const matchesSchema = isKnownSchema && rowKeys.every((k) => schemaColMap.has(k));
-
-      if (!matchesSchema && rowKeys.length > 0) {
-        return rowKeys.map((key) => {
-          const existing = schemaColMap.get(key);
-          if (existing) return existing;
-          const val = sample[key];
-          let inferredType = 'VARCHAR(255)';
-          if (typeof val === 'number') {
-            inferredType = Number.isInteger(val) ? 'INT8' : 'NUMERIC(12,2)';
-          } else if (typeof val === 'boolean') {
-            inferredType = 'BOOL';
-          } else if (val !== null && typeof val === 'object') {
-            inferredType = 'JSONB';
-          } else if (key.endsWith('_at') || key.includes('date') || key === 'tstamp') {
-            inferredType = 'TIMESTAMPTZ';
-          }
-          return {
-            name: key,
-            type: inferredType,
-            isNullable: key !== 'id',
-            defaultValue: key === 'id' ? 'AUTO' : 'NULL',
-            isPrimaryKey: key === 'id' || key === 'version_id' || key === 'ulid',
-            comment: '',
-          };
-        });
-      }
+      const derived = deriveColumnsFromRows(sample, schemaColMap, ddlOrderMap);
+      return sortColumnsByDdlConvention(derived, ddlOrderMap);
     }
-    return schemaInfo.columns;
-  }, [selectedTable, rows, schemaInfo.columns]);
+
+    return sortColumnsByDdlConvention(knownCols, ddlOrderMap);
+  }, [selectedTable, rows, schemaInfo, liveSchema]);
 
   const [editingCell, setEditingCell] = useState<{ id: number | string; field: string } | null>(null);
 
