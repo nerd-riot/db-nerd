@@ -12,6 +12,9 @@ import {
   Filter,
   Sliders,
   XCircle,
+  FileCode,
+  RotateCcw,
+  Check,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { HeartbeatDot } from './HeartbeatDot';
@@ -26,6 +29,7 @@ export const Titlebar = () => {
     setConnectionModalOpen,
     setDatabaseModalOpen,
     setRunningQueriesModalOpen,
+    setSqlDiffModalOpen,
     pendingEditsCount,
     commitTransaction,
     rollbackTransaction,
@@ -68,9 +72,7 @@ export const Titlebar = () => {
   };
 
   const handleDiscard = () => {
-    if (confirm("Discard all pending uncommitted edits in active transaction?")) {
-      rollbackTransaction();
-    }
+    rollbackTransaction();
   };
 
   const handleMouseDown = async (e: React.MouseEvent) => {
@@ -177,17 +179,27 @@ export const Titlebar = () => {
               <span>{pendingEditsCount}</span>
             </div>
             <button
+              onClick={() => setSqlDiffModalOpen(true)}
+              className="no-drag h-7 px-2 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition flex items-center space-x-1 leading-none shrink-0 cursor-pointer"
+              title="Review Pending SQL Diff"
+            >
+              <FileCode className="w-3.5 h-3.5" />
+              <span>Review SQL</span>
+            </button>
+            <button
               onClick={handleDiscard}
-              className="no-drag h-7 px-2.5 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition flex items-center leading-none shrink-0 cursor-pointer"
+              className="no-drag h-7 px-2 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition flex items-center space-x-1 leading-none shrink-0 cursor-pointer"
               title="Discard Uncommitted Edits (⌘Z)"
             >
-              Discard
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Discard</span>
             </button>
             <button
               onClick={handleCommit}
               className="no-drag h-7 px-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs rounded-lg transition flex items-center space-x-1.5 shadow-md shadow-sky-500/20 active:scale-95 leading-none shrink-0 cursor-pointer"
               title="Commit Changes (⌘S)"
             >
+              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Commit</span>
               <kbd className="px-1 py-0.5 bg-black/20 rounded text-[9px] font-mono text-white font-extrabold leading-none">⌘S</kbd>
             </button>

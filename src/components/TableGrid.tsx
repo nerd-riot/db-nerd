@@ -74,6 +74,7 @@ export const TableGrid: React.FC = () => {
     setGridPageSize,
     goToGridPage,
     fetchTableExactCount,
+    pendingEditsCount,
   } = useAppStore();
 
   const schemaInfo = getTableSchema(selectedTable);
@@ -116,7 +117,14 @@ export const TableGrid: React.FC = () => {
     return schemaInfo.columns;
   }, [selectedTable, rows, schemaInfo.columns]);
 
-  const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ id: number | string; field: string } | null>(null);
+
+  // Auto-close cell editor when transaction is rolled back or committed
+  useEffect(() => {
+    if (pendingEditsCount === 0 && editingCell) {
+      setEditingCell(null);
+    }
+  }, [pendingEditsCount, editingCell]);
   const [contextMenuPos, setContextMenuPos] = useState<ContextMenuPosition | null>(null);
   const [targetContextMenuRows, setTargetContextMenuRows] = useState<GridRow[]>([]);
   const [colContextPos, setColContextPos] = useState<ContextMenuPosition | null>(null);
@@ -202,16 +210,13 @@ export const TableGrid: React.FC = () => {
   const startEditing = useCallback((id: number | string, field: string) => {
     // Prevent editing the primary key directly
     if (field === 'id' && resolvedColumns.find((c) => c.name === 'id')?.isPrimaryKey) return;
-    setEditingCell({ id: Number(id) || (id as any), field });
+    setEditingCell({ id, field });
   }, [resolvedColumns]);
 
   const handleSaveCell = useCallback((id: number | string, field: string, newVal: any) => {
-    updateCell(Number(id) || (id as any), field as keyof GridRow, newVal);
-    if (selectedRowData && selectedRowData.id === id) {
-      setSelectedRowData({ ...selectedRowData, [field]: newVal });
-    }
+    updateCell(id, field as keyof GridRow, newVal);
     setEditingCell(null);
-  }, [updateCell, selectedRowData, setSelectedRowData]);
+  }, [updateCell]);
 
   const toggleColumnVisibility = (colName: string) => {
     setVisibleColumns((prev) => {
@@ -527,7 +532,7 @@ export const TableGrid: React.FC = () => {
                     isSelected={isSelected}
                     isEven={isEven}
                     activeCols={activeCols}
-                    editingCellField={editingCell?.id === row.id ? editingCell.field : null}
+                    editingCellField={editingCell && String(editingCell.id) === String(row.id) ? editingCell.field : null}
                     wrapText={wrapText}
                     onRowClick={handleRowClick}
                     onRowContextMenu={handleRowContextMenu}

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
-import { X, Check, Copy, Terminal, Play } from 'lucide-react';
+import { X, Check, Copy, Terminal, Play, RotateCcw } from 'lucide-react';
 
 export const SqlDiffModal = () => {
-  const { isSqlDiffModalOpen, setSqlDiffModalOpen, getPendingSQL, commitTransaction, pendingEditsCount, requestSafetyConfirmation } = useAppStore();
+  const { isSqlDiffModalOpen, setSqlDiffModalOpen, getPendingSQL, commitTransaction, rollbackTransaction, pendingEditsCount, requestSafetyConfirmation } = useAppStore();
   const [copied, setCopied] = useState(false);
 
   if (!isSqlDiffModalOpen) return null;
@@ -78,10 +78,20 @@ export const SqlDiffModal = () => {
 
           <div className="flex items-center space-x-2">
             <button
+              onClick={() => {
+                rollbackTransaction();
+                setSqlDiffModalOpen(false);
+              }}
+              className="px-3 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 rounded-xl transition flex items-center space-x-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Discard All</span>
+            </button>
+            <button
               onClick={() => setSqlDiffModalOpen(false)}
               className="px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition cursor-pointer"
             >
-              Cancel
+              Close
             </button>
             <button
               onClick={handleCommitNow}

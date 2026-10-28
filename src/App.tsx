@@ -18,13 +18,12 @@ import { AllTableStatsView } from './components/AllTableStatsView';
 import { AllFunctionsView } from './components/AllFunctionsView';
 import { RightInspector } from './components/RightInspector';
 import { BottomPanel } from './components/BottomPanel';
-import { HeartbeatDot } from './components/HeartbeatDot';
 import { DisconnectedBanner } from './components/DisconnectedBanner';
 import { DisconnectedModal } from './components/DisconnectedModal';
 import { SafetyVerificationModal } from './components/SafetyVerificationModal';
 import { TableActionModal } from './components/TableActionModal';
 import { heartbeatService } from './services/heartbeatService';
-import { Table, Terminal, Activity, FileCode, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info, Scissors, ClipboardPaste, Trash2, Database, SlidersHorizontal, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
+import { Table, Terminal, Activity, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info, Scissors, ClipboardPaste, Trash2, Database, SlidersHorizontal, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -66,8 +65,6 @@ export function App() {
     openNewQueryTab,
     renameTab,
     activeTab,
-    isTransactionOpen,
-    pendingEditsCount,
     isSidebarOpen,
     toggleSidebar,
     sidebarWidth,
@@ -82,7 +79,6 @@ export function App() {
     setConnectionModalOpen,
     setDatabaseModalOpen,
     setHistoryModalOpen,
-    setSqlDiffModalOpen,
     settings,
     setSettingsModalOpen,
     updateResolvedTheme,
@@ -299,9 +295,7 @@ export function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
         if (useAppStore.getState().pendingEditsCount > 0) {
           e.preventDefault();
-          if (confirm("Rollback transaction and discard all uncommitted edits?")) {
-            rollbackTransaction();
-          }
+          rollbackTransaction();
         }
       }
       // ⌘, : Preferences & Settings
@@ -531,53 +525,6 @@ export function App() {
       {/* TablePlus Disconnected Banner */}
       <DisconnectedBanner />
 
-      {/* Transaction Alert Banner with Smooth Expand/Collapse & Heartbeat LED */}
-      <div
-        className={`grid transition-[grid-template-rows,opacity] duration-240 ease-[cubic-bezier(0.16,1,0.3,1)] z-20 ${
-          isTransactionOpen && pendingEditsCount > 0
-            ? 'grid-rows-[1fr] opacity-100'
-            : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-        }`}
-      >
-        <div className="overflow-hidden">
-          <div className="h-8 bg-amber-500/15 border-b border-amber-500/40 px-4 flex items-center justify-between text-xs select-none backdrop-blur-md">
-            <div className="flex items-center space-x-2">
-              <HeartbeatDot color="amber" size="sm" showWave={true} />
-              <span className="font-bold text-amber-300 leading-none">Active Transaction Open</span>
-              <span className="text-amber-200/80 leading-none">
-                • TxID: #891024 • {pendingEditsCount} uncommitted edit{pendingEditsCount > 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setSqlDiffModalOpen(true)}
-                className="h-6 px-2 hover:bg-slate-800 text-amber-300 rounded font-medium text-[11px] flex items-center space-x-1.5 transition-colors leading-none cursor-pointer"
-              >
-                <FileCode className="w-3 h-3 shrink-0" />
-                <span>Review SQL</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm("Rollback transaction?")) rollbackTransaction();
-                }}
-                className="h-6 px-2 hover:bg-slate-800 text-slate-300 rounded font-medium text-[11px] flex items-center space-x-1.5 transition-colors active:scale-95 leading-none cursor-pointer"
-              >
-                <RotateCcw className="w-3 h-3 shrink-0" />
-                <span>Rollback (⌘Z)</span>
-              </button>
-              <button
-                onClick={async () => {
-                  await commitTransaction();
-                }}
-                className="h-6 px-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold rounded text-[11px] flex items-center space-x-1.5 shadow-sm transition-all active:scale-95 leading-none cursor-pointer"
-              >
-                <Check className="w-3 h-3 stroke-[3] shrink-0" />
-                <span>Commit (⌘S)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Workspace Split (Rail + Sidebar + Main) */}
       <div className="flex-1 flex overflow-hidden">

@@ -19,6 +19,7 @@ import {
   Zap,
   ShieldCheck,
   FileCode,
+  RotateCcw,
 } from 'lucide-react';
 import { ColumnTypeIcon } from './ColumnTypeIcon';
 import {
@@ -57,6 +58,8 @@ export const RightInspector: React.FC = () => {
     selectedRowData,
     setSelectedRowData,
     updateCell,
+    revertCell,
+    revertRow,
     tableViewMode,
     tabs,
     activeTabId,
@@ -183,6 +186,17 @@ export const RightInspector: React.FC = () => {
 
         {/* Action icons: Width Toggle (Maximize/Minimize), Copy, Close */}
         <div className="flex items-center space-x-1">
+          {selectedRowData && isDataMode && (selectedRowData.isDirty || (selectedRowData.dirtyFields && Object.keys(selectedRowData.dirtyFields).length > 0)) && (
+            <button
+              onClick={() => revertRow(selectedRowData.id)}
+              className="px-2 py-0.5 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-500/10 rounded flex items-center space-x-1 cursor-pointer font-sans transition-colors"
+              title="Discard changes to this row"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span className="text-[11px] font-medium">Discard Row</span>
+            </button>
+          )}
+
           <button
             onClick={() => setRightInspectorWidth(isExpanded ? 320 : 520)}
             className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition cursor-pointer"
@@ -355,6 +369,16 @@ export const RightInspector: React.FC = () => {
                       </div>
 
                       <div className="flex items-center space-x-1">
+                        {isDirty && (
+                          <button
+                            onClick={() => revertCell(selectedRowData.id, field)}
+                            className="px-1.5 py-0.5 rounded text-[10px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 flex items-center space-x-0.5 cursor-pointer transition-colors"
+                            title={`Discard edits to "${field}" (Esc)`}
+                          >
+                            <RotateCcw className="w-2.5 h-2.5" />
+                            <span>Discard</span>
+                          </button>
+                        )}
                         <span className={`text-[10px] font-sans px-1.5 py-0.2 rounded border font-medium ${getTypeBadgeClass(colType)}`}>
                           {colType}
                         </span>
@@ -373,6 +397,12 @@ export const RightInspector: React.FC = () => {
                             ? 'NULL'
                             : String(val)
                         }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            revertCell(selectedRowData.id, field);
+                          }
+                        }}
                         onChange={(e) => {
                           let parsed: any = e.target.value;
                           if (typeof val === 'object' && val !== null) {
@@ -383,7 +413,6 @@ export const RightInspector: React.FC = () => {
                             }
                           }
                           updateCell(selectedRowData.id, field, parsed);
-                          setSelectedRowData({ ...selectedRowData, [field]: parsed });
                         }}
                         className={`w-full bg-white dark:bg-slate-900/90 border rounded-lg p-2 text-slate-900 dark:text-slate-100 font-mono text-[11px] focus:outline-none focus:border-sky-500 select-text leading-relaxed shadow-2xs ${
                           val === null ? 'text-slate-400 dark:text-slate-500 italic' : ''
@@ -403,10 +432,15 @@ export const RightInspector: React.FC = () => {
                               ? 'NULL'
                               : String(val)
                           }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              e.preventDefault();
+                              revertCell(selectedRowData.id, field);
+                            }
+                          }}
                           onChange={(e) => {
                             const nextVal = e.target.value;
                             updateCell(selectedRowData.id, field, nextVal);
-                            setSelectedRowData({ ...selectedRowData, [field]: nextVal });
                           }}
                           className={`w-full bg-white dark:bg-slate-900/90 border rounded-lg px-2.5 py-1 text-slate-900 dark:text-slate-100 font-mono text-[11px] focus:outline-none focus:border-sky-500 select-text truncate pr-6 shadow-2xs ${
                             val === null ? 'text-slate-400 dark:text-slate-500 italic' : ''
@@ -931,6 +965,30 @@ export const RightInspector: React.FC = () => {
               setFieldContextPos(null);
             }}
           />
+          {selectedRowData.dirtyFields?.[targetField] && (
+            <>
+              <ContextMenuDivider />
+              <ContextMenuItem
+                icon={<RotateCcw className="w-3.5 h-3.5 text-rose-500" />}
+                label={`Discard Changes to "${targetField}"`}
+                shortcut="Esc"
+                onClick={() => {
+                  revertCell(selectedRowData.id, targetField);
+                  setFieldContextPos(null);
+                }}
+              />
+            </>
+          )}
+          {(selectedRowData.isDirty || (selectedRowData.dirtyFields && Object.keys(selectedRowData.dirtyFields).length > 0)) && (
+            <ContextMenuItem
+              icon={<RotateCcw className="w-3.5 h-3.5 text-rose-500" />}
+              label="Discard Entire Row Changes"
+              onClick={() => {
+                revertRow(selectedRowData.id);
+                setFieldContextPos(null);
+              }}
+            />
+          )}
         </ContextMenuContainer>
       )}
     </aside>

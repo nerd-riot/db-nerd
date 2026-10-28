@@ -21,6 +21,10 @@ import {
   loadSessionTabs,
   removeSessionTabsStorage,
   safeSetLocalStorage,
+  applyCellUpdate,
+  applyCellRevert,
+  applyRowRevert,
+  applyTransactionRollback,
 } from '../lib';
 import {
   buildPaginatedSelectSql,
@@ -201,10 +205,12 @@ interface AppState {
 
   originalRows: GridRow[];
   rows: GridRow[];
-  updateCell: (id: number, field: keyof GridRow, value: any) => void;
+  updateCell: (id: number | string, field: keyof GridRow | string, value: any) => void;
+  revertCell: (id: number | string, field: string) => void;
+  revertRow: (id: number | string) => void;
   insertRow: () => void;
   duplicateRow: (sourceRow: GridRow) => void;
-  deleteRow: (id: number) => void;
+  deleteRow: (id: number | string) => void;
   rollbackTransaction: () => void;
   commitTransaction: () => Promise<{ sqlText: string; count: number }>;
   getPendingSQL: () => string;
@@ -2724,52 +2730,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
 
   updateCell: (id, field, value) => {
-    const { rows, originalRows, selectedTable } = get();
-    const origRow = originalRows.find((r) => r.id === id);
-
-    let castValue = value;
-    if (field === 'id' || field === 'user_id' || field === 'total_amount') {
-      const num = Number(value);
-      if (!isNaN(num)) castValue = num;
-    }
-
-    const updatedRows = rows.map((r) => {
-      if (r.id !== id) return r;
-
-      const currentDirty = { ...(r.dirtyFields || {}) };
-      const isOriginal = origRow ? JSON.stringify(origRow[field]) === JSON.stringify(castValue) : false;
-
-      if (isOriginal) {
-        delete currentDirty[field as string];
-      } else {
-        currentDirty[field as string] = true;
-      }
-
-      const hasDirtyFields = Object.keys(currentDirty).length > 0;
-      const nextRowState: GridRow['rowState'] = r.rowState === 'inserted' ? 'inserted' : hasDirtyFields ? 'modified' : 'clean';
-      return {
-        ...r,
-        [field]: castValue,
-        dirtyFields: currentDirty,
-        isDirty: hasDirtyFields || r.rowState === 'inserted' || r.rowState === 'deleted',
-        rowState: nextRowState,
-      };
-    });
-
-    // Count all dirty cells & rows
-    let dirtyCount = 0;
-    updatedRows.forEach((r) => {
-      if (r.rowState === 'inserted' || r.rowState === 'deleted') {
-        dirtyCount++;
-      } else if (r.dirtyFields) {
-        dirtyCount += Object.keys(r.dirtyFields).length;
-      }
-    });
+    const { rows, originalRows, selectedTable, selectedRowData } = get();
+    const result = applyCellUpdate(rows, originalRows, selectedRowData, id, field as string, value);
 
     set({
-      rows: updatedRows,
-      pendingEditsCount: dirtyCount,
-      isTransactionOpen: dirtyCount > 0,
+      rows: result.rows,
+      selectedRowData: result.selectedRowData,
+      pendingEditsCount: result.pendingEditsCount,
+      isTransactionOpen: result.isTransactionOpen,
       selectedTable,
     });
   },
@@ -2917,15 +2885,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteRow: (id) => {
-    const { rows } = get();
+    const { rows, selectedRowData } = get();
+    let nextSelectedRow = selectedRowData;
     const nextRows = rows.map((r) => {
-      if (r.id !== id) return r;
+      if (String(r.id) !== String(id)) return r;
       const nextState: GridRow['rowState'] = r.rowState === 'deleted' ? 'clean' : 'deleted';
-      return {
+      const updated = {
         ...r,
         rowState: nextState,
-        isDirty: nextState === 'deleted',
+        isDirty: nextState === 'deleted' || Object.keys(r.dirtyFields || {}).length > 0,
       };
+      if (selectedRowData && String(selectedRowData.id) === String(id)) {
+        nextSelectedRow = updated;
+      }
+      return updated;
     });
 
     let dirtyCount = 0;
@@ -2936,18 +2909,49 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       rows: nextRows,
+      selectedRowData: nextSelectedRow,
       pendingEditsCount: dirtyCount,
       isTransactionOpen: dirtyCount > 0,
     });
   },
 
-  rollbackTransaction: () => {
-    const { originalRows } = get();
+  revertCell: (id, field) => {
+    const { rows, originalRows, selectedRowData } = get();
+    const result = applyCellRevert(rows, originalRows, selectedRowData, id, field);
+
     set({
-      rows: cloneGridRows(originalRows),
+      rows: result.rows,
+      selectedRowData: result.selectedRowData,
+      pendingEditsCount: result.pendingEditsCount,
+      isTransactionOpen: result.isTransactionOpen,
+    });
+    get().showToast(`↺ Reverted "${field}"`);
+  },
+
+  revertRow: (id) => {
+    const { rows, originalRows, selectedRowData } = get();
+    const result = applyRowRevert(rows, originalRows, selectedRowData, id);
+
+    set({
+      rows: result.rows,
+      selectedRowData: result.selectedRowData,
+      pendingEditsCount: result.pendingEditsCount,
+      isTransactionOpen: result.isTransactionOpen,
+    });
+    get().showToast(`↺ Reverted row #${id}`);
+  },
+
+  rollbackTransaction: () => {
+    const { originalRows, selectedRowData } = get();
+    const result = applyTransactionRollback(originalRows, selectedRowData);
+
+    set({
+      rows: result.rows,
+      selectedRowData: result.selectedRowData,
       pendingEditsCount: 0,
       isTransactionOpen: false,
     });
+    get().showToast('↺ Discarded all uncommitted edits');
   },
 
   commitTransaction: async () => {
