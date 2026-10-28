@@ -2736,9 +2736,9 @@ export const ConnectionModal = () => {
             icon={<Play className="w-3.5 h-3.5 text-emerald-400" />}
             label={`Connect to "${targetConn.name}"`}
             onClick={() => {
+              if (isConnecting) return;
               switchActiveConnection(targetConn.id);
               setConnectionModalOpen(false);
-              showToast(`Connected to ${targetConn.name}`);
             }}
           />
           <ContextMenuItem

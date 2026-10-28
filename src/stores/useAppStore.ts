@@ -1800,8 +1800,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const nextConnections = [...state.connections, newConn];
       persistConnections(nextConnections);
-      const nextActive = state.activeConnection?.id ? state.activeConnection : newConn;
-      return { connections: nextConnections, activeConnection: nextActive };
+      return { connections: nextConnections, activeConnection: state.activeConnection };
     });
     return newConn;
   },

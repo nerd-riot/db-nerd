@@ -667,11 +667,11 @@ export const Sidebar = () => {
             }
           }}
           className="flex items-center space-x-1.5 px-2 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded text-[11px] font-mono text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition group border border-transparent hover:border-slate-300 dark:hover:border-slate-700/60 cursor-pointer"
-          title={!activeConnection?.id ? "Connect Database (⌘K)" : "Switch Database or Schema (⌘O)"}
+          title={!hasActiveSession ? "Connect Database (⌘K)" : "Switch Database or Schema (⌘O)"}
         >
           <span
             className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              !activeConnection?.id
+              !hasActiveSession
                 ? 'bg-slate-400'
                 : activeConnection.connectionStatus === 'failed'
                 ? 'bg-rose-500 shadow-xs shadow-rose-500/50'
@@ -679,9 +679,9 @@ export const Sidebar = () => {
             }`}
           />
           <span className="font-semibold text-sky-600 dark:text-sky-400 truncate max-w-[120px]">
-            {!activeConnection?.id ? 'No Connection' : (activeConnection.database || 'default')}
+            {!hasActiveSession ? 'No Connection' : (activeConnection.database || 'default')}
           </span>
-          {activeConnection?.id && (
+          {hasActiveSession && (
             <>
               <span className="text-slate-400 dark:text-slate-500">:</span>
               <span className="text-slate-700 dark:text-slate-300">public</span>
