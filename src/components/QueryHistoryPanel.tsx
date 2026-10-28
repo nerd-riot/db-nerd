@@ -26,6 +26,7 @@ export const QueryHistoryPanel: React.FC<QueryHistoryPanelProps> = ({
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const handleCopy = (id: string, sql: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -134,16 +135,24 @@ export const QueryHistoryPanel: React.FC<QueryHistoryPanelProps> = ({
         {history.length > 0 && (
           <button
             onClick={() => {
-              if (window.confirm('Clear all query history for this session?')) {
+              if (confirmClear) {
                 clearHistory();
                 showToast('🗑️ Query history cleared', 'info');
+                setConfirmClear(false);
+              } else {
+                setConfirmClear(true);
+                setTimeout(() => setConfirmClear(false), 3000);
               }
             }}
-            className="px-2.5 py-1 text-slate-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 rounded-lg hover:bg-slate-200 dark:hover:bg-white/5 transition flex items-center space-x-1 text-[11px] cursor-pointer"
+            className={`px-2.5 py-1 rounded-lg transition flex items-center space-x-1 text-[11px] cursor-pointer ${
+              confirmClear
+                ? 'bg-rose-600 text-white font-bold animate-pulse'
+                : 'text-slate-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-white/5'
+            }`}
             title="Clear all query history"
           >
             <Trash2 className="w-3 h-3" />
-            <span>Clear History</span>
+            <span>{confirmClear ? 'Confirm Clear?' : 'Clear History'}</span>
           </button>
         )}
       </div>

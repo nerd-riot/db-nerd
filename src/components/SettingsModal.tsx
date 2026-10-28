@@ -35,11 +35,13 @@ export const SettingsModal: React.FC = () => {
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<'appearance' | 'query' | 'shortcuts'>('appearance');
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmClearHistory, setConfirmClearHistory] = useState(false);
 
   if (!isSettingsModalOpen) return null;
 
   const handleResetDefaults = () => {
-    if (confirm('Reset all preferences to default values?')) {
+    if (confirmReset) {
       updateSettings({
         themeMode: 'auto',
         editorFontSize: 13,
@@ -51,6 +53,10 @@ export const SettingsModal: React.FC = () => {
         historyTtl: '30-days',
       });
       showToast('Settings reset to defaults');
+      setConfirmReset(false);
+    } else {
+      setConfirmReset(true);
+      setTimeout(() => setConfirmReset(false), 3000);
     }
   };
 
@@ -523,14 +529,22 @@ export const SettingsModal: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm('Are you sure you want to delete all saved query history?')) {
+                        if (confirmClearHistory) {
                           clearHistory();
                           showToast('🗑️ Cleared all query history');
+                          setConfirmClearHistory(false);
+                        } else {
+                          setConfirmClearHistory(true);
+                          setTimeout(() => setConfirmClearHistory(false), 3000);
                         }
                       }}
-                      className="px-2.5 py-1 rounded-lg border border-rose-300 dark:border-rose-800/80 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-xs font-medium transition cursor-pointer flex items-center space-x-1"
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition cursor-pointer flex items-center space-x-1 ${
+                        confirmClearHistory
+                          ? 'border-rose-500 bg-rose-600 text-white font-bold animate-pulse'
+                          : 'border-rose-300 dark:border-rose-800/80 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300'
+                      }`}
                     >
-                      <span>Clear All</span>
+                      <span>{confirmClearHistory ? 'Confirm Clear All?' : 'Clear All'}</span>
                     </button>
                   </div>
                 </div>
@@ -579,10 +593,14 @@ export const SettingsModal: React.FC = () => {
           <button
             type="button"
             onClick={handleResetDefaults}
-            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 flex items-center space-x-1.5 transition cursor-pointer"
+            className={`text-xs flex items-center space-x-1.5 transition cursor-pointer px-2.5 py-1 rounded-lg ${
+              confirmReset
+                ? 'bg-rose-600 text-white font-bold animate-pulse'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+            }`}
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Defaults</span>
+            <span>{confirmReset ? 'Confirm Reset Defaults?' : 'Reset Defaults'}</span>
           </button>
 
           <button

@@ -170,5 +170,45 @@ describe('Connection Session Isolation & Disconnected State Guard', () => {
     assert.ok(topRightClass.includes('top-12 right-5'));
     assert.ok(!topRightClass.includes('left-1/2'));
   });
+
+  it('deletes connection cleanly without relying on blocking browser confirm()', () => {
+    let connections = [
+      SAMPLE_CONN,
+      {
+        id: 'conn-to-delete',
+        name: 'Obsolete Test DB',
+        engine: 'postgres',
+        host: 'localhost',
+        port: 5432,
+        database: 'old_db',
+        env: 'dev' as const,
+      },
+    ];
+
+    let deleteConfirmTarget: ConnectionProfile | null = null;
+
+    // Simulate clicking delete button: sets target without calling window.confirm
+    const onStartDelete = (conn: ConnectionProfile) => {
+      deleteConfirmTarget = conn;
+    };
+
+    onStartDelete(connections[1]);
+    assert.equal(deleteConfirmTarget?.id, 'conn-to-delete');
+    assert.equal(deleteConfirmTarget?.name, 'Obsolete Test DB');
+
+    // Simulate confirming delete via in-app modal
+    const onConfirmDelete = () => {
+      if (!deleteConfirmTarget) return;
+      const targetId = deleteConfirmTarget.id;
+      connections = connections.filter((c) => c.id !== targetId);
+      deleteConfirmTarget = null;
+    };
+
+    onConfirmDelete();
+    assert.equal(connections.length, 1);
+    assert.equal(connections[0].id, 'conn-prod-vigo-1');
+    assert.equal(deleteConfirmTarget, null);
+  });
 });
+
 

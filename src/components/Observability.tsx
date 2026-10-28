@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { Activity, Database, Zap, Cpu, Server } from 'lucide-react';
 import { HeartbeatDot } from './HeartbeatDot';
@@ -6,11 +6,16 @@ import { BorderChase } from './BorderChase';
 
 export const Observability: React.FC = () => {
   const { processes, killProcess, showToast, heartbeatMetrics, activeConnection } = useAppStore();
+  const [confirmPid, setConfirmPid] = useState<number | null>(null);
 
   const handleKill = (pid: number) => {
-    if (confirm(`⚠️ Terminate query process PID ${pid} via pg_cancel_backend()?`)) {
+    if (confirmPid === pid) {
       killProcess(pid);
       showToast(`✓ Process PID ${pid} cancelled! Lock released.`);
+      setConfirmPid(null);
+    } else {
+      setConfirmPid(pid);
+      setTimeout(() => setConfirmPid(null), 3000);
     }
   };
 
@@ -180,9 +185,13 @@ export const Observability: React.FC = () => {
                 <td className="p-2.5 pr-4 text-right select-none">
                   <button
                     onClick={() => handleKill(proc.pid)}
-                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] rounded-lg shadow-2xs transition active:scale-95 cursor-pointer"
+                    className={`px-2.5 py-1 text-white font-bold text-[11px] rounded-lg shadow-2xs transition active:scale-95 cursor-pointer ${
+                      confirmPid === proc.pid
+                        ? 'bg-rose-700 ring-2 ring-rose-400 animate-pulse'
+                        : 'bg-rose-600 hover:bg-rose-500'
+                    }`}
                   >
-                    Kill Query
+                    {confirmPid === proc.pid ? 'Confirm Kill?' : 'Kill Query'}
                   </button>
                 </td>
               </tr>
