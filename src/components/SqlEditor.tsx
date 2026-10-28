@@ -1033,27 +1033,8 @@ export const SqlEditor: React.FC = () => {
             )}
           </div>
 
-          {/* Right: [ History ] [ No limit ⌵ ] [ Beautify ⌘I ⌵ ] [ Run Current ⌘↵ ⌵ ] */}
+          {/* Right: [ No limit ⌵ ] [ Beautify ⌘I ⌵ ] [ Run Current ⌘↵ ⌵ ] */}
           <div className="flex items-center space-x-2">
-            {/* History Toggle Button */}
-            <button
-              onClick={() => setResultsSubTab(resultsSubTab === 'history' ? 'data' : 'history')}
-              className={`h-6.5 px-2.5 rounded-md border text-xs font-medium flex items-center space-x-1.5 transition cursor-pointer shadow-xs ${
-                resultsSubTab === 'history'
-                  ? 'bg-sky-500 text-white border-sky-400 font-semibold'
-                  : 'bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border-slate-300 dark:border-white/10'
-              }`}
-              title="Toggle Query History (⌘H)"
-            >
-              <Clock className="w-3 h-3 text-sky-400" />
-              <span>History</span>
-              {history.length > 0 && (
-                <span className="text-[10px] font-mono px-1 py-0.2 rounded-full bg-black/20 dark:bg-white/15">
-                  {history.length}
-                </span>
-              )}
-            </button>
-
             {/* Limit Selector */}
             <div className="relative" ref={limitMenuRef}>
               <div className="inline-flex items-center bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/10 rounded-md text-xs font-medium transition shadow-xs overflow-hidden h-6.5">

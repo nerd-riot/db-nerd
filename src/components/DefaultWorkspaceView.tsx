@@ -181,7 +181,7 @@ export const DefaultWorkspaceView: React.FC = () => {
           {/* Quick Actions Bar */}
           <div className="grid grid-cols-2 gap-3 w-full">
             <button
-              onClick={() => setConnectionModalOpen(true)}
+              onClick={() => setConnectionModalOpen(true, 'catalog')}
               className="p-3.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white flex items-center justify-between transition-all duration-150 cursor-pointer group shadow-md shadow-sky-500/20 active:scale-[0.98]"
             >
               <div className="flex items-center space-x-3 text-left">
@@ -197,7 +197,7 @@ export const DefaultWorkspaceView: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setConnectionModalOpen(true)}
+              onClick={() => setConnectionModalOpen(true, 'file')}
               className="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 flex items-center justify-between transition-all duration-150 cursor-pointer group shadow-2xs text-left active:scale-[0.98]"
             >
               <div className="flex items-center space-x-3 text-left">

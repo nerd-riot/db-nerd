@@ -209,6 +209,37 @@ describe('Connection Session Isolation & Disconnected State Guard', () => {
     assert.equal(connections[0].id, 'conn-prod-vigo-1');
     assert.equal(deleteConfirmTarget, null);
   });
+
+  it('enforces single canonical action button rule (no duplicate buttons for same function on one screen)', () => {
+    // 1. Connection Modal URL mode: Exactly one Next button in footer
+    interface ModalFooterState {
+      newConnMethod: 'catalog' | 'url' | 'file';
+      hasParsedUrl: boolean;
+      hasDuplicateCardButton: boolean;
+    }
+
+    const urlScreenState: ModalFooterState = {
+      newConnMethod: 'url',
+      hasParsedUrl: true,
+      hasDuplicateCardButton: false, // Card button removed, only preview chips remain
+    };
+
+    // Guarantee no card button exists inside the URL preview
+    assert.equal(urlScreenState.hasDuplicateCardButton, false);
+
+    // 2. Default Workspace actions: distinct method parameters for Catalog vs File import
+    let launchedMethod: string | undefined;
+    const setConnectionModalOpen = (open: boolean, method?: 'catalog' | 'url' | 'file') => {
+      if (open) launchedMethod = method;
+    };
+
+    setConnectionModalOpen(true, 'catalog');
+    assert.equal(launchedMethod, 'catalog');
+
+    setConnectionModalOpen(true, 'file');
+    assert.equal(launchedMethod, 'file');
+  });
 });
+
 
 

@@ -124,7 +124,8 @@ interface AppState {
   createDatabase: (dbName: string) => void;
 
   isConnectionModalOpen: boolean;
-  setConnectionModalOpen: (open: boolean) => void;
+  connectionModalInitialMethod?: 'catalog' | 'url' | 'file';
+  setConnectionModalOpen: (open: boolean, method?: 'catalog' | 'url' | 'file') => void;
 
   reconnectModalOpen: boolean;
   setReconnectModalOpen: (open: boolean) => void;
@@ -2070,7 +2071,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   isConnectionModalOpen: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modal') === 'connection') || INITIAL_CONNECTIONS.length === 0,
-  setConnectionModalOpen: (open) => set({ isConnectionModalOpen: open }),
+  connectionModalInitialMethod: undefined,
+  setConnectionModalOpen: (open, method) => set({ isConnectionModalOpen: open, connectionModalInitialMethod: method }),
 
   reconnectModalOpen: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modal') === 'disconnected',
   setReconnectModalOpen: (open) => set({ reconnectModalOpen: open }),

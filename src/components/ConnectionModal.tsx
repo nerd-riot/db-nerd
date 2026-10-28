@@ -130,6 +130,7 @@ export const ConnectionModal = () => {
     reorderConnectionGroups,
     moveConnection,
     showToast,
+    connectionModalInitialMethod,
   } = useAppStore();
 
   const [selectedConnId, setSelectedConnId] = useState<string | null>(activeConnection?.id || null);
@@ -138,6 +139,14 @@ export const ConnectionModal = () => {
   const [selectedCategory, setSelectedCategory] = useState<ConnectorCategory>('all');
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [newConnMethod, setNewConnMethod] = useState<'catalog' | 'url' | 'file'>('catalog');
+
+  useEffect(() => {
+    if (isConnectionModalOpen && connectionModalInitialMethod) {
+      setNewConnMethod(connectionModalInitialMethod);
+      setIsCreatingNew(true);
+      setCreationStep('select-engine');
+    }
+  }, [isConnectionModalOpen, connectionModalInitialMethod]);
   const [urlInputValue, setUrlInputValue] = useState('');
   const [parsedUrlResult, setParsedUrlResult] = useState<ParsedConnectionUrl | null>(null);
   const [urlParseError, setUrlParseError] = useState<string | null>(null);
@@ -885,17 +894,6 @@ export const ConnectionModal = () => {
 
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => {
-                handleStartNewConnection();
-                setNewConnMethod('file');
-              }}
-              className="px-2.5 py-1 bg-purple-50 dark:bg-purple-500/15 hover:bg-purple-100 dark:hover:bg-purple-500/25 border border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-semibold transition active:scale-95 cursor-pointer flex items-center space-x-1.5"
-              title="Import connections from TablePlus, DBeaver, pgAdmin or JSON files"
-            >
-              <FileCode className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-              <span>Import File / Tools</span>
-            </button>
-            <button
               onClick={() => setConnectionModalOpen(false)}
               className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition active:scale-95 cursor-pointer"
             >
@@ -1027,14 +1025,6 @@ export const ConnectionModal = () => {
                     >
                       <FolderPlus className="w-3.5 h-3.5" />
                       <span>Create First Group</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStartNewConnection()}
-                      className="w-full py-1.5 px-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition active:scale-95 cursor-pointer flex items-center justify-center space-x-1.5"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>New Connection</span>
                     </button>
                   </div>
                 </div>
@@ -1702,14 +1692,10 @@ export const ConnectionModal = () => {
                               </div>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={handleApplyUrlToForm}
-                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer flex items-center space-x-1.5"
-                            >
-                              <span>Continue to Connection Info</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center space-x-1.5 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                              <span>Ready to configure</span>
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-emerald-200 dark:border-emerald-500/20 text-[11px] font-mono">
@@ -2534,16 +2520,39 @@ export const ConnectionModal = () => {
         <div className="h-14 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 px-5 flex items-center justify-between select-none">
           {isCreatingNew && creationStep === 'select-engine' ? (
             <>
-              <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
-                <span>Selected Engine:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs">
-                  <ConnectorIcon engine={formData.engine} size="xs" />
-                  <span>{CONNECTOR_METADATA[formData.engine]?.label || formData.engine}</span>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ({getCategoryLabel(CONNECTOR_METADATA[formData.engine]?.category)})
+              {newConnMethod === 'file' ? (
+                <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
+                  <FileCode className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span>
+                    {importedFileItems.length > 0
+                      ? `Discovered ${importedFileItems.length} connection(s) from ${importedFileName || 'file'}`
+                      : 'Drop export file (*.tableplusconnection, *.json) to import'}
                   </span>
-                </span>
-              </div>
+                </div>
+              ) : newConnMethod === 'url' ? (
+                <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
+                  <span>Detected Engine:</span>
+                  {parsedUrlResult ? (
+                    <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <ConnectorIcon engine={parsedUrlResult.engine} size="xs" />
+                      <span>{CONNECTOR_METADATA[parsedUrlResult.engine]?.label || parsedUrlResult.engine}</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 italic">Paste a valid connection URL above</span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
+                  <span>Selected Engine:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                    <ConnectorIcon engine={formData.engine} size="xs" />
+                    <span>{CONNECTOR_METADATA[formData.engine]?.label || formData.engine}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      ({getCategoryLabel(CONNECTOR_METADATA[formData.engine]?.category)})
+                    </span>
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center space-x-2">
                 <button
@@ -2560,14 +2569,43 @@ export const ConnectionModal = () => {
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setCreationStep('configure')}
-                  className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer flex items-center space-x-1.5"
-                >
-                  <span>Next: Connection Info</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                {newConnMethod === 'file' ? (
+                  importedFileItems.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={handleBatchImportAll}
+                      className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer flex items-center space-x-1.5"
+                    >
+                      <span>Import All ({importedFileItems.length})</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer flex items-center space-x-1.5"
+                    >
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      <span>Browse File...</span>
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    disabled={newConnMethod === 'url' && !parsedUrlResult}
+                    onClick={() => {
+                      if (newConnMethod === 'url' && parsedUrlResult) {
+                        handleApplyUrlToForm();
+                      } else {
+                        setCreationStep('configure');
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer flex items-center space-x-1.5"
+                  >
+                    <span>Next: Connection Info</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </>
           ) : (
