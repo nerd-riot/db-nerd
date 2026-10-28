@@ -483,6 +483,9 @@ const getInitialSettings = (): UserSettings => {
         parsed.themeMode = initialMode;
         parsed.appTheme = initialTheme;
       }
+      if (!parsed.toastPosition) {
+        parsed.toastPosition = 'bottom-right';
+      }
       return parsed;
     }
   } catch {}
@@ -494,6 +497,7 @@ const getInitialSettings = (): UserSettings => {
     autoFormatSql: false,
     confirmDestructive: true,
     defaultQueryLimit: 100,
+    toastPosition: 'bottom-right',
   };
 };
 

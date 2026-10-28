@@ -51,6 +51,7 @@ export type AppThemeId =
   | 'github-dark'
   | 'solarized-dark';
 export type RowDensity = 'compact' | 'normal' | 'relaxed';
+export type ToastPosition = 'bottom-right' | 'top-right';
 
 export interface UserSettings {
   themeMode: ThemeMode;
@@ -60,6 +61,7 @@ export interface UserSettings {
   autoFormatSql: boolean;
   confirmDestructive: boolean;
   defaultQueryLimit: number;
+  toastPosition?: ToastPosition;
 }
 
 export interface ConnectionGroup {

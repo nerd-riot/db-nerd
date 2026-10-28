@@ -755,7 +755,7 @@ export function App() {
         )}
       </div>
 
-      {/* Global Floating Toast - Modern Top-Center Mac Pill */}
+      {/* Global Floating Toast - Positioned at Bottom-Right (or Top-Right) to never obstruct tabs */}
       {(toast || toastMessage) && (() => {
         const activeToast = toast || {
           message: toastMessage || '',
@@ -771,10 +771,15 @@ export function App() {
         const isWarning = activeToast.type === 'warning';
         const isInfo = activeToast.type === 'info';
 
+        const isTopRight = settings.toastPosition === 'top-right';
+        const positionClass = isTopRight
+          ? 'top-12 right-5 slide-in-from-top-2'
+          : 'bottom-5 right-5 slide-in-from-bottom-2';
+
         return (
-          <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none select-none max-w-[90vw] animate-in fade-in slide-in-from-top-4 duration-150">
+          <div className={`fixed ${positionClass} z-[9999] pointer-events-none select-none max-w-[90vw] sm:max-w-md animate-in fade-in duration-150`}>
             <div
-              className={`px-4 py-2 rounded-xl shadow-2xl border flex items-center space-x-2.5 text-xs font-medium backdrop-blur-xl ring-1 ${
+              className={`px-3.5 py-2 rounded-xl shadow-2xl border flex items-center space-x-2.5 text-xs font-medium backdrop-blur-xl ring-1 pointer-events-auto transition-all ${
                 isError
                   ? 'bg-rose-950/90 dark:bg-rose-950/95 text-rose-100 border-rose-500/50 ring-rose-500/30 shadow-rose-950/40'
                   : isWarning
@@ -805,7 +810,14 @@ export function App() {
                   <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
                 )}
               </div>
-              <span className="font-sans leading-relaxed text-xs">{activeToast.message}</span>
+              <span className="font-sans leading-relaxed text-xs flex-1">{activeToast.message}</span>
+              <button
+                onClick={() => useAppStore.setState({ toast: null, toastMessage: null })}
+                className="p-0.5 hover:bg-white/10 rounded text-slate-400 hover:text-slate-200 transition cursor-pointer shrink-0 ml-1"
+                title="Dismiss"
+              >
+                <X className="w-3 h-3" />
+              </button>
             </div>
           </div>
         );

@@ -13,6 +13,7 @@ import {
   Sparkles,
   ShieldAlert,
   Palette,
+  Bell,
 } from 'lucide-react';
 import { RowDensity } from '../types';
 import { APP_THEMES } from '../themes/themeRegistry';
@@ -41,6 +42,7 @@ export const SettingsModal: React.FC = () => {
         autoFormatSql: false,
         confirmDestructive: true,
         defaultQueryLimit: 100,
+        toastPosition: 'bottom-right',
       });
       showToast('Settings reset to defaults');
     }
@@ -337,6 +339,48 @@ export const SettingsModal: React.FC = () => {
                       {size}px
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Notification Toast Position */}
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800/80">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 rounded-lg">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-200">Notification Toast Alert Position</h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Position where system notifications and query result alerts appear.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {[
+                    { id: 'bottom-right', label: 'Bottom Right (Recommended)', desc: 'Keeps top tab bar completely unobstructed' },
+                    { id: 'top-right', label: 'Top Right', desc: 'Top right corner, avoids covering tabs' },
+                  ].map((p) => {
+                    const isSelected = (settings.toastPosition || 'bottom-right') === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          updateSettings({ toastPosition: p.id as any });
+                          showToast(`Notification position set to ${p.label}`);
+                        }}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                          isSelected
+                            ? 'border-sky-500 bg-sky-50 dark:bg-sky-500/10 text-sky-800 dark:text-sky-200 font-semibold shadow-xs'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold">{p.label}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />}
+                        </div>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">{p.desc}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

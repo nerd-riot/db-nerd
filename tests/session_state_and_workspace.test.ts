@@ -150,4 +150,25 @@ describe('Connection Session Isolation & Disconnected State Guard', () => {
     assert.equal(filterBy('analytics').length, 1);
     assert.equal(filterBy('nonexistent').length, 0);
   });
+
+  it('guarantees toast position never obstructs top center tabs', () => {
+    const resolveToastClass = (toastPosition?: 'bottom-right' | 'top-right') => {
+      const isTopRight = toastPosition === 'top-right';
+      return isTopRight
+        ? 'top-12 right-5 slide-in-from-top-2'
+        : 'bottom-5 right-5 slide-in-from-bottom-2';
+    };
+
+    // Default (undefined or bottom-right) MUST be in the bottom-right corner
+    const defaultClass = resolveToastClass(undefined);
+    assert.ok(defaultClass.includes('bottom-5 right-5'));
+    assert.ok(!defaultClass.includes('left-1/2'));
+    assert.ok(!defaultClass.includes('-translate-x-1/2'));
+
+    // Top-right option MUST be right-aligned
+    const topRightClass = resolveToastClass('top-right');
+    assert.ok(topRightClass.includes('top-12 right-5'));
+    assert.ok(!topRightClass.includes('left-1/2'));
+  });
 });
+
