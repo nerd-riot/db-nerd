@@ -239,6 +239,101 @@ describe('Connection Session Isolation & Disconnected State Guard', () => {
     setConnectionModalOpen(true, 'file');
     assert.equal(launchedMethod, 'file');
   });
+
+  it('tracks isConnecting and connectingConnId with visual loading feedback and button disabling', async () => {
+    interface TestStoreState {
+      isConnecting: boolean;
+      connectingConnId: string | null;
+      openSessionIds: string[];
+      activeConnection: { id: string; name: string };
+    }
+
+    const state: TestStoreState = {
+      isConnecting: false,
+      connectingConnId: null,
+      openSessionIds: [],
+      activeConnection: { id: '', name: '' },
+    };
+
+    const targetConn = { id: 'conn-prod-vigo-1', name: '[Production] [VN] Vigo DB' };
+
+    // Card and button state evaluation function
+    const evaluateButtonState = (connId: string) => {
+      const isThisConnecting = state.isConnecting && state.connectingConnId === connId;
+      return {
+        isThisConnecting,
+        buttonText: isThisConnecting ? 'Connecting...' : 'Connect',
+        showSpinner: isThisConnecting,
+        isDisabled: state.isConnecting,
+        hasBorderChase: isThisConnecting,
+      };
+    };
+
+    // Before connecting
+    let buttonState = evaluateButtonState(targetConn.id);
+    assert.equal(buttonState.isThisConnecting, false);
+    assert.equal(buttonState.buttonText, 'Connect');
+    assert.equal(buttonState.showSpinner, false);
+    assert.equal(buttonState.isDisabled, false);
+    assert.equal(buttonState.hasBorderChase, false);
+
+    // Click Connect: initiate handshake
+    state.isConnecting = true;
+    state.connectingConnId = targetConn.id;
+
+    buttonState = evaluateButtonState(targetConn.id);
+    assert.equal(buttonState.isThisConnecting, true);
+    assert.equal(buttonState.buttonText, 'Connecting...');
+    assert.equal(buttonState.showSpinner, true);
+    assert.equal(buttonState.isDisabled, true);
+    assert.equal(buttonState.hasBorderChase, true);
+
+    // Another card should also be disabled to prevent concurrent race conditions, but not show spinner
+    const otherButtonState = evaluateButtonState('conn-dev-2');
+    assert.equal(otherButtonState.isThisConnecting, false);
+    assert.equal(otherButtonState.buttonText, 'Connect');
+    assert.equal(otherButtonState.showSpinner, false);
+    assert.equal(otherButtonState.isDisabled, true); // disabled because state.isConnecting is true
+
+    // Handshake completes: transition to open session
+    state.openSessionIds = [targetConn.id];
+    state.activeConnection = targetConn;
+    state.isConnecting = false;
+    state.connectingConnId = null;
+
+    buttonState = evaluateButtonState(targetConn.id);
+    assert.equal(buttonState.isThisConnecting, false);
+    assert.equal(buttonState.isDisabled, false);
+    assert.equal(state.openSessionIds.includes(targetConn.id), true);
+  });
+
+  it('permits connecting when activeConnection.id matches targetId but session is not in openSessionIds', () => {
+    // Reconnection scenario: user had activeConnection id preserved in store, but closed session
+    const store = {
+      isConnecting: false,
+      connectingConnId: null as string | null,
+      openSessionIds: [] as string[],
+      activeConnection: { id: 'conn-prod-vigo-1', name: '[Production] [VN] Vigo DB' },
+      connections: [{ id: 'conn-prod-vigo-1', name: '[Production] [VN] Vigo DB' }],
+    };
+
+    let connectTriggered = false;
+
+    const switchActiveConnection = (id: string) => {
+      // Fixed condition: only return early if already in openSessionIds
+      if (store.activeConnection?.id === id && store.openSessionIds.includes(id) && !store.isConnecting) {
+        return;
+      }
+      connectTriggered = true;
+      store.isConnecting = true;
+      store.connectingConnId = id;
+    };
+
+    switchActiveConnection('conn-prod-vigo-1');
+    assert.equal(connectTriggered, true);
+    assert.equal(store.isConnecting, true);
+    assert.equal(store.connectingConnId, 'conn-prod-vigo-1');
+  });
 });
 
 

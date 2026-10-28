@@ -14,6 +14,8 @@ export const LedMatrixBanner: React.FC<LedMatrixBannerProps> = ({ onOpenDatabase
     setConnectionModalOpen,
     selectedTable,
     isConnecting,
+    connectingConnId,
+    connections,
     isReconnecting,
     reconnectActiveConnection,
     networkSpeed,
@@ -29,6 +31,8 @@ export const LedMatrixBanner: React.FC<LedMatrixBannerProps> = ({ onOpenDatabase
 
   const currentTabState = sqlTabStates[activeTabId];
   const executionProgress = currentTabState?.executionProgress;
+
+  const connectingTargetConn = connections.find((c) => c.id === connectingConnId);
 
   const env = activeConnection.env; // 'prod' | 'staging' | 'dev'
 
@@ -218,7 +222,9 @@ export const LedMatrixBanner: React.FC<LedMatrixBannerProps> = ({ onOpenDatabase
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         className={`no-drag relative h-7 px-2.5 sm:px-3.5 rounded-full text-xs font-mono font-semibold transition-all active:scale-[0.98] flex items-center justify-between overflow-hidden cursor-pointer border min-w-0 max-w-full w-auto group shadow-2xs dark:shadow-md ${
-          isFailed
+          isConnecting
+            ? 'bg-sky-950/70 border-sky-400 text-sky-100 shadow-md ring-1 ring-sky-400/40'
+            : isFailed
             ? 'bg-[#c53030] dark:bg-[#c53030] border-red-400 text-white hover:bg-[#b02b2b]'
             : env === 'prod'
             ? 'bg-[#c53030] dark:bg-[#c53030] border-red-500/80 text-white hover:bg-[#b02b2b] shadow-sm'
@@ -303,11 +309,29 @@ export const LedMatrixBanner: React.FC<LedMatrixBannerProps> = ({ onOpenDatabase
             {/* TablePlus Standard Formatted Connection Banner */}
             <div className="flex items-center space-x-1 sm:space-x-1.5 truncate text-[11px] min-w-0 flex-1">
               {hasNoSessions ? (
+                isConnecting ? (
+                  <>
+                    <span className="font-extrabold tracking-wider shrink-0 text-sky-400 animate-pulse">CONNECTING</span>
+                    <span className="opacity-40 shrink-0">|</span>
+                    <span className="truncate font-bold text-sky-300">
+                      Connecting to &quot;{connectingTargetConn?.name || 'database'}&quot;...
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-extrabold tracking-wider shrink-0 text-slate-400 dark:text-slate-500">STANDBY</span>
+                    <span className="opacity-40 shrink-0">|</span>
+                    <span className="truncate font-bold text-slate-600 dark:text-slate-300">
+                      No Active Connection • Tap to open (⌘K)
+                    </span>
+                  </>
+                )
+              ) : isConnecting ? (
                 <>
-                  <span className="font-extrabold tracking-wider shrink-0 text-slate-400 dark:text-slate-500">STANDBY</span>
+                  <span className="font-extrabold tracking-wider shrink-0 text-sky-400 animate-pulse">CONNECTING</span>
                   <span className="opacity-40 shrink-0">|</span>
-                  <span className="truncate font-bold text-slate-600 dark:text-slate-300">
-                    No Active Connection • Tap to open (⌘K)
+                  <span className="truncate font-bold text-sky-200">
+                    Connecting to &quot;{connectingTargetConn?.name || activeConnection.name}&quot;...
                   </span>
                 </>
               ) : (

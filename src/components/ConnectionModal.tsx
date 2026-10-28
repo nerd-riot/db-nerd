@@ -32,6 +32,7 @@ import {
   UploadCloud,
   CheckCircle2,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { HeartbeatDot, HeartbeatColor } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
@@ -127,6 +128,7 @@ export const ConnectionModal = () => {
     updateConnection,
     deleteConnection,
     switchActiveConnection,
+    isConnecting,
     reorderConnectionGroups,
     moveConnection,
     showToast,
@@ -1174,9 +1176,9 @@ export const ConnectionModal = () => {
                                   onDrop={(e) => handleConnDrop(e, conn)}
                                   onClick={() => handleSelectConnection(conn)}
                                   onDoubleClick={() => {
+                                    if (isConnecting) return;
                                     switchActiveConnection(conn.id);
                                     setConnectionModalOpen(false);
-                                    showToast(`Connected to ${conn.name}`);
                                   }}
                                   onContextMenu={(e) => {
                                     e.preventDefault();
@@ -1296,9 +1298,9 @@ export const ConnectionModal = () => {
                                 onDrop={(e) => handleConnDrop(e, conn)}
                                 onClick={() => handleSelectConnection(conn)}
                                 onDoubleClick={() => {
+                                  if (isConnecting) return;
                                   switchActiveConnection(conn.id);
                                   setConnectionModalOpen(false);
-                                  showToast(`Connected to ${conn.name}`);
                                 }}
                                 onContextMenu={(e) => {
                                   e.preventDefault();
@@ -2679,26 +2681,43 @@ export const ConnectionModal = () => {
                 {isCreatingNew ? (
                   <button
                     type="button"
+                    disabled={isConnecting || isTesting}
                     onClick={handleSaveAndConnect}
-                    className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer"
+                    className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer disabled:cursor-not-allowed flex items-center space-x-1.5"
                   >
-                    Save &amp; Connect
+                    {isConnecting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Connecting...</span>
+                      </>
+                    ) : (
+                      <span>Save &amp; Connect</span>
+                    )}
                   </button>
                 ) : (
                   <>
                     <button
                       type="button"
+                      disabled={isConnecting || isTesting}
                       onClick={handleSaveOnly}
-                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer"
+                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
                     >
                       Save
                     </button>
                     <button
                       type="button"
+                      disabled={isConnecting || isTesting}
                       onClick={handleSaveAndConnect}
-                      className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer"
+                      className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition shadow-xs active:scale-95 cursor-pointer disabled:cursor-not-allowed flex items-center space-x-1.5"
                     >
-                      Connect
+                      {isConnecting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Connecting...</span>
+                        </>
+                      ) : (
+                        <span>Connect</span>
+                      )}
                     </button>
                   </>
                 )}

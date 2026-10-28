@@ -19,6 +19,7 @@ import {
   Sparkles,
   RefreshCw,
   PanelLeftClose,
+  Loader2,
 } from 'lucide-react';
 import { getTablesForConnection, getTableSchema, getFunctionsForConnection } from '../data/schemas';
 import { ColumnDefinition } from '../types';
@@ -93,6 +94,7 @@ export const Sidebar = () => {
     tabs,
     activeTabId,
     openSessionIds,
+    isConnecting,
   } = useAppStore();
 
   const [sidebarTab, setSidebarTab] = useState<'items' | 'queries' | 'history'>('items');
@@ -253,23 +255,37 @@ export const Sidebar = () => {
         {/* Tab 1: Database Items (Functions & Tables) */}
         {sidebarTab === 'items' && (
           !hasActiveSession ? (
-            <div className="p-4 mx-1 my-6 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-center space-y-2.5 animate-in fade-in duration-200">
-              <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 mx-auto flex items-center justify-center border border-slate-200 dark:border-slate-800">
-                <Database className="w-4 h-4" />
+            isConnecting ? (
+              <div className="p-4 mx-1 my-6 rounded-xl border border-sky-400/40 dark:border-sky-500/30 bg-sky-50/50 dark:bg-sky-950/20 text-center space-y-2.5 animate-in fade-in duration-200">
+                <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-900/40 text-sky-500 mx-auto flex items-center justify-center border border-sky-300 dark:border-sky-700/60 shadow-2xs">
+                  <Loader2 className="w-4 h-4 animate-spin text-sky-500" />
+                </div>
+                <div className="space-y-0.5">
+                  <h3 className="text-xs font-semibold text-sky-900 dark:text-sky-200">Connecting...</h3>
+                  <p className="text-[10px] text-sky-600 dark:text-sky-400">
+                    Establishing database connection
+                  </p>
+                </div>
               </div>
-              <div className="space-y-0.5">
-                <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300">No Connection</h3>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                  Connect to view tables & functions
-                </p>
+            ) : (
+              <div className="p-4 mx-1 my-6 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-center space-y-2.5 animate-in fade-in duration-200">
+                <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 mx-auto flex items-center justify-center border border-slate-200 dark:border-slate-800">
+                  <Database className="w-4 h-4" />
+                </div>
+                <div className="space-y-0.5">
+                  <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300">No Connection</h3>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                    Connect to view tables & functions
+                  </p>
+                </div>
+                <button
+                  onClick={() => setConnectionModalOpen(true)}
+                  className="w-full py-1.5 px-2 bg-sky-50 dark:bg-sky-500/10 hover:bg-sky-100 dark:hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/30 rounded-lg text-xs font-medium transition cursor-pointer flex items-center justify-center space-x-1"
+                >
+                  <span>Connect (⌘K)</span>
+                </button>
               </div>
-              <button
-                onClick={() => setConnectionModalOpen(true)}
-                className="w-full py-1.5 px-2 bg-sky-50 dark:bg-sky-500/10 hover:bg-sky-100 dark:hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/30 rounded-lg text-xs font-medium transition cursor-pointer flex items-center justify-center space-x-1"
-              >
-                <span>Connect (⌘K)</span>
-              </button>
-            </div>
+            )
           ) : (
           <div className="space-y-1">
             {/* Functions Group */}

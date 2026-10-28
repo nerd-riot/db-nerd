@@ -13,6 +13,7 @@ import {
   Trash2,
   Cpu,
   Lock,
+  Loader2,
 } from 'lucide-react';
 import { HeartbeatDot } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
@@ -31,6 +32,7 @@ export const DefaultWorkspaceView: React.FC = () => {
     openNewQueryTab,
     openTableGridTab,
     isConnecting,
+    connectingConnId,
     triggerConnectingAnimation,
     showToast,
   } = useAppStore();
@@ -255,16 +257,36 @@ export const DefaultWorkspaceView: React.FC = () => {
               <div className="grid grid-cols-1 gap-2">
                 {filteredConnections.map((conn) => {
                   const envColorClass = getEnvBadgeColor(conn.env);
+                  const isThisConnecting = isConnecting && connectingConnId === conn.id;
+
                   return (
                     <div
                       key={conn.id}
-                      onClick={() => switchActiveConnection(conn.id)}
-                      className="group p-3 rounded-xl bg-white dark:bg-slate-900/90 hover:bg-sky-50/50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/50 flex items-center justify-between transition-all duration-150 cursor-pointer shadow-2xs active:scale-[0.99]"
+                      onClick={() => {
+                        if (isConnecting) return;
+                        switchActiveConnection(conn.id);
+                      }}
+                      className={`group p-3 rounded-xl bg-white dark:bg-slate-900/90 border flex items-center justify-between transition-all duration-150 relative overflow-hidden ${
+                        isThisConnecting
+                          ? 'border-sky-400 dark:border-sky-500/80 shadow-md shadow-sky-500/10 ring-1 ring-sky-400/40 bg-sky-50/30 dark:bg-slate-850/80'
+                          : isConnecting
+                          ? 'opacity-60 border-slate-200 dark:border-slate-800'
+                          : 'hover:bg-sky-50/50 dark:hover:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/50 cursor-pointer shadow-2xs active:scale-[0.99]'
+                      }`}
                     >
+                      {/* Apple-grade Border Chase Highlight Runner when connecting */}
+                      {isThisConnecting && (
+                        <BorderChase color="sky" dual={true} speed="fast" borderWidth={2} glow={true} />
+                      )}
+
                       {/* Left: Engine Icon & Connection Info */}
-                      <div className="flex items-center space-x-3 min-w-0 flex-1">
+                      <div className="flex items-center space-x-3 min-w-0 flex-1 relative z-1">
                         <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform border border-slate-200 dark:border-slate-700/60">
-                          <ConnectorIcon engine={conn.engine} size="sm" />
+                          {isThisConnecting ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-sky-500" />
+                          ) : (
+                            <ConnectorIcon engine={conn.engine} size="sm" />
+                          )}
                         </div>
 
                         <div className="min-w-0 flex-1 text-left space-y-0.5">
@@ -294,21 +316,44 @@ export const DefaultWorkspaceView: React.FC = () => {
                       </div>
 
                       {/* Right: Actions */}
-                      <div className="flex items-center space-x-2 flex-shrink-0 pl-3">
-                        <button
-                          onClick={(e) => handleDeleteConnection(e, conn)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-                          title="Delete Connection"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="flex items-center space-x-2 flex-shrink-0 pl-3 relative z-1">
+                        {!isThisConnecting && (
+                          <button
+                            onClick={(e) => handleDeleteConnection(e, conn)}
+                            disabled={isConnecting}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                            title="Delete Connection"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
 
                         <button
-                          onClick={() => switchActiveConnection(conn.id)}
-                          className="h-7 px-3 bg-sky-50 dark:bg-sky-500/15 hover:bg-sky-600 dark:hover:bg-sky-500 text-sky-700 dark:text-sky-300 hover:text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all cursor-pointer border border-sky-300 dark:border-sky-500/30 hover:border-transparent active:scale-95 leading-none"
+                          disabled={isConnecting}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isConnecting) return;
+                            switchActiveConnection(conn.id);
+                          }}
+                          className={`h-7 px-3 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all leading-none ${
+                            isThisConnecting
+                              ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300 border border-sky-400/60 cursor-wait shadow-xs'
+                              : isConnecting
+                              ? 'opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
+                              : 'bg-sky-50 dark:bg-sky-500/15 hover:bg-sky-600 dark:hover:bg-sky-500 text-sky-700 dark:text-sky-300 hover:text-white border border-sky-300 dark:border-sky-500/30 hover:border-transparent active:scale-95 cursor-pointer'
+                          }`}
                         >
-                          <span>Connect</span>
-                          <ArrowRight className="w-3 h-3" />
+                          {isThisConnecting ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin text-sky-500" />
+                              <span className="font-bold">Connecting...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Connect</span>
+                              <ArrowRight className="w-3 h-3" />
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>

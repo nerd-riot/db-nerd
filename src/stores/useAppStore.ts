@@ -107,9 +107,10 @@ interface AppState {
   deleteConnection: (id: string) => void;
   reorderConnectionGroups: (sourceId: string, targetId: string, position: 'before' | 'after') => void;
   moveConnection: (connId: string, targetGroupId: string, targetConnId?: string, position?: 'before' | 'after') => void;
-  switchActiveConnection: (id: string) => void;
+  switchActiveConnection: (id: string) => Promise<void> | void;
 
   isConnecting: boolean;
+  connectingConnId: string | null;
   connectingPhase: string;
   connectingLogs: string[];
   networkSpeed: string;
@@ -1653,6 +1654,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAppMode: (mode) => set({ appMode: mode }),
 
   isConnecting: false,
+  connectingConnId: null,
   connectingPhase: '',
   connectingLogs: [],
   networkSpeed: '355 KB/s',
@@ -1663,13 +1665,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       isConnecting: true,
+      connectingConnId: conn.id,
       connectingPhase: `Resolving ${conn.host}:${conn.port}...`,
       networkSpeed: '128 KB/s',
       connectingLogs: [
         `[00.01s] ❯ Pinging target ${conn.host}:${conn.port} (${conn.engine.toUpperCase()})... OK (0.28ms)`,
       ],
     });
-
 
     await new Promise((r) => setTimeout(r, 160));
 
@@ -1706,9 +1708,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await new Promise((r) => setTimeout(r, 200));
 
-
     set((state) => ({
       isConnecting: false,
+      connectingConnId: null,
       connectingPhase: 'Connected',
       networkSpeed: '355 KB/s',
       connectingLogs: [
@@ -1915,12 +1917,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  switchActiveConnection: (id) => {
+  switchActiveConnection: async (id) => {
     const state = get();
-    if (state.activeConnection?.id === id) return;
+    // Guard against duplicate concurrent connection triggers to the same target
+    if (state.isConnecting && state.connectingConnId === id) return;
 
     const targetConn = state.connections.find((c) => c.id === id);
     if (!targetConn) return;
+
+    // If already active connection AND session is currently open AND not connecting, nothing to switch
+    if (state.activeConnection?.id === id && state.openSessionIds.includes(id) && !state.isConnecting) {
+      return;
+    }
+
+    const isAlreadyOpen = state.openSessionIds.includes(id);
+
+    // Provide immediate visual feedback across cards, buttons, banners
+    set({
+      isConnecting: true,
+      connectingConnId: id,
+      connectingPhase: `Connecting to ${targetConn.name}...`,
+    });
+
+    state.showToast(`⚡ Connecting to "${targetConn.name}"...`);
 
     // 1. Snapshot current active session state
     const currentId = state.activeConnection?.id;
@@ -1944,11 +1963,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       structureSearchColumn: state.structureSearchColumn,
     };
 
-    persistSessionTabs(currentId, state.tabs, state.activeTabId, state.selectedTable, state.sqlTabStates);
+    if (currentId) {
+      persistSessionTabs(currentId, state.tabs, state.activeTabId, state.selectedTable, state.sqlTabStates);
+    }
 
     const nextSessions = {
       ...state.sessions,
-      [currentId]: currentSession,
+      ...(currentId ? { [currentId]: currentSession } : {}),
     };
 
     // 2. Ensure target connection is in openSessionIds
@@ -1963,7 +1984,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextSessions[id] = targetSession;
     }
 
-    // 2/ nếu previous có mở tab thì mở lại, nhưng không execute query, cực kỳ nguy hiểm
+    // Reset executing state on restored query tabs
     const safeSqlStates: Record<string, SqlTabState> = {};
     for (const [k, v] of Object.entries(targetSession.sqlTabStates || {})) {
       safeSqlStates[k] = { ...v, isExecuting: false };
@@ -1973,12 +1994,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextAppMode = nextEngine === 'redis' ? 'redis' : nextEngine === 'snowflake' ? 'snowflake' : 'sql';
     const targetActiveTab = targetSession.tabs.find((t) => t.id === targetSession.activeTabId) || targetSession.tabs[0];
 
+    // If opening a new connection from Home Page / Modal, run the connection handshake animation
+    if (!isAlreadyOpen) {
+      await get().triggerConnectingAnimation(id);
+    }
+
     // 4. Update store with fully isolated session state
     set({
       openSessionIds: nextOpenSessionIds,
       sessions: nextSessions,
       activeConnection: { ...targetConn, active: true },
-      connections: state.connections.map((c) => ({ ...c, active: c.id === id })),
+      connections: get().connections.map((c) => ({ ...c, active: c.id === id })),
       appMode: nextAppMode,
 
       // Restored isolated workspace session
@@ -1999,10 +2025,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedRowData: targetSession.selectedRowData,
       selectedStructureColumn: targetSession.selectedStructureColumn,
       structureSearchColumn: targetSession.structureSearchColumn,
+      isConnecting: false,
+      connectingConnId: null,
     });
 
-    state.showToast(`⚡ Connecting to "${targetConn.name}"...`);
-    get().triggerConnectingAnimation(id);
     get().fetchLiveTables(targetConn);
     get().fetchLiveFunctions(targetConn);
     get().fetchLiveDatabases(targetConn);
