@@ -21,6 +21,8 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
+        "theme": "Dark",
+        "backgroundColor": "#0a0f1d",
         "trafficLightPosition": {
           "x": 16,
           "y": 21
