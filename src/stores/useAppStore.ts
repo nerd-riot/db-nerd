@@ -2680,18 +2680,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     const offset = Math.max(0, currentPage * currentPageSize);
 
     try {
-      const hasCustomFilter = isFilterBarOpen && (Boolean(filterWhereText.trim()) || Boolean(filterOrderByText.trim()));
+      const activeOrderBy = filterOrderByText.trim();
+      const activeWhere = (isFilterBarOpen && filterWhereText.trim()) ? filterWhereText.trim() : '';
+      const hasCustomFilter = Boolean(activeWhere) || Boolean(activeOrderBy);
       const sql = buildPaginatedSelectSql({
         tableName: targetTable,
         engine: activeConnection.engine,
         page: currentPage,
         pageSize: currentPageSize,
-        whereText: hasCustomFilter ? filterWhereText : '',
-        orderByText: hasCustomFilter ? filterOrderByText : '',
+        whereText: activeWhere,
+        orderByText: activeOrderBy,
       });
 
       let res = await executeRealQuery(activeConnection, sql);
-      // Fallback if custom filter failed
+      // Fallback if custom filter or order failed
       if (!res.success && hasCustomFilter && activeConnection.engine !== 'redis') {
         const fallbackSql = buildPaginatedSelectSql({
           tableName: targetTable,
@@ -2807,19 +2809,41 @@ export const useAppStore = create<AppState>((set, get) => ({
     const targetRows = getDefaultRowsForTable(targetTable, truncatedTables[targetTable]);
     const duration = +(Math.random() * 0.8 + 0.8).toFixed(1);
 
+    let sortedMockRows = [...targetRows];
+    const activeOrderBy = filterOrderByText.trim();
+    if (activeOrderBy) {
+      const match = activeOrderBy.match(/^["`]?([a-zA-Z0-9_]+)["`]?\s*(ASC|DESC)?$/i);
+      if (match) {
+        const col = match[1];
+        const dir = (match[2] || 'ASC').toUpperCase();
+        sortedMockRows.sort((a, b) => {
+          const va = a[col];
+          const vb = b[col];
+          if (va === vb) return 0;
+          if (va === null || va === undefined) return 1;
+          if (vb === null || vb === undefined) return -1;
+          if (typeof va === 'number' && typeof vb === 'number') {
+            return dir === 'ASC' ? va - vb : vb - va;
+          }
+          const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+          return dir === 'ASC' ? cmp : -cmp;
+        });
+      }
+    }
+
     set({
       selectedTable: targetTable,
       selectedRowData: null,
-      rows: cloneGridRows(targetRows),
-      originalRows: cloneGridRows(targetRows),
+      rows: cloneGridRows(sortedMockRows),
+      originalRows: cloneGridRows(sortedMockRows),
       pendingEditsCount: 0,
       gridPage: 0,
-      gridTotalCount: targetRows.length,
+      gridTotalCount: sortedMockRows.length,
       gridIsEstimatedCount: false,
       isReloading: false,
     });
 
-    showToast(`⚡ Refreshed table '${targetTable}' (${targetRows.length} records • ${duration}ms)`);
+    showToast(`⚡ Refreshed table '${targetTable}' (${sortedMockRows.length} records • ${duration}ms)`);
   },
 
   isSidebarOpen: true,

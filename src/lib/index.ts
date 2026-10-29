@@ -7,3 +7,4 @@ export * from './storage/historyPersistence';
 export * from './grid/rowEditing';
 export * from './grid/columnOrdering';
 export * from './editor/sqlAutocomplete';
+export * from './grid/columnWidth';

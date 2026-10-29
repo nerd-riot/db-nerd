@@ -9,6 +9,7 @@ export interface GridRowItemProps {
   isSelected: boolean;
   isEven: boolean;
   activeCols: ColumnDefinition[];
+  columnWidths?: Record<string, number>;
   editingCellField: string | null;
   wrapText: boolean;
   onRowClick: (row: GridRow, e: React.MouseEvent) => void;
@@ -25,6 +26,7 @@ export const GridRowItem = memo<GridRowItemProps>(
     isSelected,
     isEven,
     activeCols,
+    columnWidths,
     editingCellField,
     wrapText,
     onRowClick,
@@ -44,10 +46,13 @@ export const GridRowItem = memo<GridRowItemProps>(
             ? 'bg-[#fcfdfd] dark:bg-slate-900/40 hover:bg-[#f0f7ff] dark:hover:bg-slate-800/50 text-slate-800 dark:text-slate-200'
             : 'bg-white dark:bg-slate-950/60 hover:bg-[#f0f7ff] dark:hover:bg-slate-800/50 text-slate-800 dark:text-slate-200'
         }`}
-        style={{ height: '28px' }}
+        style={{ height: wrapText ? undefined : '28px' }}
       >
         {/* Row Index */}
-        <td className="px-3 py-1 border-r border-slate-200 dark:border-slate-800/60 text-center text-slate-500 dark:text-slate-500 select-none font-medium text-[11px] h-7">
+        <td
+          style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+          className="px-2 py-1 border-r border-slate-200 dark:border-slate-800/60 text-center text-slate-500 dark:text-slate-500 select-none font-medium text-[11px] h-7 align-middle"
+        >
           {absoluteIndex + 1}
         </td>
 
@@ -56,22 +61,45 @@ export const GridRowItem = memo<GridRowItemProps>(
           const val = row[col.name];
           const isEditing = editingCellField === col.name;
           const isDirty = row.dirtyFields?.[col.name];
+          const colWidth = columnWidths?.[col.name];
+
+          const cellStyle: React.CSSProperties = {
+            width: colWidth ? `${colWidth}px` : undefined,
+            minWidth: colWidth ? `${colWidth}px` : undefined,
+            maxWidth: colWidth ? `${colWidth}px` : undefined,
+          };
+
+          const rawTitle = val !== null && val !== undefined
+            ? typeof val === 'object'
+              ? safeFormatCellValue(val)
+              : String(val)
+            : undefined;
 
           return (
             <td
               key={col.name}
-              onDoubleClick={() => onStartEditing(row.id, col.name)}
-              className={`px-3 py-1 border-r border-slate-200 dark:border-slate-800/60 relative text-[11px] h-7 ${
+              style={cellStyle}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                onStartEditing(row.id, col.name);
+              }}
+              className={`px-2.5 py-1 border-r border-slate-200 dark:border-slate-800/60 relative text-[11px] select-text ${
+                wrapText ? 'align-top' : 'h-7 align-middle'
+              } ${
                 isEditing
                   ? 'overflow-visible'
                   : wrapText
-                  ? 'whitespace-pre-wrap break-words min-w-[120px] max-w-lg align-top'
-                  : 'truncate max-w-xs'
-              } ${isDirty ? 'bg-amber-500/15' : ''}`}
+                  ? 'whitespace-pre-wrap break-words leading-relaxed'
+                  : 'truncate whitespace-nowrap overflow-hidden text-ellipsis'
+              } ${isDirty ? 'bg-amber-500/15 text-amber-900 dark:text-amber-100 font-medium' : ''}`}
+              title={rawTitle}
             >
               {/* Dirty indicator dot */}
               {isDirty && (
-                <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-rose-500 rounded-full" />
+                <span
+                  className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-amber-500 rounded-full shadow-xs ring-1 ring-amber-600/30"
+                  title="Modified"
+                />
               )}
 
               {isEditing ? (
@@ -86,12 +114,12 @@ export const GridRowItem = memo<GridRowItemProps>(
                   NULL
                 </span>
               ) : typeof val === 'boolean' ? (
-                <span className="text-slate-700 dark:text-slate-300 font-medium">
+                <span className="text-slate-700 dark:text-slate-300 font-medium font-mono">
                   {val ? 'TRUE' : 'FALSE'}
                 </span>
               ) : (
                 <span
-                  className={`text-slate-800 dark:text-slate-200 ${
+                  className={`text-slate-800 dark:text-slate-200 font-mono ${
                     wrapText
                       ? 'whitespace-pre-wrap break-words leading-relaxed select-text'
                       : 'truncate block'
@@ -114,6 +142,16 @@ export const GridRowItem = memo<GridRowItemProps>(
     if (prev.wrapText !== next.wrapText) return false;
     if (prev.editingCellField !== next.editingCellField) return false;
     if (prev.activeCols !== next.activeCols) return false;
+
+    // Check column width changes
+    if (prev.columnWidths !== next.columnWidths) {
+      if (!prev.columnWidths || !next.columnWidths) return false;
+      for (let i = 0; i < prev.activeCols.length; i++) {
+        const colName = prev.activeCols[i].name;
+        if (prev.columnWidths[colName] !== next.columnWidths[colName]) return false;
+      }
+    }
+
     if (prev.row === next.row) return true;
 
     // Check row dirty or field changes

@@ -42,6 +42,8 @@ import {
   isInternalRowKey,
   sortColumnsByDdlConvention,
   deriveColumnsFromRows,
+  quoteIdentifier,
+  useColumnResizer,
 } from '../lib';
 import { Tooltip } from './Tooltip';
 
@@ -229,10 +231,94 @@ export const TableGrid: React.FC = () => {
     [resolvedColumns, visibleColumns]
   );
 
-  // Client-side sort & filter support for immediate responsiveness
+  const colNames = useMemo(() => activeCols.map((c) => c.name), [activeCols]);
+  const pkNames = useMemo(
+    () => activeCols.filter((c) => c.isPrimaryKey).map((c) => c.name),
+    [activeCols]
+  );
+
+  const {
+    columnWidths,
+    handleResizeStart,
+    handleAutoFitColumn,
+    handleAutoFitAll,
+    getColumnWidth,
+  } = useColumnResizer({
+    columns: colNames,
+    sampleRows: rows,
+    pkColumns: pkNames,
+    defaultWidth: 150,
+  });
+
+  // Sync sortConfig with filterOrderByText when changed externally
+  useEffect(() => {
+    if (!filterOrderByText) {
+      setSortConfig(null);
+      return;
+    }
+    const match = filterOrderByText.trim().match(/^["`]?([a-zA-Z0-9_]+)["`]?\s*(ASC|DESC)?$/i);
+    if (match) {
+      const col = match[1];
+      const dir = (match[2] || 'ASC').toLowerCase() === 'desc' ? 'desc' : 'asc';
+      setSortConfig({ col, dir });
+    }
+  }, [filterOrderByText]);
+
+  // Query-driven sorting: click column header -> re-query database with ORDER BY
+  const handleSortColumn = useCallback(
+    async (colName: string) => {
+      let nextDir: 'asc' | 'desc' | null = null;
+      if (!sortConfig || sortConfig.col !== colName) {
+        nextDir = 'asc';
+      } else if (sortConfig.dir === 'asc') {
+        nextDir = 'desc';
+      } else {
+        nextDir = null;
+      }
+
+      const nextConfig = nextDir ? { col: colName, dir: nextDir } : null;
+      setSortConfig(nextConfig);
+
+      const quoted = quoteIdentifier(colName, activeConnection?.engine);
+      const nextOrderText = nextDir ? `${quoted} ${nextDir.toUpperCase()}` : '';
+      setFilterOrderByText(nextOrderText);
+
+      // Execute query with ORDER BY from page 0
+      await goToGridPage(0);
+      showToast(
+        nextConfig
+          ? `⚡ Sorted by ${colName} ${nextConfig.dir.toUpperCase()}`
+          : 'Cleared sorting'
+      );
+    },
+    [sortConfig, activeConnection, setFilterOrderByText, goToGridPage, showToast]
+  );
+
+  const handleSortDirect = useCallback(
+    async (colName: string, dir: 'asc' | 'desc' | null) => {
+      const nextConfig = dir ? { col: colName, dir } : null;
+      setSortConfig(nextConfig);
+
+      const quoted = quoteIdentifier(colName, activeConnection?.engine);
+      const nextOrderText = dir ? `${quoted} ${dir.toUpperCase()}` : '';
+      setFilterOrderByText(nextOrderText);
+
+      await goToGridPage(0);
+      showToast(
+        nextConfig
+          ? `⚡ Sorted by ${colName} ${nextConfig.dir.toUpperCase()}`
+          : 'Cleared sorting'
+      );
+    },
+    [activeConnection, setFilterOrderByText, goToGridPage, showToast]
+  );
+
+  // For real database connections, the database query executes ORDER BY.
+  // For offline/mock demo data without active database, fallback to FE sort.
   const processedRows = useMemo(() => {
     let list = rows;
-    if (sortConfig) {
+    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    if (isMock && sortConfig) {
       const { col, dir } = sortConfig;
       list = [...list].sort((a, b) => {
         const va = a[col];
@@ -248,7 +334,7 @@ export const TableGrid: React.FC = () => {
       });
     }
     return list;
-  }, [rows, sortConfig]);
+  }, [rows, sortConfig, activeConnection]);
 
   const effectiveTotalCount = gridTotalCount !== null ? gridTotalCount : rows.length;
   const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / gridPageSize));
@@ -297,12 +383,17 @@ export const TableGrid: React.FC = () => {
   const bottomPadding = Math.max(0, (totalRows - visibleEndIndex) * ROW_HEIGHT);
 
   const handleApplyFilter = () => {
-    const orderMatch = filterOrderByText.trim().match(/^([a-zA-Z0-9_]+)\s*(ASC|DESC)?$/i);
-    if (orderMatch) {
-      const col = orderMatch[1];
-      const dir = (orderMatch[2] || 'ASC').toLowerCase() === 'desc' ? 'desc' : 'asc';
-      setSortConfig({ col, dir });
-    } else if (!filterOrderByText.trim()) {
+    const raw = filterOrderByText.trim();
+    if (raw) {
+      const match = raw.match(/^["`]?([a-zA-Z0-9_]+)["`]?\s*(ASC|DESC)?$/i);
+      if (match) {
+        const col = match[1];
+        const dir = (match[2] || 'ASC').toLowerCase() === 'desc' ? 'desc' : 'asc';
+        setSortConfig({ col, dir });
+      } else {
+        setSortConfig(null);
+      }
+    } else {
       setSortConfig(null);
     }
     goToGridPage(0);
@@ -470,39 +561,48 @@ export const TableGrid: React.FC = () => {
           onScroll={handleScroll}
           className="flex-1 overflow-auto bg-white dark:bg-slate-950/80 text-xs font-mono select-text"
         >
-          <table className="w-full border-collapse">
+          <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }} />
+              {activeCols.map((col) => (
+                <col
+                  key={col.name}
+                  style={{ width: `${getColumnWidth(col.name)}px` }}
+                />
+              ))}
+            </colgroup>
             {/* Header */}
             <thead className="sticky top-0 bg-slate-100 dark:bg-slate-950/95 backdrop-blur-md z-10 border-b border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 select-none shadow-sm text-[11px]">
               <tr className="text-left font-semibold">
-                <th className="w-12 px-3 py-2 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold">#</th>
+                <th
+                  style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                  className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold cursor-pointer"
+                  title="Double-click to fit all columns"
+                  onDoubleClick={handleAutoFitAll}
+                >
+                  #
+                </th>
                 {activeCols.map((col) => {
                   const isSorted = sortConfig?.col === col.name;
+                  const colWidth = getColumnWidth(col.name);
                   return (
                     <th
                       key={col.name}
-                      onClick={() => {
-                        setSortConfig((prev) => {
-                          if (!prev || prev.col !== col.name) {
-                            setFilterOrderByText(`${col.name} ASC`);
-                            return { col: col.name, dir: 'asc' };
-                          }
-                          if (prev.dir === 'asc') {
-                            setFilterOrderByText(`${col.name} DESC`);
-                            return { col: col.name, dir: 'desc' };
-                          }
-                          setFilterOrderByText('');
-                          return null;
-                        });
+                      style={{
+                        width: `${colWidth}px`,
+                        minWidth: `${colWidth}px`,
+                        maxWidth: `${colWidth}px`,
                       }}
+                      onClick={() => handleSortColumn(col.name)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         setColContextPos({ x: e.clientX, y: e.clientY });
                         setTargetCol(col);
                       }}
-                      className="px-3 py-2 border-r border-slate-300 dark:border-slate-800/80 min-w-[130px] cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-900/60 transition-colors"
+                      className="relative px-2.5 py-1.5 border-r border-slate-300 dark:border-slate-800/80 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-900/60 transition-colors group/th"
                     >
-                      <div className="flex items-center justify-between space-x-1.5 truncate">
+                      <div className="flex items-center justify-between space-x-1.5 truncate pr-2">
                         <div className="flex items-center space-x-1.5 truncate">
                           <ColumnTypeIcon type={col.type} />
                           <span className="text-slate-800 dark:text-slate-200 font-semibold truncate">{col.name}</span>
@@ -521,6 +621,19 @@ export const TableGrid: React.FC = () => {
                             )}
                           </span>
                         )}
+                      </div>
+
+                      {/* Resize Handle with Double-Click Auto-Fit (Excel / TablePlus) */}
+                      <div
+                        onMouseDown={(e) => handleResizeStart(col.name, e)}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleAutoFitColumn(col.name);
+                        }}
+                        className="absolute top-0 right-0 bottom-0 w-3 -mr-1.5 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
+                        title="Drag to resize, double-click to fit content"
+                      >
+                        <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors" />
                       </div>
                     </th>
                   );
@@ -550,6 +663,7 @@ export const TableGrid: React.FC = () => {
                     isSelected={isSelected}
                     isEven={isEven}
                     activeCols={activeCols}
+                    columnWidths={columnWidths}
                     editingCellField={editingCell && String(editingCell.id) === String(row.id) ? editingCell.field : null}
                     wrapText={wrapText}
                     onRowClick={handleRowClick}
@@ -951,33 +1065,32 @@ export const TableGrid: React.FC = () => {
           <ContextMenuHeader title={`Column: ${targetCol.name} (${targetCol.type})`} />
           <ContextMenuItem
             icon={<ArrowUpAZ className="w-3.5 h-3.5 text-sky-400" />}
-            label={`Sort "${targetCol.name}" ASC`}
-            onClick={() => {
-              setSortConfig({ col: targetCol.name, dir: 'asc' });
-              setFilterOrderByText(`${targetCol.name} ASC`);
-              showToast(`⚡ Sorted by ${targetCol.name} ASC`);
-            }}
+            label={`Sort "${targetCol.name}" ASC (ORDER BY)`}
+            onClick={() => handleSortDirect(targetCol.name, 'asc')}
           />
           <ContextMenuItem
             icon={<ArrowDownZA className="w-3.5 h-3.5 text-sky-400" />}
-            label={`Sort "${targetCol.name}" DESC`}
-            onClick={() => {
-              setSortConfig({ col: targetCol.name, dir: 'desc' });
-              setFilterOrderByText(`${targetCol.name} DESC`);
-              showToast(`⚡ Sorted by ${targetCol.name} DESC`);
-            }}
+            label={`Sort "${targetCol.name}" DESC (ORDER BY)`}
+            onClick={() => handleSortDirect(targetCol.name, 'desc')}
           />
           {(filterOrderByText || sortConfig) && (
             <ContextMenuItem
               icon={<X className="w-3.5 h-3.5 text-slate-400" />}
               label="Clear Sort"
-              onClick={() => {
-                setSortConfig(null);
-                setFilterOrderByText('');
-                showToast('Cleared sorting');
-              }}
+              onClick={() => handleSortDirect(targetCol.name, null)}
             />
           )}
+          <ContextMenuDivider />
+          <ContextMenuItem
+            icon={<Columns className="w-3.5 h-3.5 text-emerald-400" />}
+            label={`Fit Column "${targetCol.name}" to Content`}
+            onClick={() => handleAutoFitColumn(targetCol.name)}
+          />
+          <ContextMenuItem
+            icon={<Columns className="w-3.5 h-3.5 text-emerald-400" />}
+            label="Fit All Columns"
+            onClick={handleAutoFitAll}
+          />
           <ContextMenuDivider />
           <ContextMenuItem
             icon={<Filter className="w-3.5 h-3.5 text-purple-400" />}

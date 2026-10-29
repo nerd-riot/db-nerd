@@ -26,7 +26,9 @@ import {
   SlidersHorizontal,
   Pin,
   Search,
-  Download
+  Download,
+  ArrowUpAZ,
+  ArrowDownZA
 } from 'lucide-react';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, lineNumbers, keymap, highlightActiveLineGutter, highlightActiveLine } from '@codemirror/view';
@@ -47,6 +49,7 @@ import { TABLE_SCHEMAS } from '../data/schemas';
 import {
   buildSqlSchemaForConnection,
   getCustomSqlCompletions,
+  useColumnResizer,
 } from '../lib';
 import { getThemeDefinition } from '../themes/themeRegistry';
 import { TableContextMenu } from './TableContextMenu';
@@ -455,7 +458,8 @@ export const SqlEditor: React.FC = () => {
   const [editorContextPos, setEditorContextPos] = useState<ContextMenuPosition | null>(null);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string | number>>(new Set([501]));
   const [inspectingRow, setInspectingRow] = useState<any | null>(null);
-  const [wrapText, setWrapText] = useState<boolean>(true);
+  const [wrapText, setWrapText] = useState<boolean>(false);
+  const [sqlSortConfig, setSqlSortConfig] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
   const [hasSelection, setHasSelection] = useState<boolean>(false);
 
   const handleRun = () => {
@@ -867,7 +871,24 @@ export const SqlEditor: React.FC = () => {
     );
   }, [modifiedResults, searchFilter]);
 
-  const results = displayResults;
+  const sortedResults = useMemo(() => {
+    if (!sqlSortConfig) return displayResults;
+    const { col, dir } = sqlSortConfig;
+    return [...displayResults].sort((a, b) => {
+      const va = a[col];
+      const vb = b[col];
+      if (va === vb) return 0;
+      if (va === null || va === undefined) return 1;
+      if (vb === null || vb === undefined) return -1;
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return dir === 'asc' ? va - vb : vb - va;
+      }
+      const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+      return dir === 'asc' ? cmp : -cmp;
+    });
+  }, [displayResults, sqlSortConfig]);
+
+  const results = sortedResults;
   const SQL_PAGE_SIZE = 200;
   const totalSqlPages = Math.max(1, Math.ceil(results.length / SQL_PAGE_SIZE));
   const safeSqlPage = Math.min(sqlPage, totalSqlPages - 1);
@@ -931,6 +952,43 @@ export const SqlEditor: React.FC = () => {
     }
     return map;
   }, [columns, results, activeConnection?.id, liveSchemas, selectedTable]);
+
+  const pkCols = useMemo(() => {
+    return Object.entries(colMetaMap)
+      .filter(([_, meta]) => meta.isPk)
+      .map(([c]) => c);
+  }, [colMetaMap]);
+
+  const {
+    handleResizeStart,
+    handleAutoFitColumn,
+    handleAutoFitAll,
+    getColumnWidth,
+  } = useColumnResizer({
+    columns,
+    sampleRows: results,
+    pkColumns: pkCols,
+    defaultWidth: 160,
+  });
+
+  const handleHeaderClick = useCallback(
+    (col: string) => {
+      setSqlSortConfig((prev) => {
+        if (!prev || prev.col !== col) {
+          showToast(`⚡ Sorted by ${col} ASC`);
+          return { col, dir: 'asc' };
+        }
+        if (prev.dir === 'asc') {
+          showToast(`⚡ Sorted by ${col} DESC`);
+          return { col, dir: 'desc' };
+        }
+        showToast(`Cleared sort on ${col}`);
+        return null;
+      });
+      setSqlPage(0);
+    },
+    [showToast]
+  );
 
   const activeDuration = activeResultItem ? activeResultItem.durationMs : tabState.durationMs;
   const activeError = activeResultItem ? activeResultItem.error : tabState.error;
@@ -1430,30 +1488,81 @@ export const SqlEditor: React.FC = () => {
             ) : (
               /* Data Results Table */
               <div className="w-full h-full overflow-auto text-xs font-mono bg-white dark:bg-transparent">
-                <table className="w-full border-collapse">
-                  <thead className="sticky top-0 bg-slate-100 dark:bg-slate-950/95 backdrop-blur-md z-10 border-b border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 text-left text-[11px]">
+                <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }} />
+                    {columns.map((col) => (
+                      <col
+                        key={col}
+                        style={{ width: `${getColumnWidth(col)}px` }}
+                      />
+                    ))}
+                  </colgroup>
+                  <thead className="sticky top-0 bg-slate-100 dark:bg-slate-950/95 backdrop-blur-md z-10 border-b border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 text-left text-[11px] select-none shadow-sm">
                     <tr>
-                      <th className="w-12 p-2 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold">#</th>
+                      <th
+                        style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                        className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold cursor-pointer"
+                        title="Double-click to fit all columns"
+                        onDoubleClick={handleAutoFitAll}
+                      >
+                        #
+                      </th>
                       {columns.map((col) => {
                         const isErrorCol = col.toLowerCase() === 'error';
                         const meta = colMetaMap[col];
+                        const isSorted = sqlSortConfig?.col === col;
+                        const colWidth = getColumnWidth(col);
 
                         return (
-                          <th key={col} className={`p-2 border-r border-slate-300 dark:border-slate-800/80 font-semibold min-w-[120px] ${
-                            isErrorCol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'
-                          }`}>
-                            <div className="flex items-center space-x-1.5 truncate">
-                              {isErrorCol ? (
-                                <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                              ) : (
-                                <ColumnTypeIcon type={meta?.foundType} sampleValue={meta?.sampleVal} />
-                              )}
-                              <span className={`font-semibold truncate ${isErrorCol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>{col}</span>
-                              {meta?.isPk && (
-                                <span title="Primary Key" className="inline-flex items-center ml-0.5">
-                                  <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
+                          <th
+                            key={col}
+                            style={{
+                              width: `${colWidth}px`,
+                              minWidth: `${colWidth}px`,
+                              maxWidth: `${colWidth}px`,
+                            }}
+                            onClick={() => handleHeaderClick(col)}
+                            className={`relative px-2.5 py-1.5 border-r border-slate-300 dark:border-slate-800/80 font-semibold cursor-pointer group/th hover:bg-slate-200/60 dark:hover:bg-slate-900/60 transition-colors ${
+                              isErrorCol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between space-x-1.5 truncate pr-2">
+                              <div className="flex items-center space-x-1.5 truncate">
+                                {isErrorCol ? (
+                                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                ) : (
+                                  <ColumnTypeIcon type={meta?.foundType} sampleValue={meta?.sampleVal} />
+                                )}
+                                <span className={`font-semibold truncate ${isErrorCol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>{col}</span>
+                                {meta?.isPk && (
+                                  <span title="Primary Key" className="inline-flex items-center ml-0.5">
+                                    <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
+                                  </span>
+                                )}
+                              </div>
+                              {isSorted && (
+                                <span className="text-sky-500 shrink-0">
+                                  {sqlSortConfig?.dir === 'asc' ? (
+                                    <ArrowUpAZ className="w-3 h-3" />
+                                  ) : (
+                                    <ArrowDownZA className="w-3 h-3" />
+                                  )}
                                 </span>
                               )}
+                            </div>
+
+                            {/* Column Resizer Handle with Double-Click Auto-Fit (Excel / TablePlus) */}
+                            <div
+                              onMouseDown={(e) => handleResizeStart(col, e)}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                handleAutoFitColumn(col);
+                              }}
+                              className="absolute top-0 right-0 bottom-0 w-3 -mr-1.5 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
+                              title="Drag to resize, double-click to fit content"
+                            >
+                              <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors" />
                             </div>
                           </th>
                         );
@@ -1506,8 +1615,12 @@ export const SqlEditor: React.FC = () => {
                                 ? 'bg-[#fcfdfd] dark:bg-slate-900/40 hover:bg-[#f0f7ff] dark:hover:bg-slate-800/50 text-slate-800 dark:text-slate-200'
                                 : 'bg-white dark:bg-slate-950/60 hover:bg-[#f0f7ff] dark:hover:bg-slate-800/50 text-slate-800 dark:text-slate-200'
                             }`}
+                            style={{ height: wrapText ? undefined : '28px' }}
                           >
-                            <td className="p-2 border-r border-slate-200 dark:border-slate-800/60 text-center text-slate-500 select-none font-medium align-top">
+                            <td
+                              style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                              className="px-2 py-1 border-r border-slate-200 dark:border-slate-800/60 text-center text-slate-500 select-none font-medium h-7 align-middle"
+                            >
                               {index + 1}
                             </td>
                             {columns.map((col) => {
@@ -1517,6 +1630,13 @@ export const SqlEditor: React.FC = () => {
                               const isEditing = editingCell?.rowId === rowId && editingCell?.col === col;
                               const isErrorCol = col.toLowerCase() === 'error';
                               const shouldWrap = wrapText || isErrorCol;
+                              const colWidth = getColumnWidth(col);
+
+                              const cellStyle: React.CSSProperties = {
+                                width: colWidth ? `${colWidth}px` : undefined,
+                                minWidth: colWidth ? `${colWidth}px` : undefined,
+                                maxWidth: colWidth ? `${colWidth}px` : undefined,
+                              };
 
                               if (isEditing) {
                                 const colDef = colMetaMap[col]?.colDef || {
@@ -1528,6 +1648,7 @@ export const SqlEditor: React.FC = () => {
                                 return (
                                   <td
                                     key={col}
+                                    style={cellStyle}
                                     className="p-0 border-r border-slate-200 dark:border-slate-800/60 relative overflow-visible z-20"
                                   >
                                     <InlineCellEditor
@@ -1540,28 +1661,37 @@ export const SqlEditor: React.FC = () => {
                                 );
                               }
 
+                              const rawTitle = val !== null && val !== undefined
+                                ? typeof val === 'object'
+                                  ? safeFormatCellValue(val)
+                                  : String(val)
+                                : undefined;
+
                               return (
                                 <td 
                                   key={col} 
+                                  style={cellStyle}
                                   onDoubleClick={(e) => {
                                     e.stopPropagation();
                                     handleStartEditing(rowId, index, col);
                                   }}
-                                  className={`px-3 py-2 border-r border-slate-200 dark:border-slate-800/60 select-text relative transition-colors ${
+                                  className={`px-2.5 py-1 border-r border-slate-200 dark:border-slate-800/60 select-text relative transition-colors text-[11px] ${
+                                    wrapText ? 'align-top' : 'h-7 align-middle'
+                                  } ${
                                     isDirty
                                       ? 'bg-amber-500/15 dark:bg-amber-500/20 text-amber-900 dark:text-amber-100 font-medium'
                                       : ''
                                   } ${
                                     shouldWrap
                                       ? 'whitespace-pre-wrap break-words leading-relaxed'
-                                      : 'whitespace-nowrap overflow-hidden text-ellipsis max-w-md'
+                                      : 'truncate whitespace-nowrap overflow-hidden text-ellipsis'
                                   } ${isErrorCol ? 'bg-rose-50/40 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 font-mono' : ''}`}
-                                  title={val ? String(val) : undefined}
+                                  title={rawTitle}
                                 >
                                   {/* Dirty indicator dot */}
                                   {isDirty && (
                                     <span
-                                      className="absolute bottom-1 right-1 w-1.5 h-1.5 bg-amber-500 dark:bg-amber-400 rounded-full shadow-xs ring-1 ring-amber-600/30"
+                                      className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-amber-500 dark:bg-amber-400 rounded-full shadow-xs ring-1 ring-amber-600/30"
                                       title="Cell modified. Press ⌘S or click 'Review & Execute SQL' to apply."
                                     />
                                   )}
@@ -1569,7 +1699,7 @@ export const SqlEditor: React.FC = () => {
                                   {val === null || val === undefined ? (
                                     <span className="text-slate-400 dark:text-slate-500 italic select-none font-mono">NULL</span>
                                   ) : typeof val === 'boolean' ? (
-                                    <span className="text-slate-700 dark:text-slate-300 font-medium">{val ? 'TRUE' : 'FALSE'}</span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium font-mono">{val ? 'TRUE' : 'FALSE'}</span>
                                   ) : typeof val === 'object' ? (
                                     <span className={`font-mono text-slate-700 dark:text-slate-300 ${shouldWrap ? 'whitespace-pre-wrap break-words' : 'truncate block'}`}>
                                       {safeFormatCellValue(val)}
@@ -1581,10 +1711,10 @@ export const SqlEditor: React.FC = () => {
                                         {String(val)}
                                       </span>
                                     </div>
-                                  ) : shouldWrap ? (
-                                    <span className="whitespace-pre-wrap break-words block text-slate-800 dark:text-slate-200 leading-relaxed font-mono">{String(val)}</span>
                                   ) : (
-                                    <span className="truncate block text-slate-800 dark:text-slate-200 font-mono">{String(val)}</span>
+                                    <span className={`block font-mono text-slate-800 dark:text-slate-200 ${shouldWrap ? 'whitespace-pre-wrap break-words leading-relaxed select-text' : 'truncate'}`}>
+                                      {String(val)}
+                                    </span>
                                   )}
                                 </td>
                               );
