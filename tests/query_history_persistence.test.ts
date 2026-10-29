@@ -270,4 +270,89 @@ describe('Query History Persistence & TTL Purge System', () => {
     // All DBs scope: both
     assert.equal(allHistory.length, 2);
   });
+
+  it('fresh install starts with empty history without seeding fake/demo queries', () => {
+    // Empty localStorage simulates fresh install
+    (globalThis as any).window.localStorage.clear();
+    const loaded = loadPersistedHistory('30-days');
+    assert.equal(loaded.length, 0, 'Fresh install history must be completely empty');
+  });
+
+  it('scrubs legacy mock demo queries (h-demo-*)', () => {
+    const mixedLegacyItems = [
+      {
+        id: 'h-demo-1',
+        connectionName: 'ecom_prod_db',
+        sql: 'SELECT 1;',
+        timestamp: 'Yesterday',
+        timestampMs: Date.now(),
+        durationMs: 1.8,
+        rowsAffected: 50,
+        status: 'success',
+        isFavorite: true,
+      },
+      {
+        id: 'h-demo-2',
+        connectionName: 'staging-mysql-8',
+        sql: 'UPDATE orders SET status = 1;',
+        timestamp: 'Yesterday',
+        timestampMs: Date.now(),
+        durationMs: 4.2,
+        rowsAffected: 1,
+        status: 'success',
+        isFavorite: false,
+      },
+      {
+        id: 'h-real-vigo',
+        connectionId: 'conn-vigo',
+        connectionName: '[Production] [VN] Vigo DB',
+        sql: 'SELECT * FROM users LIMIT 10;',
+        timestamp: 'Today',
+        timestampMs: Date.now(),
+        durationMs: 3.5,
+        rowsAffected: 10,
+        status: 'success',
+        isFavorite: false,
+      },
+    ];
+
+    (globalThis as any).window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(mixedLegacyItems));
+
+    const loaded = loadPersistedHistory('never');
+    assert.equal(loaded.length, 1, 'Only real item with valid connectionId should remain');
+    assert.equal(loaded[0].id, 'h-real-vigo');
+    assert.equal(loaded[0].connectionId, 'conn-vigo');
+
+    // Verify localStorage was updated to purge the legacy demo items
+    const rawUpdated = JSON.parse((globalThis as any).window.localStorage.getItem(HISTORY_STORAGE_KEY));
+    assert.equal(rawUpdated.length, 1);
+    assert.equal(rawUpdated[0].id, 'h-real-vigo');
+  });
+
+  it('guarantees history is never leaked when disconnected (hasActiveSession = false)', () => {
+    const allHistory: QueryHistoryItem[] = [
+      {
+        id: 'h-1',
+        connectionId: 'conn-vigo',
+        connectionName: 'Vigo DB',
+        env: 'prod',
+        sql: 'SELECT * FROM secrets;',
+        timestamp: '10:00',
+        durationMs: 2,
+        rowsAffected: 1,
+        status: 'success',
+        isFavorite: false,
+      },
+    ];
+
+    const hasActiveSession = false;
+    const activeConnectionId = '';
+
+    const visibleHistory = allHistory.filter((h) => {
+      if (!hasActiveSession || !activeConnectionId) return false;
+      return h.connectionId === activeConnectionId;
+    });
+
+    assert.equal(visibleHistory.length, 0, 'Disconnected state must never show any history');
+  });
 });

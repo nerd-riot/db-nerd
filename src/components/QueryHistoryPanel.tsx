@@ -22,7 +22,7 @@ export const QueryHistoryPanel: React.FC<QueryHistoryPanelProps> = ({
   onRunQuery,
   onInsertQuery,
 }) => {
-  const { history, clearHistory, openNewQueryTab, showToast } = useAppStore();
+  const { history, clearHistory, openNewQueryTab, showToast, activeConnection } = useAppStore();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -53,6 +53,10 @@ export const QueryHistoryPanel: React.FC<QueryHistoryPanelProps> = ({
   };
 
   const filteredHistory = history.filter((item) => {
+    // Strictly isolate by active connection
+    if (activeConnection?.id && item.connectionId !== activeConnection.id) {
+      return false;
+    }
     if (statusFilter !== 'all' && item.status !== statusFilter) {
       return false;
     }
@@ -66,8 +70,11 @@ export const QueryHistoryPanel: React.FC<QueryHistoryPanelProps> = ({
     );
   });
 
-  const successCount = history.filter((h) => h.status === 'success').length;
-  const errorCount = history.filter((h) => h.status === 'error').length;
+  const connectionHistory = activeConnection?.id
+    ? history.filter((h) => h.connectionId === activeConnection.id)
+    : history;
+  const successCount = connectionHistory.filter((h) => h.status === 'success').length;
+  const errorCount = connectionHistory.filter((h) => h.status === 'error').length;
 
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-[#141517] font-sans text-xs select-none">
@@ -132,12 +139,17 @@ export const QueryHistoryPanel: React.FC<QueryHistoryPanelProps> = ({
         </div>
 
         {/* Clear History Button */}
-        {history.length > 0 && (
+        {connectionHistory.length > 0 && (
           <button
             onClick={() => {
               if (confirmClear) {
-                clearHistory();
-                showToast('🗑️ Query history cleared', 'info');
+                if (activeConnection?.id) {
+                  clearHistory(activeConnection.id);
+                  showToast(`🗑️ Query history cleared for "${activeConnection.name}"`, 'info');
+                } else {
+                  clearHistory();
+                  showToast('🗑️ Query history cleared', 'info');
+                }
                 setConfirmClear(false);
               } else {
                 setConfirmClear(true);

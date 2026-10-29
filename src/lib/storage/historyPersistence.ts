@@ -6,34 +6,9 @@ export const MAX_PERSISTED_HISTORY_ITEMS = 500;
 export const MAX_PERSISTED_SQL_CHARS = 16_384;
 
 /**
- * Default fallback queries for fresh installs when no previous history exists.
+ * Default fallback queries for fresh installs: empty list (never seed fake/demo queries).
  */
-export const DEFAULT_QUERY_HISTORY: QueryHistoryItem[] = [
-  {
-    id: 'h-demo-1',
-    connectionName: 'ecom_prod_db',
-    env: 'prod',
-    sql: 'SELECT u.id, u.email, COUNT(o.id) AS total_orders\nFROM users u\nLEFT JOIN user_orders o ON u.id = o.user_id\nWHERE u.status = \'active\'\nGROUP BY u.id, u.email\nORDER BY total_orders DESC LIMIT 50;',
-    timestamp: 'Yesterday at 14:22:15',
-    timestampMs: Date.now() - 86_400_000,
-    durationMs: 1.8,
-    rowsAffected: 50,
-    status: 'success',
-    isFavorite: true,
-  },
-  {
-    id: 'h-demo-2',
-    connectionName: 'staging-mysql-8',
-    env: 'staging',
-    sql: 'UPDATE user_orders SET status = \'refunded\', updated_at = NOW() WHERE id = 1035;',
-    timestamp: 'Yesterday at 11:05:40',
-    timestampMs: Date.now() - 90_000_000,
-    durationMs: 4.2,
-    rowsAffected: 1,
-    status: 'success',
-    isFavorite: false,
-  },
-];
+export const DEFAULT_QUERY_HISTORY: QueryHistoryItem[] = [];
 
 /**
  * Returns TTL duration in milliseconds for a given retention setting.
@@ -143,15 +118,13 @@ export function persistHistory(items: QueryHistoryItem[]): void {
  */
 export function loadPersistedHistory(ttl: HistoryTtl = '30-days'): QueryHistoryItem[] {
   if (typeof window === 'undefined' || !window.localStorage) {
-    return DEFAULT_QUERY_HISTORY;
+    return [];
   }
 
   try {
     const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
     if (raw === null) {
-      // First run: save and return default queries
-      persistHistory(DEFAULT_QUERY_HISTORY);
-      return DEFAULT_QUERY_HISTORY;
+      return [];
     }
 
     const parsed = JSON.parse(raw);
@@ -159,9 +132,14 @@ export function loadPersistedHistory(ttl: HistoryTtl = '30-days'): QueryHistoryI
       return [];
     }
 
+    // Filter out legacy mock demo items
+    const cleaned = parsed.filter(
+      (item) => item && item.id && !item.id.startsWith('h-demo-')
+    );
+
     // Purge records older than TTL
-    const { kept, purgedCount } = purgeHistoryByTtl(parsed, ttl);
-    if (purgedCount > 0) {
+    const { kept, purgedCount } = purgeHistoryByTtl(cleaned, ttl);
+    if (purgedCount > 0 || cleaned.length !== parsed.length) {
       persistHistory(kept);
     }
 

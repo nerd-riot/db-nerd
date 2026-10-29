@@ -153,21 +153,23 @@ export const Sidebar = () => {
     f.name.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  const filteredQueries = SAVED_QUERIES.filter(
-    (q) =>
-      q.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      q.desc.toLowerCase().includes(searchFilter.toLowerCase())
-  );
+  const filteredQueries = !hasActiveSession || !activeConnection?.id
+    ? []
+    : SAVED_QUERIES.filter(
+        (q) =>
+          q.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
+          q.desc.toLowerCase().includes(searchFilter.toLowerCase())
+      );
 
   const filteredHistory = history.filter((h) => {
-    if (historyScope === 'current' && activeConnection?.id) {
-      const matches =
-        h.connectionId === activeConnection.id ||
-        (!h.connectionId && h.connectionName === activeConnection.name);
-      if (!matches) return false;
+    // If no active connection session is open, never display or leak history
+    if (!hasActiveSession || !activeConnection?.id) return false;
+
+    if (historyScope === 'current') {
+      return h.connectionId === activeConnection.id;
     }
-    return h.sql.toLowerCase().includes(searchFilter.toLowerCase());
-  });
+    return true;
+  }).filter((h) => h.sql.toLowerCase().includes(searchFilter.toLowerCase()));
 
   const activeTabObj = tabs.find((t) => t.id === activeTabId);
   const isAllTablesActive = activeTabObj?.type === 'stats' && (activeTabObj?.tableName === '__all_tables__' || activeTabObj?.title.startsWith('Tables.'));
@@ -487,162 +489,202 @@ export const Sidebar = () => {
 
         {/* Tab 2: Saved Queries */}
         {sidebarTab === 'queries' && (
-          <div className="space-y-1">
-            <div className="px-1.5 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Saved Queries ({filteredQueries.length})
-            </div>
-            {filteredQueries.map((q) => (
-              <div
-                key={q.id}
-                onDoubleClick={() => openNewQueryTab(q.sql)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setQueryContextPos({ x: e.clientX, y: e.clientY });
-                  setTargetQuery({ id: q.id, title: q.title, sql: q.sql });
-                }}
-                className="p-2 rounded-lg bg-white dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1 group"
-                title="Double-click to open query tab (Right click for options)"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-1.5 truncate">
-                    <Terminal className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform flex-shrink-0" />
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-950 dark:group-hover:text-white truncate">
-                      {q.title}
-                    </span>
-                  </div>
-                  <span className="text-[9px] px-1 py-0.2 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-600 dark:text-slate-500 font-mono">
-                    SQL
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{q.desc}</p>
+          !hasActiveSession ? (
+            <div className="p-4 mx-1 my-6 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-center space-y-2.5 animate-in fade-in duration-200">
+              <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 mx-auto flex items-center justify-center border border-slate-200 dark:border-slate-800">
+                <Terminal className="w-4 h-4" />
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Tab 3: Execution History */}
-        {sidebarTab === 'history' && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between px-1.5 py-1">
-              <div className="flex items-center space-x-1.5">
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Recent ({filteredHistory.length})
-                </span>
-                {activeConnection?.id && (
-                  <div className="inline-flex rounded-md p-0.5 bg-slate-200/80 dark:bg-slate-900 border border-slate-300/80 dark:border-slate-800 text-[9px] font-medium">
-                    <button
-                      onClick={() => setHistoryScope('current')}
-                      className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
-                        historyScope === 'current'
-                          ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                      }`}
-                      title={`Show queries for ${activeConnection.name}`}
-                    >
-                      Active DB
-                    </button>
-                    <button
-                      onClick={() => setHistoryScope('all')}
-                      className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
-                        historyScope === 'all'
-                          ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                      }`}
-                      title="Show queries across all databases"
-                    >
-                      All
-                    </button>
-                  </div>
-                )}
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300">No Connection</h3>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                  Connect to view saved queries
+                </p>
               </div>
               <button
-                onClick={() => setAllHistoryExpanded(!allHistoryExpanded)}
-                className="text-[10px] text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 font-sans font-medium cursor-pointer"
+                onClick={() => setConnectionModalOpen(true, 'catalog')}
+                className="mt-2 w-full py-1.5 px-3 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-semibold text-xs transition cursor-pointer"
               >
-                {allHistoryExpanded ? 'Collapse All' : 'Expand All'}
+                Connect (⌘K)
               </button>
             </div>
-
-            {filteredHistory.length === 0 && (
-              <div className="py-6 px-3 text-center text-slate-400 dark:text-slate-500 text-xs space-y-1.5">
-                <div>No executions recorded for {activeConnection?.name || 'this session'}.</div>
-                {historyScope === 'current' && history.length > 0 && (
-                  <button
-                    onClick={() => setHistoryScope('all')}
-                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline cursor-pointer font-medium block mx-auto"
-                  >
-                    View all {history.length} queries across databases
-                  </button>
-                )}
+          ) : (
+            <div className="space-y-1">
+              <div className="px-1.5 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Saved Queries ({filteredQueries.length})
               </div>
-            )}
-            {filteredHistory.map((h) => {
-              const isExpanded = allHistoryExpanded || !!expandedHistory[h.id];
-
-              return (
+              {filteredQueries.map((q) => (
                 <div
-                  key={h.id}
-                  onDoubleClick={() => openNewQueryTab(h.sql)}
+                  key={q.id}
+                  onDoubleClick={() => openNewQueryTab(q.sql)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setQueryContextPos({ x: e.clientX, y: e.clientY });
-                    setTargetQuery({ id: h.id, title: `Query (${h.durationMs}ms)`, sql: h.sql });
+                    setTargetQuery({ id: q.id, title: q.title, sql: q.sql });
                   }}
-                  className="p-2.5 rounded-xl bg-white dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1.5 group shadow-2xs"
-                  title="Double-click to open in new SQL tab • Click expand to view full query"
+                  className="p-2 rounded-lg bg-white dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1 group"
+                  title="Double-click to open query tab (Right click for options)"
                 >
-                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                    <div className="flex items-center space-x-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span className="text-emerald-700 dark:text-emerald-400 font-bold">{h.durationMs}ms</span>
-                      <span className="text-slate-300 dark:text-slate-700">•</span>
-                      <span className="text-slate-400 dark:text-slate-500">{h.timestamp.replace('Today at ', '')}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-1.5 truncate">
+                      <Terminal className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform flex-shrink-0" />
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-950 dark:group-hover:text-white truncate">
+                        {q.title}
+                      </span>
                     </div>
-
-                    <div className="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigator.clipboard.writeText(h.sql);
-                          showToast('📋 Copied SQL query to clipboard');
-                        }}
-                        className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
-                        title="Copy SQL Query"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
-                        }}
-                        className="px-1.5 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-[10px] text-sky-600 dark:text-sky-400 font-sans font-medium transition"
-                        title={isExpanded ? "Collapse full query" : "Expand to view full query"}
-                      >
-                        {isExpanded ? 'Collapse' : 'Expand'}
-                      </button>
-                    </div>
+                    <span className="text-[9px] px-1 py-0.2 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-600 dark:text-slate-500 font-mono">
+                      SQL
+                    </span>
                   </div>
-
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
-                    }}
-                    className={`font-mono text-[11px] text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-950/70 p-2 rounded-lg border border-slate-200 dark:border-slate-800/80 transition-all ${
-                      isExpanded
-                        ? 'whitespace-pre-wrap break-words max-h-72 overflow-y-auto select-text font-normal'
-                        : 'line-clamp-2 cursor-pointer'
-                    }`}
-                  >
-                    {h.sql}
-                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{q.desc}</p>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {/* Tab 3: Execution History */}
+        {sidebarTab === 'history' && (
+          !hasActiveSession ? (
+            <div className="p-4 mx-1 my-6 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-center space-y-2.5 animate-in fade-in duration-200">
+              <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 mx-auto flex items-center justify-center border border-slate-200 dark:border-slate-800">
+                <FileCode className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300">No Connection</h3>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                  Connect to view execution history
+                </p>
+              </div>
+              <button
+                onClick={() => setConnectionModalOpen(true, 'catalog')}
+                className="mt-2 w-full py-1.5 px-3 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-semibold text-xs transition cursor-pointer"
+              >
+                Connect (⌘K)
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between px-1.5 py-1">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Recent ({filteredHistory.length})
+                  </span>
+                  {activeConnection?.id && (
+                    <div className="inline-flex rounded-md p-0.5 bg-slate-200/80 dark:bg-slate-900 border border-slate-300/80 dark:border-slate-800 text-[9px] font-medium">
+                      <button
+                        onClick={() => setHistoryScope('current')}
+                        className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
+                          historyScope === 'current'
+                            ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                        title={`Show queries for ${activeConnection.name}`}
+                      >
+                        Active DB
+                      </button>
+                      <button
+                        onClick={() => setHistoryScope('all')}
+                        className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
+                          historyScope === 'all'
+                            ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                        title="Show queries across all databases"
+                      >
+                        All
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => setAllHistoryExpanded(!allHistoryExpanded)}
+                  className="text-[10px] text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 font-sans font-medium cursor-pointer"
+                >
+                  {allHistoryExpanded ? 'Collapse All' : 'Expand All'}
+                </button>
+              </div>
+
+              {filteredHistory.length === 0 && (
+                <div className="py-6 px-3 text-center text-slate-400 dark:text-slate-500 text-xs space-y-1.5">
+                  <div>No executions recorded for {activeConnection?.name || 'this session'}.</div>
+                  {historyScope === 'current' && history.some((h) => h.connectionId && h.connectionId !== activeConnection?.id) && (
+                    <button
+                      onClick={() => setHistoryScope('all')}
+                      className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline cursor-pointer font-medium block mx-auto"
+                    >
+                      View queries across other databases
+                    </button>
+                  )}
+                </div>
+              )}
+              {filteredHistory.map((h) => {
+                const isExpanded = allHistoryExpanded || !!expandedHistory[h.id];
+
+                return (
+                  <div
+                    key={h.id}
+                    onDoubleClick={() => openNewQueryTab(h.sql)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setQueryContextPos({ x: e.clientX, y: e.clientY });
+                      setTargetQuery({ id: h.id, title: `Query (${h.durationMs}ms)`, sql: h.sql });
+                    }}
+                    className="p-2.5 rounded-xl bg-white dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1.5 group shadow-2xs"
+                    title="Double-click to open in new SQL tab • Click expand to view full query"
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                      <div className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-emerald-700 dark:text-emerald-400 font-bold">{h.durationMs}ms</span>
+                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                        <span className="text-slate-400 dark:text-slate-500">{h.timestamp.replace('Today at ', '')}</span>
+                      </div>
+
+                      <div className="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(h.sql);
+                            showToast('📋 Copied SQL query to clipboard');
+                          }}
+                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
+                          title="Copy SQL Query"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
+                          }}
+                          className="px-1.5 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-[10px] text-sky-600 dark:text-sky-400 font-sans font-medium transition"
+                          title={isExpanded ? "Collapse full query" : "Expand to view full query"}
+                        >
+                          {isExpanded ? 'Collapse' : 'Expand'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
+                      }}
+                      className={`font-mono text-[11px] text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-950/70 p-2 rounded-lg border border-slate-200 dark:border-slate-800/80 transition-all ${
+                        isExpanded
+                          ? 'whitespace-pre-wrap break-words max-h-72 overflow-y-auto select-text font-normal'
+                          : 'line-clamp-2 cursor-pointer'
+                      }`}
+                    >
+                      {h.sql}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
         )}
 
       </div>

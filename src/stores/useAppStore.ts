@@ -462,7 +462,7 @@ const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionS
       originalRows: [],
       isTransactionOpen: false,
       pendingEditsCount: 0,
-      history: (INITIAL_HISTORY || []).filter((h) => !h.connectionId || h.connectionId === conn.id),
+      history: (INITIAL_HISTORY || []).filter((h) => h.connectionId === conn.id),
       selectedRowData: null,
       selectedStructureColumn: null,
       structureSearchColumn: '',
@@ -502,7 +502,7 @@ const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionS
             originalRows: [],
             isTransactionOpen: false,
             pendingEditsCount: 0,
-            history: (INITIAL_HISTORY || []).filter((h) => !h.connectionId || h.connectionId === conn.id),
+            history: (INITIAL_HISTORY || []).filter((h) => h.connectionId === conn.id),
             selectedRowData: null,
             selectedStructureColumn: null,
             structureSearchColumn: '',
@@ -527,7 +527,7 @@ const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionS
     originalRows: [],
     isTransactionOpen: false,
     pendingEditsCount: 0,
-    history: (INITIAL_HISTORY || []).filter((h) => !h.connectionId || h.connectionId === conn.id),
+    history: (INITIAL_HISTORY || []).filter((h) => h.connectionId === conn.id),
     selectedRowData: null,
     selectedStructureColumn: null,
     structureSearchColumn: '',
@@ -2547,6 +2547,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addHistoryItem: (item) => {
     const state = get();
     const connId = state.activeConnection?.id;
+    if (!connId) return;
     const nowMs = Date.now();
     const newItem: QueryHistoryItem = {
       id: `h-${nowMs}-${Math.random().toString(36).slice(2, 6)}`,
