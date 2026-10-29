@@ -43,6 +43,7 @@ import {
   sortColumnsByDdlConvention,
   deriveColumnsFromRows,
 } from '../lib';
+import { Tooltip } from './Tooltip';
 
 export const TableGrid: React.FC = () => {
   const {
@@ -612,14 +613,15 @@ export const TableGrid: React.FC = () => {
 
           {/* Mode-specific Buttons */}
           {tableViewMode === 'data' ? (
-            <button
-              onClick={insertRow}
-              className="h-6 px-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 rounded-md text-[11px] font-semibold transition active:scale-95 flex items-center space-x-1 leading-none cursor-pointer shadow-2xs"
-              title="Insert new row (+)"
-            >
-              <Plus className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span>Row</span>
-            </button>
+            <Tooltip side="top" content="Insert new row" shortcut="+">
+              <button
+                onClick={insertRow}
+                className="h-6 px-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 rounded-md text-[11px] font-semibold transition active:scale-95 flex items-center space-x-1 leading-none cursor-pointer shadow-2xs"
+              >
+                <Plus className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>Row</span>
+              </button>
+            </Tooltip>
           ) : tableViewMode === 'structure' ? (
             <div className="flex items-center space-x-1.5 h-full">
               <button
@@ -665,16 +667,17 @@ export const TableGrid: React.FC = () => {
               <span>0 rows</span>
             ) : (
               <div className="relative" ref={countPopoverRef}>
-                <button
-                  onClick={() => setIsCountPopoverOpen((prev) => !prev)}
-                  className="px-2 py-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 transition font-mono font-medium flex items-center space-x-1 cursor-pointer select-none"
-                  title="Click to view row count details or calculate exact count"
-                >
-                  <span>{`${safePage * gridPageSize + 1}-${Math.min((safePage + 1) * gridPageSize, effectiveTotalCount)} of ${gridIsEstimatedCount ? '~' : ''}${effectiveTotalCount.toLocaleString()} rows`}</span>
-                  {gridIsCounting && (
-                    <Loader2 className="w-3 h-3 animate-spin text-amber-500 ml-1 inline-block" />
-                  )}
-                </button>
+                <Tooltip side="top" content="Click to view row count details or calculate exact count">
+                  <button
+                    onClick={() => setIsCountPopoverOpen((prev) => !prev)}
+                    className="px-2 py-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 transition font-mono font-medium flex items-center space-x-1 cursor-pointer select-none"
+                  >
+                    <span>{`${safePage * gridPageSize + 1}-${Math.min((safePage + 1) * gridPageSize, effectiveTotalCount)} of ${gridIsEstimatedCount ? '~' : ''}${effectiveTotalCount.toLocaleString()} rows`}</span>
+                    {gridIsCounting && (
+                      <Loader2 className="w-3 h-3 animate-spin text-amber-500 ml-1 inline-block" />
+                    )}
+                  </button>
+                </Tooltip>
 
                 {/* TablePlus-style Popover (Images 1 & 3) */}
                 {isCountPopoverOpen && (
@@ -736,73 +739,79 @@ export const TableGrid: React.FC = () => {
         <div className="flex items-center space-x-1.5 h-full">
           {tableViewMode === 'data' && (
             <>
-              <button
-                onClick={toggleFilterBar}
-                className={`h-6 px-2 rounded-md text-[11px] font-semibold border transition flex items-center space-x-1 active:scale-95 leading-none cursor-pointer ${
-                  isFilterBarOpen
-                    ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/40'
-                    : 'bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 shadow-2xs'
-                }`}
-                title="Toggle WHERE / ORDER BY filter bar"
-              >
-                <Filter className="w-3 h-3 shrink-0" />
-                <span>Filters</span>
-              </button>
+              <Tooltip side="top" content="Toggle WHERE / ORDER BY filter bar">
+                <button
+                  onClick={toggleFilterBar}
+                  className={`h-6 px-2 rounded-md text-[11px] font-semibold border transition flex items-center space-x-1 active:scale-95 leading-none cursor-pointer ${
+                    isFilterBarOpen
+                      ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/40'
+                      : 'bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 shadow-2xs'
+                  }`}
+                >
+                  <Filter className="w-3 h-3 shrink-0" />
+                  <span>Filters</span>
+                </button>
+              </Tooltip>
 
-              <button
-                onClick={() => setIsColumnsModalOpen(!isColumnsModalOpen)}
-                className="h-6 px-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-md text-[11px] font-semibold transition flex items-center space-x-1 leading-none cursor-pointer shadow-2xs"
-                title="Choose visible columns"
-              >
-                <ColumnsIcon className="w-3 h-3 shrink-0" />
-                <span>Columns</span>
-              </button>
+              <Tooltip side="top" content="Choose visible columns">
+                <button
+                  onClick={() => setIsColumnsModalOpen(!isColumnsModalOpen)}
+                  className="h-6 px-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-md text-[11px] font-semibold transition flex items-center space-x-1 leading-none cursor-pointer shadow-2xs"
+                >
+                  <ColumnsIcon className="w-3 h-3 shrink-0" />
+                  <span>Columns</span>
+                </button>
+              </Tooltip>
 
-              <button
-                onClick={() => setWrapText(!wrapText)}
-                className={`h-6 px-2 rounded-md text-[11px] font-semibold border transition flex items-center space-x-1 active:scale-95 leading-none cursor-pointer ${
-                  wrapText
-                    ? 'bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-500/40'
-                    : 'bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 shadow-2xs'
-                }`}
-                title="Toggle text wrapping across multiple lines"
-              >
-                <WrapText className="w-3 h-3 shrink-0" />
-                <span>{wrapText ? 'Wrap: On' : 'Wrap'}</span>
-              </button>
+              <Tooltip side="top" content={wrapText ? 'Disable wrapping' : 'Enable wrapping'}>
+                <button
+                  onClick={() => setWrapText(!wrapText)}
+                  className={`h-6 px-2 rounded-md text-[11px] font-semibold border transition flex items-center space-x-1 active:scale-95 leading-none cursor-pointer ${
+                    wrapText
+                      ? 'bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-500/40'
+                      : 'bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 shadow-2xs'
+                  }`}
+                >
+                  <WrapText className="w-3 h-3 shrink-0" />
+                  <span>{wrapText ? 'Wrap: On' : 'Wrap'}</span>
+                </button>
+              </Tooltip>
 
               <div className="flex items-center space-x-0.5 pl-1 h-6 relative" ref={pageSizeMenuRef}>
-                <button
-                  onClick={() => goToGridPage(safePage - 1)}
-                  disabled={safePage <= 0 || isReloading}
-                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"
-                  title="Previous Page"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
+                <Tooltip side="top" content="Previous Page" disabled={safePage <= 0 || isReloading}>
+                  <button
+                    onClick={() => goToGridPage(safePage - 1)}
+                    disabled={safePage <= 0 || isReloading}
+                    className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
                 {totalPages > 1 && (
                   <span className="text-[10px] font-mono text-slate-500 px-1 select-none">
                     {safePage + 1}/{totalPages.toLocaleString()}
                   </span>
                 )}
-                <button
-                  onClick={() => goToGridPage(safePage + 1)}
-                  disabled={safePage >= totalPages - 1 || rows.length < gridPageSize || isReloading}
-                  className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"
-                  title="Next Page"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                <Tooltip side="top" content="Next Page" disabled={safePage >= totalPages - 1 || rows.length < gridPageSize || isReloading}>
+                  <button
+                    onClick={() => goToGridPage(safePage + 1)}
+                    disabled={safePage >= totalPages - 1 || rows.length < gridPageSize || isReloading}
+                    className="h-6 w-6 flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
 
                 {/* TablePlus Page Size Gear */}
                 <div className="relative">
-                  <button
-                    onClick={() => setIsPageSizeMenuOpen((prev) => !prev)}
-                    className="h-6 w-6 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded cursor-pointer transition ml-0.5"
-                    title={`Page size: ${gridPageSize} rows`}
-                  >
-                    <Settings2 className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip side="top" content={`Page size: ${gridPageSize} rows`}>
+                    <button
+                      onClick={() => setIsPageSizeMenuOpen((prev) => !prev)}
+                      className="h-6 w-6 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded cursor-pointer transition ml-0.5"
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
 
                   {isPageSizeMenuOpen && (
                     <div

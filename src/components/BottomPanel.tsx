@@ -21,6 +21,7 @@ import {
   ContextMenuHeader,
   ContextMenuPosition,
 } from './ContextMenu';
+import { Tooltip } from './Tooltip';
 
 export const BottomPanel: React.FC = () => {
   const {
@@ -121,22 +122,24 @@ export const BottomPanel: React.FC = () => {
           <div className="h-4 w-px bg-slate-300 dark:bg-slate-800" />
 
           {/* Toggle Maximize Height */}
-          <button
-            onClick={handleToggleMaximize}
-            className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition cursor-pointer"
-            title={isMaximized ? 'Restore height' : 'Maximize height'}
-          >
-            {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
+          <Tooltip side="top" content={isMaximized ? 'Restore height' : 'Maximize height'}>
+            <button
+              onClick={handleToggleMaximize}
+              className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition cursor-pointer"
+            >
+              {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          </Tooltip>
 
           {/* Collapse Bottom Panel Button */}
-          <button
-            onClick={toggleBottomPanel}
-            className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
-            title="Collapse Bottom Panel (⌘J)"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <Tooltip side="top" content="Collapse Bottom Panel" shortcut="⌘J">
+            <button
+              onClick={toggleBottomPanel}
+              className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -190,26 +193,28 @@ export const BottomPanel: React.FC = () => {
 
                   {/* Actions on hover */}
                   <div className="flex items-center space-x-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(item.sql);
-                        showToast('📋 Copied SQL to clipboard');
-                      }}
-                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 rounded transition cursor-pointer"
-                      title="Copy SQL Query"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        openNewQueryTab(item.sql);
-                        showToast('✨ Opened in new Query Editor');
-                      }}
-                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-300 rounded transition cursor-pointer"
-                      title="Open in new Query Tab"
-                    >
-                      <Play className="w-3 h-3" />
-                    </button>
+                    <Tooltip side="top" content="Copy SQL Query">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(item.sql);
+                          showToast('📋 Copied SQL to clipboard');
+                        }}
+                        className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 rounded transition cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip side="top" content="Open in new Query Tab">
+                      <button
+                        onClick={() => {
+                          openNewQueryTab(item.sql);
+                          showToast('✨ Opened in new Query Editor');
+                        }}
+                        className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-300 rounded transition cursor-pointer"
+                      >
+                        <Play className="w-3 h-3" />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               ))}

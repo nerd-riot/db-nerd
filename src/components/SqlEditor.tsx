@@ -68,6 +68,7 @@ import {
   ContextMenuHeader,
   ContextMenuPosition,
 } from './ContextMenu';
+import { Tooltip } from './Tooltip';
 
 
 
@@ -1079,14 +1080,15 @@ export const SqlEditor: React.FC = () => {
             {/* Beautify Button */}
             <div className="relative" ref={beautifyMenuRef}>
               <div className="inline-flex items-center bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/10 rounded-md text-xs font-medium transition shadow-xs overflow-hidden h-6.5">
-                <button
-                  onClick={handleFormat}
-                  className="px-2.5 py-0.5 flex items-center space-x-1.5 cursor-pointer"
-                  title="Beautify SQL (⌘I / ⇧⌥F)"
-                >
-                  <span>Beautify</span>
-                  <kbd className="text-[10px] opacity-70 font-mono">⌘I</kbd>
-                </button>
+                <Tooltip side="bottom" content="Beautify SQL" shortcut="⌘I">
+                  <button
+                    onClick={handleFormat}
+                    className="px-2.5 py-0.5 flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <span>Beautify</span>
+                    <kbd className="text-[10px] opacity-70 font-mono">⌘I</kbd>
+                  </button>
+                </Tooltip>
                 <div className="h-3 w-px bg-slate-300 dark:bg-white/10" />
                 <button
                   onClick={() => setIsBeautifyMenuOpen(!isBeautifyMenuOpen)}
@@ -1134,45 +1136,49 @@ export const SqlEditor: React.FC = () => {
             {tabState.isExecuting ? (
               <div className="relative inline-flex items-center shadow-xs">
                 <div className="inline-flex items-center bg-rose-600 hover:bg-rose-500 text-white rounded-md text-xs font-semibold transition overflow-hidden h-6.5">
-                  <button
-                    onClick={handleCancel}
-                    className="relative overflow-hidden px-2.5 py-0.5 flex items-center space-x-1.5 cursor-pointer leading-none active:scale-95"
-                    title="Cancel Query Execution (⌘.)"
-                  >
-                    <BorderChase color="amber" dual={true} speed="fast" borderWidth={2} glow={true} />
-                    <Square className="relative z-1 w-3 h-3 fill-current shrink-0 animate-pulse" />
-                    <span className="relative z-1">Cancel</span>
-                    <kbd className="relative z-1 px-1 py-0.2 bg-black/20 rounded text-[9px] font-mono text-white font-extrabold leading-none">⌘.</kbd>
-                  </button>
+                  <Tooltip side="bottom" content="Cancel Query Execution" shortcut="⌘.">
+                    <button
+                      onClick={handleCancel}
+                      className="relative overflow-hidden px-2.5 py-0.5 flex items-center space-x-1.5 cursor-pointer leading-none active:scale-95"
+                    >
+                      <BorderChase color="amber" dual={true} speed="fast" borderWidth={2} glow={true} />
+                      <Square className="relative z-1 w-3 h-3 fill-current shrink-0 animate-pulse" />
+                      <span className="relative z-1">Cancel</span>
+                      <kbd className="relative z-1 px-1 py-0.2 bg-black/20 rounded text-[9px] font-mono text-white font-extrabold leading-none">⌘.</kbd>
+                    </button>
+                  </Tooltip>
                   <div className="h-3 w-px bg-white/20" />
-                  <button
-                    onClick={() => setIsRunMenuOpen(!isRunMenuOpen)}
-                    className="px-1.5 py-0.5 flex items-center justify-center cursor-pointer hover:bg-black/10"
-                    title="Execution Options"
-                  >
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
+                  <Tooltip side="bottom" content="Execution Options">
+                    <button
+                      onClick={() => setIsRunMenuOpen(!isRunMenuOpen)}
+                      className="px-1.5 py-0.5 flex items-center justify-center cursor-pointer hover:bg-black/10"
+                    >
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             ) : (
               <div className="relative" ref={runMenuRef}>
                 <div className="inline-flex items-center bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-900 dark:text-white border border-slate-300 dark:border-white/10 rounded-md text-xs font-medium transition shadow-xs overflow-hidden h-6.5">
-                  <button
-                    onClick={handleRun}
-                    className="px-2.5 py-0.5 flex items-center space-x-1.5 cursor-pointer"
-                    title={hasSelection ? "Run Selected Query (⌘↵ / ⌘R)" : "Run Current Query at Pointer (⌘↵ / ⌘R)"}
-                  >
-                    <span>{hasSelection ? 'Run Selection' : 'Run Current'}</span>
-                    <kbd className="text-[10px] opacity-70 font-mono">⌘↵</kbd>
-                  </button>
+                  <Tooltip side="bottom" content={hasSelection ? "Run Selected Query" : "Run Current Query at Pointer"} shortcut="⌘↵">
+                    <button
+                      onClick={handleRun}
+                      className="px-2.5 py-0.5 flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <span>{hasSelection ? 'Run Selection' : 'Run Current'}</span>
+                      <kbd className="text-[10px] opacity-70 font-mono">⌘↵</kbd>
+                    </button>
+                  </Tooltip>
                   <div className="h-3 w-px bg-slate-300 dark:bg-white/10" />
-                  <button
-                    onClick={() => setIsRunMenuOpen(!isRunMenuOpen)}
-                    className="px-1.5 py-0.5 flex items-center justify-center cursor-pointer hover:bg-black/10 dark:hover:bg-white/10"
-                    title="Run Options (Run All, Run Current)"
-                  >
-                    <ChevronDown className="w-3 h-3 text-slate-400" />
-                  </button>
+                  <Tooltip side="bottom" content="Run Options (Run All, Run Current)">
+                    <button
+                      onClick={() => setIsRunMenuOpen(!isRunMenuOpen)}
+                      className="px-1.5 py-0.5 flex items-center justify-center cursor-pointer hover:bg-black/10 dark:hover:bg-white/10"
+                    >
+                      <ChevronDown className="w-3 h-3 text-slate-400" />
+                    </button>
+                  </Tooltip>
                 </div>
 
                 {isRunMenuOpen && (
@@ -1713,67 +1719,72 @@ export const SqlEditor: React.FC = () => {
             <div className="flex items-center space-x-2 text-xs">
               {totalSqlPages > 1 && resultsSubTab === 'data' && (
                 <div className="flex items-center space-x-0.5 pr-1 font-mono text-[10px] text-slate-500 dark:text-slate-400">
-                  <button
-                    onClick={() => setSqlPage((p) => Math.max(0, p - 1))}
-                    disabled={safeSqlPage <= 0}
-                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-default"
-                    title="Previous 200 rows"
-                  >
-                    <ChevronLeft className="w-3 h-3" />
-                  </button>
+                  <Tooltip side="top" content="Previous 200 rows" disabled={safeSqlPage <= 0}>
+                    <button
+                      onClick={() => setSqlPage((p) => Math.max(0, p - 1))}
+                      disabled={safeSqlPage <= 0}
+                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                  </Tooltip>
                   <span>
                     {safeSqlPage + 1}/{totalSqlPages}
                   </span>
-                  <button
-                    onClick={() => setSqlPage((p) => Math.min(totalSqlPages - 1, p + 1))}
-                    disabled={safeSqlPage >= totalSqlPages - 1}
-                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-default"
-                    title="Next 200 rows"
-                  >
-                    <ChevronRight className="w-3 h-3" />
-                  </button>
+                  <Tooltip side="top" content="Next 200 rows" disabled={safeSqlPage >= totalSqlPages - 1}>
+                    <button
+                      onClick={() => setSqlPage((p) => Math.min(totalSqlPages - 1, p + 1))}
+                      disabled={safeSqlPage >= totalSqlPages - 1}
+                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+                    >
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
               {/* Pin Tab Button */}
-              <button
-                onClick={() => {
-                  if (activeResultItem) {
-                    togglePinQueryResultTab(activeTabId, activeResultItem.id);
-                  }
-                }}
-                className={`h-6 w-6 rounded bg-slate-200/80 dark:bg-[#2c2d30] hover:bg-slate-300 dark:hover:bg-[#38393d] border border-slate-300 dark:border-white/5 flex items-center justify-center transition cursor-pointer ${
-                  activeResultItem?.isPinned
-                    ? 'text-amber-500'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                title={activeResultItem?.isPinned ? 'Unpin this query tab' : 'Pin this query tab'}
-              >
-                <Pin className={`w-3 h-3 ${activeResultItem?.isPinned ? 'fill-amber-500 rotate-45' : ''}`} />
-              </button>
+              <Tooltip side="top" content={activeResultItem?.isPinned ? 'Unpin this query tab' : 'Pin this query tab'}>
+                <button
+                  onClick={() => {
+                    if (activeResultItem) {
+                      togglePinQueryResultTab(activeTabId, activeResultItem.id);
+                    }
+                  }}
+                  className={`h-6 w-6 rounded bg-slate-200/80 dark:bg-[#2c2d30] hover:bg-slate-300 dark:hover:bg-[#38393d] border border-slate-300 dark:border-white/5 flex items-center justify-center transition cursor-pointer ${
+                    activeResultItem?.isPinned
+                      ? 'text-amber-500'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Pin className={`w-3 h-3 ${activeResultItem?.isPinned ? 'fill-amber-500 rotate-45' : ''}`} />
+                </button>
+              </Tooltip>
 
               {/* Search Button */}
-              <button
-                onClick={() => setIsSearchOpen(!isSearchOpen)}
-                className={`h-6 w-6 rounded border transition cursor-pointer flex items-center justify-center ${
-                  isSearchOpen || searchFilter
-                    ? 'bg-sky-500 text-white border-sky-400'
-                    : 'bg-slate-200/80 dark:bg-[#2c2d30] hover:bg-slate-300 dark:hover:bg-[#38393d] border-slate-300 dark:border-white/5 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                title="Filter results"
-              >
-                <Search className="w-3 h-3" />
-              </button>
+              <Tooltip side="top" content="Filter results">
+                <button
+                  onClick={() => setIsSearchOpen(!isSearchOpen)}
+                  className={`h-6 w-6 rounded border transition cursor-pointer flex items-center justify-center ${
+                    isSearchOpen || searchFilter
+                      ? 'bg-sky-500 text-white border-sky-400'
+                      : 'bg-slate-200/80 dark:bg-[#2c2d30] hover:bg-slate-300 dark:hover:bg-[#38393d] border-slate-300 dark:border-white/5 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Search className="w-3 h-3" />
+                </button>
+              </Tooltip>
 
               {/* Export... Split Button */}
               <div className="relative" ref={exportMenuRef}>
-                <button
-                  onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-                  className="h-6 px-2.5 rounded bg-slate-200/80 dark:bg-[#2c2d30] hover:bg-slate-300 dark:hover:bg-[#38393d] border border-slate-300 dark:border-white/5 flex items-center space-x-1 text-slate-700 dark:text-slate-200 text-[11px] font-medium transition cursor-pointer"
-                  title="Export results (CSV, JSON, SQL)"
-                >
-                  <span>Export...</span>
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
-                </button>
+                <Tooltip side="top" content="Export results (CSV, JSON, SQL)">
+                  <button
+                    onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                    className="h-6 px-2.5 rounded bg-slate-200/80 dark:bg-[#2c2d30] hover:bg-slate-300 dark:hover:bg-[#38393d] border border-slate-300 dark:border-white/5 flex items-center space-x-1 text-slate-700 dark:text-slate-200 text-[11px] font-medium transition cursor-pointer"
+                  >
+                    <span>Export...</span>
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                  </button>
+                </Tooltip>
 
                 {isExportMenuOpen && (
                   <div className="absolute right-0 bottom-7.5 w-48 bg-white dark:bg-[#1f2023] border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 py-1 text-slate-800 dark:text-slate-200 font-sans text-xs animate-in fade-in zoom-in-95 duration-100">
@@ -1803,39 +1814,42 @@ export const SqlEditor: React.FC = () => {
               </div>
 
               {/* Wrap text toggle */}
-              <button
-                onClick={() => {
-                  setWrapText(!wrapText);
-                  showToast(wrapText ? 'Single line view (Wrap off)' : 'Auto line wrap enabled (Wrap on)');
-                }}
-                className={`h-6 px-1.5 rounded transition-all flex items-center space-x-1 cursor-pointer select-none text-[10px] ${
-                  wrapText
-                    ? 'bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 font-semibold'
-                    : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'
-                }`}
-                title={wrapText ? 'Disable wrapping' : 'Enable wrapping'}
-              >
-                <WrapText className="w-2.5 h-2.5" />
-                <span>{wrapText ? 'Wrap: On' : 'Wrap: Off'}</span>
-              </button>
+              <Tooltip side="top" content={wrapText ? 'Disable wrapping' : 'Enable wrapping'}>
+                <button
+                  onClick={() => {
+                    setWrapText(!wrapText);
+                    showToast(wrapText ? 'Single line view (Wrap off)' : 'Auto line wrap enabled (Wrap on)');
+                  }}
+                  className={`h-6 px-1.5 rounded transition-all flex items-center space-x-1 cursor-pointer select-none text-[10px] ${
+                    wrapText
+                      ? 'bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 font-semibold'
+                      : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'
+                  }`}
+                >
+                  <WrapText className="w-2.5 h-2.5" />
+                  <span>{wrapText ? 'Wrap: On' : 'Wrap: Off'}</span>
+                </button>
+              </Tooltip>
 
               <div className="h-3 w-px bg-slate-300 dark:bg-slate-700" />
 
               {/* Maximize / Collapse */}
-              <button
-                onClick={() => setSqlEditorSplitHeight(sqlEditorSplitHeight <= 100 ? 220 : 80)}
-                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition cursor-pointer"
-                title={sqlEditorSplitHeight <= 100 ? 'Restore Split' : 'Maximize Results'}
-              >
-                {sqlEditorSplitHeight <= 100 ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
-              </button>
-              <button
-                onClick={toggleSqlResultsCollapsed}
-                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded transition cursor-pointer"
-                title="Collapse Results Panel"
-              >
-                <ChevronDown className="w-3 h-3" />
-              </button>
+              <Tooltip side="top" content={sqlEditorSplitHeight <= 100 ? 'Restore Split' : 'Maximize Results'}>
+                <button
+                  onClick={() => setSqlEditorSplitHeight(sqlEditorSplitHeight <= 100 ? 220 : 80)}
+                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition cursor-pointer"
+                >
+                  {sqlEditorSplitHeight <= 100 ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                </button>
+              </Tooltip>
+              <Tooltip side="top" content="Collapse Results Panel">
+                <button
+                  onClick={toggleSqlResultsCollapsed}
+                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded transition cursor-pointer"
+                >
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </Tooltip>
             </div>
           </div>
 

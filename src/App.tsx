@@ -23,6 +23,7 @@ import { DisconnectedModal } from './components/DisconnectedModal';
 import { SafetyVerificationModal } from './components/SafetyVerificationModal';
 import { TableActionModal } from './components/TableActionModal';
 import { heartbeatService } from './services/heartbeatService';
+import { Tooltip } from './components/Tooltip';
 import { Table, Terminal, Activity, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info, Scissors, ClipboardPaste, Trash2, Database, SlidersHorizontal, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
 import {
   ContextMenuContainer,
@@ -547,13 +548,14 @@ export function App() {
             </div>
           </>
         ) : (
-          <button
-            onClick={toggleSidebar}
-            className="w-4 hover:w-5 bg-slate-100 dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-r border-slate-300 dark:border-slate-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-300 flex items-center justify-center transition-all cursor-pointer group flex-shrink-0 z-10"
-            title="Expand Sidebar (⌘B)"
-          >
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </button>
+          <Tooltip side="right" content="Expand Sidebar" shortcut="⌘B">
+            <button
+              onClick={toggleSidebar}
+              className="w-4 hover:w-5 bg-slate-100 dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-r border-slate-300 dark:border-slate-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-300 flex items-center justify-center transition-all cursor-pointer group flex-shrink-0 z-10"
+            >
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </Tooltip>
         )}
 
         {/* Main Content Area */}
@@ -566,22 +568,24 @@ export function App() {
                 
                 {/* Tab History Navigation (< >) */}
                 <div className="flex items-center bg-slate-200 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-800/80 rounded-md p-0.5 mr-1 flex-shrink-0 h-7">
-                  <button
-                    onClick={handlePrevTab}
-                    disabled={!canGoBack}
-                    className={`h-6 w-6 flex items-center justify-center rounded hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition ${!canGoBack ? 'opacity-30 cursor-not-allowed' : 'active:scale-95'}`}
-                    title="Previous Tab"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={handleNextTab}
-                    disabled={!canGoForward}
-                    className={`h-6 w-6 flex items-center justify-center rounded hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition ${!canGoForward ? 'opacity-30 cursor-not-allowed' : 'active:scale-95'}`}
-                    title="Next Tab"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip side="bottom" content="Previous Tab" disabled={!canGoBack}>
+                    <button
+                      onClick={handlePrevTab}
+                      disabled={!canGoBack}
+                      className={`h-6 w-6 flex items-center justify-center rounded hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition ${!canGoBack ? 'opacity-30 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip side="bottom" content="Next Tab" disabled={!canGoForward}>
+                    <button
+                      onClick={handleNextTab}
+                      disabled={!canGoForward}
+                      className={`h-6 w-6 flex items-center justify-center rounded hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition ${!canGoForward ? 'opacity-30 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
 
                 {/* Dynamic Open Tabs */}
@@ -601,74 +605,82 @@ export function App() {
                   }
 
                   return (
-                    <div
+                    <Tooltip
                       key={tab.id}
-                      onClick={() => setActiveTabId(tab.id)}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        startRename(tab.id, tab.title);
-                      }}
-                      onMouseDown={(e) => {
-                        if (e.button === 1 && tab.canClose !== false) {
-                          e.preventDefault();
-                          closeTab(tab.id);
-                        }
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setTabContextPos({ x: e.clientX, y: e.clientY });
-                        setTargetTabId(tab.id);
-                      }}
-                      className={`group h-7 px-2.5 rounded-md text-xs font-medium flex items-center space-x-1.5 transition cursor-pointer select-none max-w-[220px] flex-shrink-0 border ${
-                        isActive
-                          ? 'bg-white dark:bg-slate-800/90 border-slate-300 dark:border-slate-700/80 text-slate-900 dark:text-slate-100 shadow-xs font-semibold'
-                          : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/50'
-                      }`}
-                      title={`${tab.title} (Double-click to rename)`}
+                      side="bottom"
+                      content={tab.title}
+                      description="Double-click to rename • ⌘W to close"
+                      disabled={editingTabId === tab.id}
                     >
-                      {icon}
-                      {editingTabId === tab.id ? (
-                        <input
-                          type="text"
-                          value={editingTitle}
-                          autoFocus
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onBlur={saveRename}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveRename();
-                            if (e.key === 'Escape') setEditingTabId(null);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-sky-500 rounded px-1 py-0 text-xs w-24 outline-none font-sans"
-                        />
-                      ) : (
-                        <span className="truncate">{tab.title}</span>
-                      )}
-                      {tab.canClose !== false && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                      <div
+                        onClick={() => setActiveTabId(tab.id)}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          startRename(tab.id, tab.title);
+                        }}
+                        onMouseDown={(e) => {
+                          if (e.button === 1 && tab.canClose !== false) {
+                            e.preventDefault();
                             closeTab(tab.id);
-                          }}
-                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-rose-500 rounded transition opacity-0 group-hover:opacity-100 ml-0.5"
-                          title="Close Tab (⌘W)"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setTabContextPos({ x: e.clientX, y: e.clientY });
+                          setTargetTabId(tab.id);
+                        }}
+                        className={`group h-7 px-2.5 rounded-md text-xs font-medium flex items-center space-x-1.5 transition cursor-pointer select-none max-w-[220px] flex-shrink-0 border ${
+                          isActive
+                            ? 'bg-white dark:bg-slate-800/90 border-slate-300 dark:border-slate-700/80 text-slate-900 dark:text-slate-100 shadow-xs font-semibold'
+                            : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/50'
+                        }`}
+                      >
+                        {icon}
+                        {editingTabId === tab.id ? (
+                          <input
+                            type="text"
+                            value={editingTitle}
+                            autoFocus
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={saveRename}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveRename();
+                              if (e.key === 'Escape') setEditingTabId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-sky-500 rounded px-1 py-0 text-xs w-24 outline-none font-sans"
+                          />
+                        ) : (
+                          <span className="truncate">{tab.title}</span>
+                        )}
+                        {tab.canClose !== false && (
+                          <Tooltip side="bottom" content="Close Tab" shortcut="⌘W">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                closeTab(tab.id);
+                              }}
+                              className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-rose-500 rounded transition opacity-0 group-hover:opacity-100 ml-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </Tooltip>
                   );
                 })}
 
                 {/* New Tab Button (+) */}
-                <button
-                  onClick={() => openNewQueryTab()}
-                  className="h-7 w-7 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 flex items-center justify-center transition active:scale-95 border border-transparent hover:border-slate-300 dark:hover:border-slate-700/60 flex-shrink-0"
-                  title="New SQL Query Tab (⌘T / ⌘E)"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
+                <Tooltip side="bottom" content="New SQL Query Tab" shortcut="⌘T">
+                  <button
+                    onClick={() => openNewQueryTab()}
+                    className="h-7 w-7 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 flex items-center justify-center transition active:scale-95 border border-transparent hover:border-slate-300 dark:hover:border-slate-700/60 flex-shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
 
               </div>
 
@@ -744,13 +756,14 @@ export function App() {
               <RightInspector />
             </>
           ) : (
-            <button
-              onClick={toggleRightInspector}
-              className="w-4 hover:w-5 bg-slate-100 dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-l border-slate-300 dark:border-slate-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-300 flex items-center justify-center transition-all cursor-pointer group flex-shrink-0 z-10"
-              title="Expand Right Inspector (⌘I)"
-            >
-              <ChevronLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
-            </button>
+            <Tooltip side="left" content="Expand Right Inspector" shortcut="⌘I">
+              <button
+                onClick={toggleRightInspector}
+                className="w-4 hover:w-5 bg-slate-100 dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-l border-slate-300 dark:border-slate-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-300 flex items-center justify-center transition-all cursor-pointer group flex-shrink-0 z-10"
+              >
+                <ChevronLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+              </button>
+            </Tooltip>
           )
         )}
       </div>

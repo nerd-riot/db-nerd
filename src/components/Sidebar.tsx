@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { getTablesForConnection, getTableSchema, getFunctionsForConnection } from '../data/schemas';
 import { ColumnDefinition } from '../types';
+import { Tooltip } from './Tooltip';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -235,19 +236,21 @@ export const Sidebar = () => {
             />
             <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-1.5 top-1.5" />
           </div>
-          <button
-            className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded transition cursor-pointer"
-            title="Filter preferences"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={toggleSidebar}
-            className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded transition cursor-pointer"
-            title="Collapse Sidebar (⌘B)"
-          >
-            <PanelLeftClose className="w-3.5 h-3.5" />
-          </button>
+          <Tooltip side="bottom" content="Filter preferences">
+            <button
+              className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded transition cursor-pointer"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+          <Tooltip side="bottom" content="Collapse Sidebar" shortcut="⌘B">
+            <button
+              onClick={toggleSidebar}
+              className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded transition cursor-pointer"
+            >
+              <PanelLeftClose className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -292,38 +295,40 @@ export const Sidebar = () => {
           <div className="space-y-1">
             {/* Functions Group */}
             <div>
-              <div
-                onClick={() => {
-                  openAllFunctionsTab();
-                }}
-                className={`flex items-center justify-between px-1.5 py-1 text-[11px] font-semibold cursor-pointer rounded transition-colors group ${
-                  isAllFunctionsActive
-                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-900/50 shadow-2xs'
-                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-slate-900/50'
-                }`}
-                title="Click to view All Functions (Functions.public)"
-              >
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsFunctionsOpen(!isFunctionsOpen);
-                    }}
-                    className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition"
-                    title={isFunctionsOpen ? "Collapse functions list" : "Expand functions list"}
-                  >
-                    <ChevronRight
-                      className={`w-3.5 h-3.5 transition-transform duration-150 ${
-                        isFunctionsOpen ? 'rotate-90' : 'rotate-0'
-                      }`}
-                    />
-                  </button>
-                  <span className="group-hover:text-amber-600 dark:group-hover:text-amber-300 transition-colors">Functions</span>
+              <Tooltip side="right" content="View All Functions" shortcut="Functions.public">
+                <div
+                  onClick={() => {
+                    openAllFunctionsTab();
+                  }}
+                  className={`flex items-center justify-between px-1.5 py-1 text-[11px] font-semibold cursor-pointer rounded transition-colors group ${
+                    isAllFunctionsActive
+                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-900/50 shadow-2xs'
+                      : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-slate-900/50'
+                  }`}
+                >
+                  <div className="flex items-center space-x-1">
+                    <Tooltip side="bottom" content={isFunctionsOpen ? "Collapse functions list" : "Expand functions list"}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsFunctionsOpen(!isFunctionsOpen);
+                        }}
+                        className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition"
+                      >
+                        <ChevronRight
+                          className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                            isFunctionsOpen ? 'rotate-90' : 'rotate-0'
+                          }`}
+                        />
+                      </button>
+                    </Tooltip>
+                    <span className="group-hover:text-amber-600 dark:group-hover:text-amber-300 transition-colors">Functions</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono pr-1 group-hover:text-slate-700 dark:group-hover:text-slate-400 transition-colors">
+                    {filteredFunctions.length}
+                  </span>
                 </div>
-                <span className="text-[10px] text-slate-500 font-mono pr-1 group-hover:text-slate-700 dark:group-hover:text-slate-400 transition-colors">
-                  {filteredFunctions.length}
-                </span>
-              </div>
+              </Tooltip>
 
               {/* Function List (TablePlus Style) */}
               {isFunctionsOpen && (
@@ -336,30 +341,35 @@ export const Sidebar = () => {
                   )}
                   {filteredFunctions.map((fn) => {
                     return (
-                      <div
+                      <Tooltip
                         key={fn.name}
-                        onClick={() => {
-                          setSelectedRowData(fn);
-                        }}
-                        onDoubleClick={() => {
-                          openAllFunctionsTab();
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setFunctionContextPos({ x: e.clientX, y: e.clientY });
-                          setTargetFunction(fn);
-                        }}
-                        title="Click to select • Double-click to open in new tab • Right-click for options"
-                        className="flex items-center justify-between px-2.5 py-1 rounded cursor-pointer text-xs font-mono transition-colors group hover:bg-slate-200/80 dark:hover:bg-slate-900/70 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                        side="right"
+                        content={`Function: ${fn.name}`}
+                        description="Click to select • Double-click to open in tab"
                       >
-                        <div className="flex items-center space-x-2 truncate">
-                          <div className="w-3.5 h-3.5 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-center flex-shrink-0 text-amber-600 dark:text-amber-400 font-mono font-bold text-[9px]">
-                            {'{ }'}
+                        <div
+                          onClick={() => {
+                            setSelectedRowData(fn);
+                          }}
+                          onDoubleClick={() => {
+                            openAllFunctionsTab();
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setFunctionContextPos({ x: e.clientX, y: e.clientY });
+                            setTargetFunction(fn);
+                          }}
+                          className="flex items-center justify-between px-2.5 py-1 rounded cursor-pointer text-xs font-mono transition-colors group hover:bg-slate-200/80 dark:hover:bg-slate-900/70 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                        >
+                          <div className="flex items-center space-x-2 truncate">
+                            <div className="w-3.5 h-3.5 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-center flex-shrink-0 text-amber-600 dark:text-amber-400 font-mono font-bold text-[9px]">
+                              {'{ }'}
+                            </div>
+                            <span className="truncate">{fn.name}</span>
                           </div>
-                          <span className="truncate">{fn.name}</span>
                         </div>
-                      </div>
+                      </Tooltip>
                     );
                   })}
                 </div>
@@ -368,38 +378,40 @@ export const Sidebar = () => {
 
             {/* Tables Group */}
             <div>
-              <div
-                onClick={() => {
-                  openAllTableStatsTab();
-                }}
-                className={`flex items-center justify-between px-1.5 py-1 text-[11px] font-semibold cursor-pointer rounded transition-colors group ${
-                  isAllTablesActive
-                    ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-900/50 shadow-2xs'
-                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-slate-900/50'
-                }`}
-                title="Click to view All Tables Statistics (Tables.public)"
-              >
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsTablesOpen(!isTablesOpen);
-                    }}
-                    className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition"
-                    title={isTablesOpen ? "Collapse tables list" : "Expand tables list"}
-                  >
-                    <ChevronRight
-                      className={`w-3.5 h-3.5 transition-transform duration-150 ${
-                        isTablesOpen ? 'rotate-90' : 'rotate-0'
-                      }`}
-                    />
-                  </button>
-                  <span className="group-hover:text-sky-600 dark:group-hover:text-sky-300 transition-colors">Tables</span>
+              <Tooltip side="right" content="View All Tables Statistics" shortcut="Tables.public">
+                <div
+                  onClick={() => {
+                    openAllTableStatsTab();
+                  }}
+                  className={`flex items-center justify-between px-1.5 py-1 text-[11px] font-semibold cursor-pointer rounded transition-colors group ${
+                    isAllTablesActive
+                      ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-900/50 shadow-2xs'
+                      : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-slate-900/50'
+                  }`}
+                >
+                  <div className="flex items-center space-x-1">
+                    <Tooltip side="bottom" content={isTablesOpen ? "Collapse tables list" : "Expand tables list"}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsTablesOpen(!isTablesOpen);
+                        }}
+                        className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition"
+                      >
+                        <ChevronRight
+                          className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                            isTablesOpen ? 'rotate-90' : 'rotate-0'
+                          }`}
+                        />
+                      </button>
+                    </Tooltip>
+                    <span className="group-hover:text-sky-600 dark:group-hover:text-sky-300 transition-colors">Tables</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono pr-1 group-hover:text-slate-700 dark:group-hover:text-slate-400 transition-colors">
+                    {isTablesLoading ? '...' : filteredTables.length}
+                  </span>
                 </div>
-                <span className="text-[10px] text-slate-500 font-mono pr-1 group-hover:text-slate-700 dark:group-hover:text-slate-400 transition-colors">
-                  {isTablesLoading ? '...' : filteredTables.length}
-                </span>
-              </div>
+              </Tooltip>
 
               {/* Table List (TablePlus Style) */}
               {isTablesOpen && (
@@ -423,46 +435,73 @@ export const Sidebar = () => {
                             : `${tbl.estimated_rows}`)
                         : (tbl.total_size || '0');
 
-                    const tooltipParts = [
-                      `Table: ${tbl.name}`,
-                      tbl.schema ? `Schema: ${tbl.schema}` : null,
-                      tbl.estimated_rows !== undefined ? `Rows: ${Number(tbl.estimated_rows).toLocaleString()}` : null,
-                      tbl.total_size ? `Size: ${tbl.total_size}` : null,
-                      tbl.data_size ? `Data: ${tbl.data_size}` : null,
-                      tbl.index_size ? `Index: ${tbl.index_size}` : null,
-                      tbl.comment && tbl.comment !== '--' ? `Comment: ${tbl.comment}` : null,
-                    ].filter(Boolean);
-
                     return (
-                      <div
+                      <Tooltip
                         key={tbl.name}
-                        onClick={() => {
-                          openTableGridTab(tbl.name);
-                        }}
-                        onDoubleClick={() => {
-                          openTableGridTab(tbl.name);
-                        }}
-                        title={tooltipParts.join(' • ')}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setTableContextPos({ x: e.clientX, y: e.clientY });
-                          setTargetTable(tbl.name);
-                        }}
-                        className={`flex items-center justify-between px-2.5 py-1 rounded cursor-pointer text-xs font-mono transition-colors group ${
-                          isSelected
-                            ? 'bg-sky-100 dark:bg-slate-800/90 text-sky-900 dark:text-slate-100 font-semibold shadow-xs border border-sky-300/60 dark:border-slate-700/80'
-                            : 'hover:bg-slate-200/80 dark:hover:bg-slate-900/70 text-slate-700 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-200 border border-transparent'
-                        }`}
+                        side="right"
+                        delay={150}
+                        content={
+                          <div className="flex flex-col space-y-1 py-0.5 text-left min-w-[170px]">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1">
+                              <span className="font-semibold text-slate-100 text-xs truncate max-w-[150px]">{tbl.name}</span>
+                              {tbl.schema && (
+                                <span className="text-[9px] px-1 py-0.2 rounded font-mono bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                  {tbl.schema}
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] font-mono text-slate-300">
+                              {tbl.estimated_rows !== undefined && (
+                                <div><span className="text-slate-400">Rows:</span> {Number(tbl.estimated_rows).toLocaleString()}</div>
+                              )}
+                              {tbl.total_size && (
+                                <div><span className="text-slate-400">Size:</span> {tbl.total_size}</div>
+                              )}
+                              {tbl.data_size && (
+                                <div><span className="text-slate-400">Data:</span> {tbl.data_size}</div>
+                              )}
+                              {tbl.index_size && (
+                                <div><span className="text-slate-400">Index:</span> {tbl.index_size}</div>
+                              )}
+                            </div>
+                            {tbl.comment && tbl.comment !== '--' && (
+                              <div className="text-[10px] text-slate-400 italic truncate max-w-[200px]">
+                                {tbl.comment}
+                              </div>
+                            )}
+                            <div className="pt-0.5 text-[10px] text-slate-400/80 italic">
+                              Double-click to open • Right-click for options
+                            </div>
+                          </div>
+                        }
                       >
-                        <div className="flex items-center space-x-2 truncate">
-                          <TableIcon
-                            className={`w-3.5 h-3.5 flex-shrink-0 ${
-                              isSelected ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-400'
-                            }`}
-                          />
-                          <span className="truncate">{tbl.name}</span>
-                        </div>
+                        <div
+                          onClick={() => {
+                            openTableGridTab(tbl.name);
+                          }}
+                          onDoubleClick={() => {
+                            openTableGridTab(tbl.name);
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setTableContextPos({ x: e.clientX, y: e.clientY });
+                            setTargetTable(tbl.name);
+                          }}
+                          className={`flex items-center justify-between px-2.5 py-1 rounded cursor-pointer text-xs font-mono transition-colors group ${
+                            isSelected
+                              ? 'bg-sky-100 dark:bg-slate-800/90 text-sky-900 dark:text-slate-100 font-semibold shadow-xs border border-sky-300/60 dark:border-slate-700/80'
+                              : 'hover:bg-slate-200/80 dark:hover:bg-slate-900/70 text-slate-700 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-200 border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2 truncate">
+                            <TableIcon
+                              className={`w-3.5 h-3.5 flex-shrink-0 ${
+                                isSelected ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-400'
+                              }`}
+                            />
+                            <span className="truncate">{tbl.name}</span>
+                          </div>
                         <div className="flex items-center space-x-1.5 flex-shrink-0">
                           {tbl.total_size && displayBadge !== tbl.total_size && (
                             <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono hidden group-hover:inline">
@@ -478,8 +517,9 @@ export const Sidebar = () => {
                           </span>
                         </div>
                       </div>
-                    );
-                  })}
+                    </Tooltip>
+                  );
+                })}
                 </div>
               )}
             </div>
@@ -513,31 +553,36 @@ export const Sidebar = () => {
                 Saved Queries ({filteredQueries.length})
               </div>
               {filteredQueries.map((q) => (
-                <div
+                <Tooltip
                   key={q.id}
-                  onDoubleClick={() => openNewQueryTab(q.sql)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setQueryContextPos({ x: e.clientX, y: e.clientY });
-                    setTargetQuery({ id: q.id, title: q.title, sql: q.sql });
-                  }}
-                  className="p-2 rounded-lg bg-white dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1 group"
-                  title="Double-click to open query tab (Right click for options)"
+                  side="right"
+                  content={q.title}
+                  description="Double-click to open query tab • Right-click for options"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-1.5 truncate">
-                      <Terminal className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform flex-shrink-0" />
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-950 dark:group-hover:text-white truncate">
-                        {q.title}
+                  <div
+                    onDoubleClick={() => openNewQueryTab(q.sql)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setQueryContextPos({ x: e.clientX, y: e.clientY });
+                      setTargetQuery({ id: q.id, title: q.title, sql: q.sql });
+                    }}
+                    className="p-2 rounded-lg bg-white dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1 group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5 truncate">
+                        <Terminal className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform flex-shrink-0" />
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-950 dark:group-hover:text-white truncate">
+                          {q.title}
+                        </span>
+                      </div>
+                      <span className="text-[9px] px-1 py-0.2 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-600 dark:text-slate-500 font-mono">
+                        SQL
                       </span>
                     </div>
-                    <span className="text-[9px] px-1 py-0.2 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-600 dark:text-slate-500 font-mono">
-                      SQL
-                    </span>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{q.desc}</p>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{q.desc}</p>
-                </div>
+                </Tooltip>
               ))}
             </div>
           )
@@ -572,28 +617,30 @@ export const Sidebar = () => {
                   </span>
                   {activeConnection?.id && (
                     <div className="inline-flex rounded-md p-0.5 bg-slate-200/80 dark:bg-slate-900 border border-slate-300/80 dark:border-slate-800 text-[9px] font-medium">
-                      <button
-                        onClick={() => setHistoryScope('current')}
-                        className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
-                          historyScope === 'current'
-                            ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                        }`}
-                        title={`Show queries for ${activeConnection.name}`}
-                      >
-                        Active DB
-                      </button>
-                      <button
-                        onClick={() => setHistoryScope('all')}
-                        className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
-                          historyScope === 'all'
-                            ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                        }`}
-                        title="Show queries across all databases"
-                      >
-                        All
-                      </button>
+                      <Tooltip side="top" content={`Show queries for ${activeConnection.name}`}>
+                        <button
+                          onClick={() => setHistoryScope('current')}
+                          className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
+                            historyScope === 'current'
+                              ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
+                              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          Active DB
+                        </button>
+                      </Tooltip>
+                      <Tooltip side="top" content="Show queries across all databases">
+                        <button
+                          onClick={() => setHistoryScope('all')}
+                          className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
+                            historyScope === 'all'
+                              ? 'bg-white dark:bg-sky-500 text-sky-900 dark:text-slate-950 font-bold shadow-2xs'
+                              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          All
+                        </button>
+                      </Tooltip>
                     </div>
                   )}
                 </div>
@@ -622,65 +669,72 @@ export const Sidebar = () => {
                 const isExpanded = allHistoryExpanded || !!expandedHistory[h.id];
 
                 return (
-                  <div
+                  <Tooltip
                     key={h.id}
-                    onDoubleClick={() => openNewQueryTab(h.sql)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setQueryContextPos({ x: e.clientX, y: e.clientY });
-                      setTargetQuery({ id: h.id, title: `Query (${h.durationMs}ms)`, sql: h.sql });
-                    }}
-                    className="p-2.5 rounded-xl bg-white dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1.5 group shadow-2xs"
-                    title="Double-click to open in new SQL tab • Click expand to view full query"
+                    side="right"
+                    content="Double-click to open in new SQL tab"
+                    description="Click expand to view full query"
                   >
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                      <div className="flex items-center space-x-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                        <span className="text-emerald-700 dark:text-emerald-400 font-bold">{h.durationMs}ms</span>
-                        <span className="text-slate-300 dark:text-slate-700">•</span>
-                        <span className="text-slate-400 dark:text-slate-500">{h.timestamp.replace('Today at ', '')}</span>
-                      </div>
-
-                      <div className="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(h.sql);
-                            showToast('📋 Copied SQL query to clipboard');
-                          }}
-                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
-                          title="Copy SQL Query"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
-                          }}
-                          className="px-1.5 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-[10px] text-sky-600 dark:text-sky-400 font-sans font-medium transition"
-                          title={isExpanded ? "Collapse full query" : "Expand to view full query"}
-                        >
-                          {isExpanded ? 'Collapse' : 'Expand'}
-                        </button>
-                      </div>
-                    </div>
-
                     <div
-                      onClick={(e) => {
+                      onDoubleClick={() => openNewQueryTab(h.sql)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
-                        setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
+                        setQueryContextPos({ x: e.clientX, y: e.clientY });
+                        setTargetQuery({ id: h.id, title: `Query (${h.durationMs}ms)`, sql: h.sql });
                       }}
-                      className={`font-mono text-[11px] text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-950/70 p-2 rounded-lg border border-slate-200 dark:border-slate-800/80 transition-all ${
-                        isExpanded
-                          ? 'whitespace-pre-wrap break-words max-h-72 overflow-y-auto select-text font-normal'
-                          : 'line-clamp-2 cursor-pointer'
-                      }`}
+                      className="p-2.5 rounded-xl bg-white dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/90 border border-slate-200 dark:border-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition-all space-y-1.5 group shadow-2xs"
                     >
-                      {h.sql}
+                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                        <div className="flex items-center space-x-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <span className="text-emerald-700 dark:text-emerald-400 font-bold">{h.durationMs}ms</span>
+                          <span className="text-slate-300 dark:text-slate-700">•</span>
+                          <span className="text-slate-400 dark:text-slate-500">{h.timestamp.replace('Today at ', '')}</span>
+                        </div>
+
+                        <div className="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                          <Tooltip side="top" content="Copy SQL Query">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(h.sql);
+                                showToast('📋 Copied SQL query to clipboard');
+                              }}
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </Tooltip>
+                          <Tooltip side="top" content={isExpanded ? "Collapse full query" : "Expand to view full query"}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
+                              }}
+                              className="px-1.5 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-[10px] text-sky-600 dark:text-sky-400 font-sans font-medium transition"
+                            >
+                              {isExpanded ? 'Collapse' : 'Expand'}
+                            </button>
+                          </Tooltip>
+                        </div>
+                      </div>
+
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedHistory((prev) => ({ ...prev, [h.id]: !prev[h.id] }));
+                        }}
+                        className={`font-mono text-[11px] text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-950/70 p-2 rounded-lg border border-slate-200 dark:border-slate-800/80 transition-all ${
+                          isExpanded
+                            ? 'whitespace-pre-wrap break-words max-h-72 overflow-y-auto select-text font-normal'
+                            : 'line-clamp-2 cursor-pointer'
+                        }`}
+                      >
+                        {h.sql}
+                      </div>
                     </div>
-                  </div>
+                  </Tooltip>
                 );
               })}
             </div>
@@ -691,46 +745,52 @@ export const Sidebar = () => {
 
       {/* Footer Section: Add Item & Database/Schema Selector Dropdown */}
       <div className="h-9 px-2 border-t border-slate-300 dark:border-slate-800/80 bg-slate-100 dark:bg-slate-950/90 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 flex-shrink-0">
-        <button
-          onClick={() => openNewQueryTab()}
-          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 rounded transition cursor-pointer"
-          title="New SQL Query (⌘E / ⌘T)"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+        <Tooltip side="top" content="New SQL Query" shortcut="⌘T">
+          <button
+            onClick={() => openNewQueryTab()}
+            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 rounded transition cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </Tooltip>
 
         {/* TablePlus Database & Schema Switcher Dropdown */}
-        <button
-          onClick={() => {
-            if (!activeConnection?.id) {
-              setConnectionModalOpen(true);
-            } else {
-              setDatabaseModalOpen(true);
-            }
-          }}
-          className="flex items-center space-x-1.5 px-2 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded text-[11px] font-mono text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition group border border-transparent hover:border-slate-300 dark:hover:border-slate-700/60 cursor-pointer"
-          title={!hasActiveSession ? "Connect Database (⌘K)" : "Switch Database or Schema (⌘O)"}
+        <Tooltip
+          side="top"
+          content={!hasActiveSession ? "Connect Database" : "Switch Database or Schema"}
+          shortcut={!hasActiveSession ? "⌘K" : "⌘O"}
         >
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              !hasActiveSession
-                ? 'bg-slate-400'
-                : activeConnection.connectionStatus === 'failed'
-                ? 'bg-rose-500 shadow-xs shadow-rose-500/50'
-                : 'bg-emerald-500 shadow-xs shadow-emerald-500/50'
-            }`}
-          />
-          <span className="font-semibold text-sky-600 dark:text-sky-400 truncate max-w-[120px]">
-            {!hasActiveSession ? 'No Connection' : (activeConnection.database || 'default')}
-          </span>
-          {hasActiveSession && (
-            <>
-              <span className="text-slate-400 dark:text-slate-500">:</span>
-              <span className="text-slate-700 dark:text-slate-300">public</span>
-            </>
-          )}
-          <ChevronDown className="w-3 h-3 text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-transform" />
-        </button>
+          <button
+            onClick={() => {
+              if (!activeConnection?.id) {
+                setConnectionModalOpen(true);
+              } else {
+                setDatabaseModalOpen(true);
+              }
+            }}
+            className="flex items-center space-x-1.5 px-2 py-0.5 hover:bg-slate-200 dark:hover:bg-slate-800/80 rounded text-[11px] font-mono text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition group border border-transparent hover:border-slate-300 dark:hover:border-slate-700/60 cursor-pointer"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                !hasActiveSession
+                  ? 'bg-slate-400'
+                  : activeConnection.connectionStatus === 'failed'
+                  ? 'bg-rose-500 shadow-xs shadow-rose-500/50'
+                  : 'bg-emerald-500 shadow-xs shadow-emerald-500/50'
+              }`}
+            />
+            <span className="font-semibold text-sky-600 dark:text-sky-400 truncate max-w-[120px]">
+              {!hasActiveSession ? 'No Connection' : (activeConnection.database || 'default')}
+            </span>
+            {hasActiveSession && (
+              <>
+                <span className="text-slate-400 dark:text-slate-500">:</span>
+                <span className="text-slate-700 dark:text-slate-300">public</span>
+              </>
+            )}
+            <ChevronDown className="w-3 h-3 text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-transform" />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Table Context Menu */}
