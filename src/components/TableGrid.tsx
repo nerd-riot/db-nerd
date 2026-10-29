@@ -115,12 +115,19 @@ export const TableGrid: React.FC = () => {
 
   const [editingCell, setEditingCell] = useState<{ id: number | string; field: string } | null>(null);
 
-  // Auto-close cell editor when transaction is rolled back or committed
+  // Auto-close cell editor only when transaction is rolled back or committed (pending edits drop from > 0 to 0)
+  const prevPendingEditsCountRef = useRef(pendingEditsCount);
   useEffect(() => {
-    if (pendingEditsCount === 0 && editingCell) {
+    if (prevPendingEditsCountRef.current > 0 && pendingEditsCount === 0 && editingCell) {
       setEditingCell(null);
     }
+    prevPendingEditsCountRef.current = pendingEditsCount;
   }, [pendingEditsCount, editingCell]);
+
+  // Reset editing cell when switching tables or navigating pages
+  useEffect(() => {
+    setEditingCell(null);
+  }, [selectedTable, gridPage]);
   const [contextMenuPos, setContextMenuPos] = useState<ContextMenuPosition | null>(null);
   const [targetContextMenuRows, setTargetContextMenuRows] = useState<GridRow[]>([]);
   const [colContextPos, setColContextPos] = useState<ContextMenuPosition | null>(null);
@@ -204,10 +211,8 @@ export const TableGrid: React.FC = () => {
   }, [setSelectedRowData]);
 
   const startEditing = useCallback((id: number | string, field: string) => {
-    // Prevent editing the primary key directly
-    if (field === 'id' && resolvedColumns.find((c) => c.name === 'id')?.isPrimaryKey) return;
     setEditingCell({ id, field });
-  }, [resolvedColumns]);
+  }, []);
 
   const handleSaveCell = useCallback((id: number | string, field: string, newVal: any) => {
     updateCell(id, field as keyof GridRow, newVal);

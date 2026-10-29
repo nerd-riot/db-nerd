@@ -38,7 +38,16 @@ export function applyCellUpdate(
   const origRow = originalRows.find((r) => String(r.id) === String(id));
 
   let castValue = value;
-  if (field === 'id' || field === 'user_id' || field === 'total_amount') {
+  if (value === 'NULL' || value === 'null') {
+    castValue = null;
+  } else if (origRow && typeof origRow[field] === 'number' && typeof value === 'string' && value.trim() !== '') {
+    const num = Number(value);
+    if (!isNaN(num)) castValue = num;
+  } else if (origRow && typeof origRow[field] === 'boolean' && typeof value === 'string') {
+    const lower = value.trim().toLowerCase();
+    if (lower === 'true' || lower === 't' || lower === '1') castValue = true;
+    else if (lower === 'false' || lower === 'f' || lower === '0') castValue = false;
+  } else if (field === 'id' || field === 'user_id' || field === 'total_amount') {
     const num = Number(value);
     if (!isNaN(num)) castValue = num;
   }

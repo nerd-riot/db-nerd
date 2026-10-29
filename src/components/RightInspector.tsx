@@ -7,8 +7,6 @@ import {
   Copy,
   Check,
   Info,
-  ChevronDown,
-  ChevronRight,
   Maximize2,
   Minimize2,
   Key,
@@ -21,8 +19,8 @@ import {
   FileCode,
   RotateCcw,
 } from 'lucide-react';
-import { ColumnTypeIcon } from './ColumnTypeIcon';
 import { Tooltip } from './Tooltip';
+import { InspectorFieldEditor } from './InspectorFieldEditor';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -68,6 +66,7 @@ export const RightInspector: React.FC = () => {
     selectedStructureColumn,
     activeConnection,
     liveTables,
+    liveSchemas,
     showToast,
   } = useAppStore();
 
@@ -94,7 +93,8 @@ export const RightInspector: React.FC = () => {
 
   const activeTabObj = tabs.find((t) => t.id === activeTabId);
   const currentTabType = activeTabObj?.type || activeTab;
-  const schemaInfo = getTableSchema(selectedTable);
+  const liveSchema = activeConnection?.id ? liveSchemas?.[activeConnection.id]?.[selectedTable] : undefined;
+  const schemaInfo = liveSchema || getTableSchema(selectedTable);
 
   const toggleFieldExpand = (field: string) => {
     setExpandedFields((prev) => ({
@@ -329,142 +329,28 @@ export const RightInspector: React.FC = () => {
             ) : (
               filteredFields.map((field) => {
                 const val = selectedRowData[field];
-                const colDef = schemaInfo.columns.find((c) => c.name === field);
-                const colType =
-                  colDef?.type ||
-                  (typeof val === 'number'
-                    ? 'int'
-                    : typeof val === 'boolean'
-                    ? 'bool'
-                    : typeof val === 'object'
-                    ? 'json'
-                    : 'text');
+                const colDef = schemaInfo?.columns?.find((c) => c.name === field);
                 const isDirty = selectedRowData.dirtyFields?.[field];
                 const isExpanded = !!expandedFields[field];
 
                 return (
-                  <div
+                  <InspectorFieldEditor
                     key={field}
+                    field={field}
+                    value={val}
+                    colDef={colDef}
+                    isDirty={isDirty}
+                    isExpanded={isExpanded}
+                    onToggleExpand={() => toggleFieldExpand(field)}
+                    onUpdate={(newVal) => updateCell(selectedRowData.id, field, newVal)}
+                    onDiscard={() => revertCell(selectedRowData.id, field)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setTargetField(field);
                       setFieldContextPos({ x: e.clientX, y: e.clientY });
                     }}
-                    className="space-y-1 group"
-                  >
-                    {/* Field Header: Name, Type Badge, and Collapse/Expand Caret */}
-                    <div
-                      onClick={() => toggleFieldExpand(field)}
-                      className="flex items-center justify-between cursor-pointer py-0.5 select-none"
-                    >
-                      <div className="flex items-center space-x-1.5 truncate">
-                        {isExpanded ? (
-                          <ChevronDown className="w-3 h-3 text-slate-500 flex-shrink-0" />
-                        ) : (
-                          <ChevronRight className="w-3 h-3 text-slate-500 flex-shrink-0" />
-                        )}
-                        {isDirty && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse flex-shrink-0" />
-                        )}
-                        <ColumnTypeIcon type={colType} sampleValue={val} size={11} />
-                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-sky-600 dark:group-hover:text-sky-300 transition-colors">
-                          {field}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center space-x-1">
-                        {isDirty && (
-                          <Tooltip content={`Discard edits to "${field}"`} shortcut="Esc" side="left">
-                            <button
-                              onClick={() => revertCell(selectedRowData.id, field)}
-                              className="px-1.5 py-0.5 rounded text-[10px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 flex items-center space-x-0.5 cursor-pointer transition-colors"
-                            >
-                              <RotateCcw className="w-2.5 h-2.5" />
-                              <span>Discard</span>
-                            </button>
-                          </Tooltip>
-                        )}
-                        <span className={`text-[10px] font-sans px-1.5 py-0.2 rounded border font-medium ${getTypeBadgeClass(colType)}`}>
-                          {colType}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Field Value Box (Collapsible/Expandable) */}
-                    {isExpanded ? (
-                      /* Expanded Multiline Mode (wrapping like in TablePlus screenshot) */
-                      <textarea
-                        rows={typeof val === 'object' ? 4 : String(val).length > 40 ? 3 : 2}
-                        value={
-                          typeof val === 'object' && val !== null
-                            ? JSON.stringify(val, null, 2)
-                            : val === null || val === undefined
-                            ? 'NULL'
-                            : String(val)
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            e.preventDefault();
-                            revertCell(selectedRowData.id, field);
-                          }
-                        }}
-                        onChange={(e) => {
-                          let parsed: any = e.target.value;
-                          if (typeof val === 'object' && val !== null) {
-                            try {
-                              parsed = JSON.parse(e.target.value);
-                            } catch {
-                              // typing json
-                            }
-                          }
-                          updateCell(selectedRowData.id, field, parsed);
-                        }}
-                        className={`w-full bg-white dark:bg-slate-900/90 border rounded-lg p-2 text-slate-900 dark:text-slate-100 font-mono text-[11px] focus:outline-none focus:border-sky-500 select-text leading-relaxed shadow-2xs ${
-                          val === null ? 'text-slate-400 dark:text-slate-500 italic' : ''
-                        } ${
-                          isDirty ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-slate-300 dark:border-slate-800'
-                        }`}
-                      />
-                    ) : (
-                      /* Collapsed Compact Mode */
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={
-                            typeof val === 'object' && val !== null
-                              ? JSON.stringify(val)
-                              : val === null || val === undefined
-                              ? 'NULL'
-                              : String(val)
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === 'Escape') {
-                              e.preventDefault();
-                              revertCell(selectedRowData.id, field);
-                            }
-                          }}
-                          onChange={(e) => {
-                            const nextVal = e.target.value;
-                            updateCell(selectedRowData.id, field, nextVal);
-                          }}
-                          className={`w-full bg-white dark:bg-slate-900/90 border rounded-lg px-2.5 py-1 text-slate-900 dark:text-slate-100 font-mono text-[11px] focus:outline-none focus:border-sky-500 select-text truncate pr-6 shadow-2xs ${
-                            val === null ? 'text-slate-400 dark:text-slate-500 italic' : ''
-                          } ${
-                            isDirty ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-slate-300 dark:border-slate-800'
-                          }`}
-                        />
-                        <Tooltip content="Expand field view" side="left">
-                          <button
-                            onClick={() => toggleFieldExpand(field)}
-                            className="absolute right-1.5 top-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
-                          >
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-                        </Tooltip>
-                      </div>
-                    )}
-                  </div>
+                  />
                 );
               })
             )}

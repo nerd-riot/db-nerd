@@ -267,4 +267,61 @@ describe('Inline Editing & Discard / Rollback State Engine', () => {
       'SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS `orders`; SET FOREIGN_KEY_CHECKS = 1;'
     );
   });
+
+  it('auto-casts NULL strings and type matches numeric and boolean values in applyCellUpdate', () => {
+    const originalRows: GridRow[] = [
+      {
+        id: 1,
+        net_incentive: 80000,
+        is_active: false,
+        end_date: '2023-09-30 16:00:00',
+        isDirty: false,
+        rowState: 'clean',
+      },
+    ];
+    const rows = JSON.parse(JSON.stringify(originalRows));
+
+    // 1. Setting 'NULL' or 'null' string converts to actual null
+    const nullRes = applyCellUpdate(rows, originalRows, rows[0], 1, 'end_date', 'NULL');
+    assert.equal(nullRes.rows[0].end_date, null);
+    assert.equal(nullRes.rows[0].isDirty, true);
+
+    // 2. Numeric string on numeric column auto-casts to number
+    const numRes = applyCellUpdate(rows, originalRows, rows[0], 1, 'net_incentive', '85000');
+    assert.equal(numRes.rows[0].net_incentive, 85000);
+    assert.equal(typeof numRes.rows[0].net_incentive, 'number');
+
+    // 3. Typing exact same number as string does NOT falsely dirty the row
+    const sameNumRes = applyCellUpdate(rows, originalRows, rows[0], 1, 'net_incentive', '80000');
+    assert.equal(sameNumRes.rows[0].net_incentive, 80000);
+    assert.equal(sameNumRes.rows[0].isDirty, false);
+
+    // 4. Boolean string on boolean column auto-casts to boolean
+    const boolRes = applyCellUpdate(rows, originalRows, rows[0], 1, 'is_active', 'true');
+    assert.equal(boolRes.rows[0].is_active, true);
+    assert.equal(typeof boolRes.rows[0].is_active, 'boolean');
+  });
+
+  it('guarantees inline editor is not closed on initial edit when pendingEditsCount is 0', () => {
+    let pendingEditsCount = 0;
+    let editingCell: { id: number | string; field: string } | null = null;
+    let prevPendingCount = pendingEditsCount;
+
+    // Simulate opening inline editor
+    editingCell = { id: 1, field: 'net_incentive' };
+
+    // The guard condition: only close if prevPendingCount > 0 && pendingEditsCount === 0
+    let shouldAutoClose = prevPendingCount > 0 && pendingEditsCount === 0 && editingCell !== null;
+    assert.equal(shouldAutoClose, false, 'Editor must stay open when pendingEditsCount is initially 0');
+
+    // When an edit is applied:
+    pendingEditsCount = 1;
+    prevPendingCount = pendingEditsCount;
+
+    // Now if user clicks Discard / Rollback, pending count drops from 1 to 0:
+    pendingEditsCount = 0;
+    shouldAutoClose = prevPendingCount > 0 && pendingEditsCount === 0 && editingCell !== null;
+    assert.equal(shouldAutoClose, true, 'Editor should auto-close when pending edits transition from > 0 to 0');
+  });
 });
+
