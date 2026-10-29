@@ -1383,6 +1383,114 @@ mod tests {
         assert!(tables.iter().any(|t| t.kind.as_deref() == Some("HASH")));
     }
 
+    #[tokio::test]
+    async fn test_concurrent_multi_pool_isolation_live() {
+        let pg_cfg = DbConfig {
+            engine: "postgres".into(),
+            host: "localhost".into(),
+            port: 5432,
+            database: "ecom_prod_db".into(),
+            username: Some("dev_user".into()),
+            password: Some("dev_password".into()),
+            ..Default::default()
+        };
+
+        let my_cfg = DbConfig {
+            engine: "mysql".into(),
+            host: "localhost".into(),
+            port: 3306,
+            database: "analytics_staging".into(),
+            username: Some("dev_user".into()),
+            password: Some("dev_password".into()),
+            ..Default::default()
+        };
+
+        let redis_cfg = DbConfig {
+            engine: "redis".into(),
+            host: "localhost".into(),
+            port: 6379,
+            database: "0".into(),
+            username: Some("default".into()),
+            password: None,
+            ..Default::default()
+        };
+
+        let (pg_res, my_res, redis_res) = tokio::join!(
+            test_connection(pg_cfg.clone()),
+            test_connection(my_cfg.clone()),
+            test_connection(redis_cfg.clone())
+        );
+
+        if !pg_res.as_ref().map(|r| r.success).unwrap_or(false)
+            || !my_res.as_ref().map(|r| r.success).unwrap_or(false)
+            || !redis_res.as_ref().map(|r| r.success).unwrap_or(false)
+        {
+            println!("Skipping multi-pool isolation test (one or more docker services unavailable)");
+            return;
+        }
+
+        // 1. Run concurrent queries on all 3 engines simultaneously
+        let pg_task = {
+            let cfg = pg_cfg.clone();
+            tokio::spawn(async move {
+                for _ in 0..5 {
+                    let r = execute_query(cfg.clone(), "SELECT id, email FROM users LIMIT 3".into()).await.unwrap();
+                    assert!(r.success);
+                    assert!(!r.rows.is_empty());
+                }
+            })
+        };
+
+        let my_task = {
+            let cfg = my_cfg.clone();
+            tokio::spawn(async move {
+                for _ in 0..5 {
+                    let r = execute_query(cfg.clone(), "SELECT id, email FROM app_users LIMIT 3".into()).await.unwrap();
+                    assert!(r.success);
+                    assert!(!r.rows.is_empty());
+                }
+            })
+        };
+
+        let redis_task = {
+            let cfg = redis_cfg.clone();
+            tokio::spawn(async move {
+                for _ in 0..5 {
+                    let r = execute_query(cfg.clone(), "INSPECT_KEY \"user:profile:501\"".into()).await.unwrap();
+                    assert!(r.success);
+                    assert!(!r.rows.is_empty());
+                }
+            })
+        };
+
+        let (r1, r2, r3) = tokio::join!(pg_task, my_task, redis_task);
+        r1.unwrap();
+        r2.unwrap();
+        r3.unwrap();
+
+        // 2. Close MySQL pool: verify PostgreSQL and Redis remain 100% unaffected and working
+        close_connection(my_cfg.clone()).await.unwrap();
+
+        let pg_after = execute_query(pg_cfg.clone(), "SELECT COUNT(*) AS c FROM users".into()).await.unwrap();
+        assert!(pg_after.success);
+        let redis_after = execute_query(redis_cfg.clone(), "KEYS *".into()).await.unwrap();
+        assert!(redis_after.success);
+
+        // 3. Close Redis client: verify PostgreSQL remains completely unaffected
+        close_connection(redis_cfg.clone()).await.unwrap();
+
+        let pg_after2 = execute_query(pg_cfg.clone(), "SELECT id, name FROM warehouses LIMIT 1".into()).await.unwrap();
+        assert!(pg_after2.success);
+
+        // 4. Re-query MySQL to verify pool re-creation works independently
+        let my_reconnect = execute_query(my_cfg.clone(), "SELECT id, invoice_number FROM invoices LIMIT 1".into()).await.unwrap();
+        assert!(my_reconnect.success);
+
+        // 5. Clean up all pools
+        close_connection(pg_cfg).await.unwrap();
+        close_connection(my_cfg).await.unwrap();
+    }
+
 
     #[test]
     fn test_is_row_returning_query_with_comments_and_returning() {

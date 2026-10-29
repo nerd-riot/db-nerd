@@ -275,19 +275,19 @@ pub async fn get_or_create_redis_connection(
 pub async fn close_pool(config: &DbConfig) {
     let engine = normalize_engine_str(&config.engine);
     let db_trimmed = config.database.trim();
-    let user_prefix = format!(
-        "{}://{}@",
-        engine,
-        config.username.as_deref().unwrap_or_default()
-    );
-    let db_suffix = format!("/{}?h=", db_trimmed);
+    let user = config.username.as_deref().unwrap_or_default();
+
+    let target_prefix = match resolve_endpoint(config).await {
+        Ok((host, port)) => format!("{}://{}@{}:{}/{}?h=", engine, user, host, port, db_trimmed),
+        Err(_) => format!("{}://{}@{}:{}/{}?h=", engine, user, config.host.trim(), config.port, db_trimmed),
+    };
 
     match engine {
         "postgres" => {
             let mut write_guard = registry().pg_pools.write().await;
             let keys_to_remove: Vec<String> = write_guard
                 .keys()
-                .filter(|k| k.starts_with(&user_prefix) && k.contains(&db_suffix))
+                .filter(|k| k.starts_with(&target_prefix))
                 .cloned()
                 .collect();
             for k in keys_to_remove {
@@ -300,7 +300,7 @@ pub async fn close_pool(config: &DbConfig) {
             let mut write_guard = registry().mysql_pools.write().await;
             let keys_to_remove: Vec<String> = write_guard
                 .keys()
-                .filter(|k| k.starts_with(&user_prefix) && k.contains(&db_suffix))
+                .filter(|k| k.starts_with(&target_prefix))
                 .cloned()
                 .collect();
             for k in keys_to_remove {
@@ -313,7 +313,7 @@ pub async fn close_pool(config: &DbConfig) {
             let mut write_guard = registry().redis_clients.write().await;
             let keys_to_remove: Vec<String> = write_guard
                 .keys()
-                .filter(|k| k.starts_with(&user_prefix) && k.contains(&db_suffix))
+                .filter(|k| k.starts_with(&target_prefix))
                 .cloned()
                 .collect();
             for k in keys_to_remove {
