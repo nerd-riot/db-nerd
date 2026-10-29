@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +15,17 @@ describe('Build Channel & App Icon Toggle System', () => {
   const publicIcon = path.join(rootDir, 'public', 'app-icon.png');
   const publicReleaseIcon = path.join(rootDir, 'public', 'app-icon-release.png');
   const publicBetaIcon = path.join(rootDir, 'public', 'app-icon-beta.png');
+
+  let initialChannel = 'release';
+  try {
+    initialChannel = JSON.parse(fs.readFileSync(channelFile, 'utf-8')).channel || 'release';
+  } catch {
+    initialChannel = 'release';
+  }
+
+  after(() => {
+    execSync(`node scripts/set-channel.js ${initialChannel}`, { cwd: rootDir });
+  });
 
   it('both release and beta source icons exist and are valid PNG images', () => {
     assert.ok(fs.existsSync(publicReleaseIcon), 'public/app-icon-release.png must exist');
