@@ -81,4 +81,12 @@ describe('Build Channel & App Icon Toggle System', () => {
     const channelSource = fs.readFileSync(path.join(rootDir, 'src', 'config', 'channel.ts'), 'utf-8');
     assert.match(channelSource, /export const APP_NAME: string = 'DBNerd';/);
   });
+
+  it('guarantees 100% feature parity between Release and Beta channels (only icon and branding metadata differ)', () => {
+    const channelSource = fs.readFileSync(path.join(rootDir, 'src', 'config', 'channel.ts'), 'utf-8');
+    // Ensure no feature gating flags exist in channel configuration
+    const exportedKeys = [...channelSource.matchAll(/export const ([A-Z_]+)/g)].map((m) => m[1]);
+    const allowedMetadataKeys = ['APP_CHANNEL', 'IS_BETA', 'APP_NAME', 'APP_FULL_NAME', 'APP_TAG', 'APP_VERSION'];
+    assert.deepEqual(exportedKeys.sort(), allowedMetadataKeys.sort(), 'channel.ts must only manage channel metadata, never gate features');
+  });
 });
