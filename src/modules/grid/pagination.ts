@@ -105,6 +105,10 @@ export function buildPaginatedSelectSql(params: {
 }): string {
   const normEngine = normalizeDatabaseEngine(params.engine);
   if (normEngine === 'redis') {
+    if (params.tableName && params.tableName !== '__all__' && params.tableName !== '*') {
+      const sanitizedKey = params.tableName.replace(/"/g, '\\"');
+      return `INSPECT_KEY "${sanitizedKey}"`;
+    }
     return 'KEYS *';
   }
 
@@ -131,6 +135,14 @@ export function buildExactCountSql(params: {
   whereText?: string;
 }): string {
   const normEngine = normalizeDatabaseEngine(params.engine);
+  if (normEngine === 'redis') {
+    if (params.tableName && params.tableName !== '__all__' && params.tableName !== '*') {
+      const sanitizedKey = params.tableName.replace(/"/g, '\\"');
+      return `INSPECT_KEY "${sanitizedKey}"`;
+    }
+    return 'DBSIZE';
+  }
+
   const quotedTable = quoteIdentifier(params.tableName, normEngine);
   const cleanWhere = sanitizeFilterClause(params.whereClause ?? params.whereText ?? '');
   const wherePart = cleanWhere ? ` WHERE ${cleanWhere}` : '';

@@ -509,6 +509,8 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                             ))
                         } else if let Ok(n) = row.try_get::<i64, _>(i) {
                             serde_json::Value::Number(n.into())
+                        } else if let Ok(u) = row.try_get::<u64, _>(i) {
+                            serde_json::Value::Number(u.into())
                         } else if let Ok(f) = row.try_get::<f64, _>(i) {
                             serde_json::Number::from_f64(f)
                                 .map(serde_json::Value::Number)
@@ -521,10 +523,14 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                             } else {
                                 serde_json::Value::String(d.to_string())
                             }
+                        } else if let Ok(j) = row.try_get::<serde_json::Value, _>(i) {
+                            j
                         } else if let Ok(dt) = row.try_get::<chrono::NaiveDateTime, _>(i) {
                             serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string())
                         } else if let Ok(d) = row.try_get::<chrono::NaiveDate, _>(i) {
                             serde_json::Value::String(d.to_string())
+                        } else if let Ok(t) = row.try_get::<chrono::NaiveTime, _>(i) {
+                            serde_json::Value::String(t.format("%H:%M:%S").to_string())
                         } else if let Ok(b) = row.try_get::<bool, _>(i) {
                             serde_json::Value::Bool(b)
                         } else {
@@ -570,12 +576,212 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
         "redis" => {
             let mut con = pool::get_or_create_redis_connection(&config).await?;
 
-            let parts = parse_redis_args(q_trimmed);
-            if parts.is_empty() {
+            let lines: Vec<&str> = q_trimmed
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with("--"))
+                .collect();
+
+            if lines.is_empty() {
                 return Err("Empty Redis command".into());
             }
 
+            if lines.len() > 1 {
+                let mut executed = 0;
+                for line in lines {
+                    let parts = parse_redis_args(line);
+                    if parts.is_empty() {
+                        continue;
+                    }
+                    let cmd_name = parts[0].to_uppercase();
+                    let mut cmd = redis::cmd(&cmd_name);
+                    for arg in &parts[1..] {
+                        cmd.arg(arg.as_str());
+                    }
+                    let _val: redis::Value = cmd
+                        .query_async(&mut con)
+                        .await
+                        .map_err(|e| format!("Redis batch error at '{}': {}", line, e))?;
+                    executed += 1;
+                }
+                let duration = start.elapsed().as_secs_f64() * 1000.0;
+                return Ok(QueryResult {
+                    success: true,
+                    columns: vec!["status".into(), "commands_executed".into()],
+                    rows: vec![serde_json::json!({
+                        "status": "SUCCESS",
+                        "commands_executed": executed
+                    })],
+                    duration_ms: (duration * 10.0).round() / 10.0,
+                    rows_affected: executed,
+                    error: None,
+                });
+            }
+
+            let parts = parse_redis_args(lines[0]);
             let cmd_name = parts[0].to_uppercase();
+
+            // Special command: INSPECT_KEY <key> to fetch structured contents for any key type
+            if cmd_name == "INSPECT_KEY" || cmd_name == "GET_KEY" {
+                let key = if parts.len() > 1 { parts[1].trim() } else { "" };
+                if key.is_empty() || key == "*" {
+                    let keys_res: Result<Vec<String>, _> = redis::cmd("KEYS").arg("*").query_async(&mut con).await;
+                    let keys = keys_res.unwrap_or_default();
+                    let mut rows = Vec::new();
+                    for (i, k) in keys.into_iter().take(MAX_RESULT_ROWS).enumerate() {
+                        rows.push(serde_json::json!({
+                            "id": i + 1,
+                            "key": k,
+                        }));
+                    }
+                    let duration = start.elapsed().as_secs_f64() * 1000.0;
+                    return Ok(QueryResult {
+                        success: true,
+                        columns: vec!["id".into(), "key".into()],
+                        rows,
+                        duration_ms: (duration * 10.0).round() / 10.0,
+                        rows_affected: 0,
+                        error: None,
+                    });
+                }
+
+                let k_type_res: Result<String, _> = redis::cmd("TYPE").arg(key).query_async(&mut con).await;
+                let k_type = k_type_res.unwrap_or_else(|_| "none".into()).to_lowercase();
+                let ttl_res: Result<i64, _> = redis::cmd("TTL").arg(key).query_async(&mut con).await;
+                let ttl = ttl_res.unwrap_or(-1);
+
+                match k_type.as_str() {
+                    "string" => {
+                        let val_res: Result<Option<String>, _> = redis::cmd("GET").arg(key).query_async(&mut con).await;
+                        let val = val_res.ok().flatten().unwrap_or_default();
+                        let duration = start.elapsed().as_secs_f64() * 1000.0;
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "key".into(), "type".into(), "ttl".into(), "value".into()],
+                            rows: vec![serde_json::json!({
+                                "id": 1,
+                                "key": key,
+                                "type": "string",
+                                "ttl": ttl,
+                                "value": truncate_cell_string(val)
+                            })],
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+                    "hash" => {
+                        let hash_res: Result<Vec<String>, _> = redis::cmd("HGETALL").arg(key).query_async(&mut con).await;
+                        let items = hash_res.unwrap_or_default();
+                        let mut rows = Vec::new();
+                        let mut i = 0;
+                        let mut row_id = 1;
+                        while i + 1 < items.len() {
+                            rows.push(serde_json::json!({
+                                "id": row_id,
+                                "field": items[i],
+                                "value": truncate_cell_string(items[i + 1].clone())
+                            }));
+                            row_id += 1;
+                            i += 2;
+                        }
+                        let duration = start.elapsed().as_secs_f64() * 1000.0;
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "field".into(), "value".into()],
+                            rows,
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+                    "set" => {
+                        let set_res: Result<Vec<String>, _> = redis::cmd("SMEMBERS").arg(key).query_async(&mut con).await;
+                        let members = set_res.unwrap_or_default();
+                        let mut rows = Vec::new();
+                        for (idx, m) in members.into_iter().take(MAX_RESULT_ROWS).enumerate() {
+                            rows.push(serde_json::json!({
+                                "id": idx + 1,
+                                "member": truncate_cell_string(m)
+                            }));
+                        }
+                        let duration = start.elapsed().as_secs_f64() * 1000.0;
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "member".into()],
+                            rows,
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+                    "zset" => {
+                        let z_res: Result<Vec<String>, _> = redis::cmd("ZRANGE").arg(key).arg(0).arg(-1).arg("WITHSCORES").query_async(&mut con).await;
+                        let items = z_res.unwrap_or_default();
+                        let mut rows = Vec::new();
+                        let mut i = 0;
+                        let mut rank = 1;
+                        while i + 1 < items.len() {
+                            let score_num = items[i + 1].parse::<f64>().ok();
+                            rows.push(serde_json::json!({
+                                "id": rank,
+                                "rank": rank,
+                                "member": items[i],
+                                "score": score_num.map(serde_json::Value::from).unwrap_or_else(|| serde_json::Value::String(items[i + 1].clone()))
+                            }));
+                            rank += 1;
+                            i += 2;
+                        }
+                        let duration = start.elapsed().as_secs_f64() * 1000.0;
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "rank".into(), "member".into(), "score".into()],
+                            rows,
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+                    "list" => {
+                        let list_res: Result<Vec<String>, _> = redis::cmd("LRANGE").arg(key).arg(0).arg(100).query_async(&mut con).await;
+                        let items = list_res.unwrap_or_default();
+                        let mut rows = Vec::new();
+                        for (idx, val) in items.into_iter().take(MAX_RESULT_ROWS).enumerate() {
+                            rows.push(serde_json::json!({
+                                "id": idx + 1,
+                                "index": idx,
+                                "value": truncate_cell_string(val)
+                            }));
+                        }
+                        let duration = start.elapsed().as_secs_f64() * 1000.0;
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "index".into(), "value".into()],
+                            rows,
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+                    _ => {
+                        let duration = start.elapsed().as_secs_f64() * 1000.0;
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "key".into(), "type".into(), "status".into()],
+                            rows: vec![serde_json::json!({
+                                "id": 1,
+                                "key": key,
+                                "type": k_type,
+                                "status": "KEY_EMPTY_OR_NOT_FOUND"
+                            })],
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+                }
+            }
+
             let mut cmd = redis::cmd(&cmd_name);
             for arg in &parts[1..] {
                 cmd.arg(arg.as_str());
@@ -590,6 +796,77 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
 
             match val {
                 redis::Value::Array(items) => {
+                    // Smart pairing for HGETALL
+                    if cmd_name == "HGETALL" {
+                        let mut rows = Vec::with_capacity(items.len() / 2);
+                        let mut i = 0;
+                        let mut row_id = 1;
+                        while i + 1 < items.len() {
+                            let f = match &items[i] {
+                                redis::Value::BulkString(bytes) => String::from_utf8_lossy(bytes).to_string(),
+                                redis::Value::Int(n) => n.to_string(),
+                                other => format!("{:?}", other),
+                            };
+                            let v = match &items[i + 1] {
+                                redis::Value::BulkString(bytes) => truncate_cell_string(String::from_utf8_lossy(bytes).to_string()),
+                                redis::Value::Int(n) => n.to_string(),
+                                other => truncate_cell_string(format!("{:?}", other)),
+                            };
+                            rows.push(serde_json::json!({
+                                "id": row_id,
+                                "field": f,
+                                "value": v
+                            }));
+                            row_id += 1;
+                            i += 2;
+                        }
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "field".into(), "value".into()],
+                            rows,
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+
+                    // Smart pairing for ZRANGE/ZREVRANGE WITHSCORES
+                    let has_withscores = parts.iter().any(|p| p.eq_ignore_ascii_case("WITHSCORES"));
+                    if (cmd_name == "ZRANGE" || cmd_name == "ZREVRANGE") && has_withscores {
+                        let mut rows = Vec::with_capacity(items.len() / 2);
+                        let mut i = 0;
+                        let mut rank = 1;
+                        while i + 1 < items.len() {
+                            let m = match &items[i] {
+                                redis::Value::BulkString(bytes) => truncate_cell_string(String::from_utf8_lossy(bytes).to_string()),
+                                other => format!("{:?}", other),
+                            };
+                            let s = match &items[i + 1] {
+                                redis::Value::BulkString(bytes) => String::from_utf8_lossy(bytes).to_string(),
+                                redis::Value::Int(n) => n.to_string(),
+                                other => format!("{:?}", other),
+                            };
+                            let s_num = s.parse::<f64>().ok();
+                            rows.push(serde_json::json!({
+                                "id": rank,
+                                "rank": rank,
+                                "member": m,
+                                "score": s_num.map(serde_json::Value::from).unwrap_or_else(|| serde_json::Value::String(s))
+                            }));
+                            rank += 1;
+                            i += 2;
+                        }
+                        return Ok(QueryResult {
+                            success: true,
+                            columns: vec!["id".into(), "rank".into(), "member".into(), "score".into()],
+                            rows,
+                            duration_ms: (duration * 10.0).round() / 10.0,
+                            rows_affected: 0,
+                            error: None,
+                        });
+                    }
+
+                    // Generic array result
                     let mut rows = Vec::with_capacity(items.len().min(MAX_RESULT_ROWS));
                     for (idx, item) in items.iter().take(MAX_RESULT_ROWS).enumerate() {
                         let text = match item {
@@ -906,15 +1183,21 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
             }
 
             keys.sort();
-            Ok(keys
-                .into_iter()
-                .map(|name| TableSummary {
+            let mut summaries = Vec::with_capacity(keys.len());
+            for name in keys {
+                let k_res: Result<String, _> = redis::cmd("TYPE")
+                    .arg(&name)
+                    .query_async(&mut con)
+                    .await;
+                let k_type = k_res.unwrap_or_else(|_| "KEY".into()).to_uppercase();
+                summaries.push(TableSummary {
                     name,
-                    count: "key".into(),
-                    kind: Some("KEY".into()),
+                    count: k_type.clone(),
+                    kind: Some(k_type),
                     ..Default::default()
-                })
-                .collect())
+                });
+            }
+            Ok(summaries)
         }
         _ => Ok(Vec::new()),
     }
@@ -1084,8 +1367,20 @@ mod tests {
         assert!(q_res.success);
         assert!(!q_res.rows.is_empty());
 
+        // Verify INSPECT_KEY
+        let inspect_res = execute_query(config.clone(), "INSPECT_KEY \"user:profile:501\"".into()).await.unwrap();
+        assert!(inspect_res.success);
+        assert!(inspect_res.columns.contains(&"field".to_string()));
+
+        // Verify multi-line batch commands
+        let batch_sql = "HSET \"test:batch:key\" k1 val1\nHSET \"test:batch:key\" k2 val2\nDEL \"test:batch:key\"";
+        let batch_res = execute_query(config.clone(), batch_sql.into()).await.unwrap();
+        assert!(batch_res.success);
+        assert_eq!(batch_res.rows_affected, 3);
+
         let tables = get_tables(config).await.unwrap();
         assert!(!tables.is_empty());
+        assert!(tables.iter().any(|t| t.kind.as_deref() == Some("HASH")));
     }
 
 

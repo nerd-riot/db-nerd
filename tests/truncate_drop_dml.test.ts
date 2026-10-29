@@ -150,4 +150,56 @@ describe('Primary Key Resolution & Grid Row Deletion', () => {
     );
     assert.match(sql, /COMMIT;/);
   });
+
+  it('builds MySQL transactional script with START TRANSACTION and COMMIT', () => {
+    const rows: GridRow[] = [
+      {
+        id: 1,
+        invoice_number: 'INV-2026-999',
+        dirtyFields: { invoice_number: true },
+        rowState: 'clean',
+      },
+      {
+        id: 2,
+        rowState: 'deleted',
+      },
+    ];
+
+    const sql = buildPendingTransactionSql(rows, 'invoices', 'mysql', 'id');
+    assert.match(sql, /^START TRANSACTION;/);
+    assert.match(sql, /UPDATE `invoices` SET `invoice_number` = 'INV-2026-999' WHERE `id` = 1;/);
+    assert.match(sql, /DELETE FROM `invoices` WHERE `id` = 2;/);
+    assert.match(sql, /COMMIT;$/);
+  });
+
+  it('builds Redis pending command script for key structures without SQL syntax', () => {
+    const hashRows: GridRow[] = [
+      {
+        id: 1,
+        field: 'email',
+        value: 'alex.updated@corp.io',
+        dirtyFields: { value: true },
+        rowState: 'clean',
+      },
+      {
+        id: 2,
+        field: 'temp_token',
+        rowState: 'deleted',
+      },
+      {
+        id: 3,
+        field: 'new_attribute',
+        value: 'premium',
+        rowState: 'inserted',
+      },
+    ];
+
+    const redisSql = buildPendingTransactionSql(hashRows, 'user:profile:501', 'redis');
+    assert.ok(!redisSql.includes('BEGIN TRANSACTION'));
+    assert.ok(!redisSql.includes('START TRANSACTION'));
+    assert.ok(!redisSql.includes('UPDATE'));
+    assert.match(redisSql, /HSET "user:profile:501" "email" "alex\.updated@corp\.io"/);
+    assert.match(redisSql, /HDEL "user:profile:501" "temp_token"/);
+    assert.match(redisSql, /HSET "user:profile:501" "new_attribute" "premium"/);
+  });
 });

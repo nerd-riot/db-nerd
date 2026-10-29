@@ -162,6 +162,54 @@ export function buildPendingTransactionSql(
   }
 
   const norm = normalizeDatabaseEngine(engine);
+
+  if (norm === 'redis') {
+    const redisCmds: string[] = [];
+    const cleanTable = tableName.replace(/"/g, '\\"');
+    for (const r of rows) {
+      if (r.rowState === 'inserted') {
+        if ('field' in r && 'value' in r) {
+          redisCmds.push(`HSET "${cleanTable}" "${String(r.field).replace(/"/g, '\\"')}" "${String(r.value ?? '').replace(/"/g, '\\"')}"`);
+        } else if ('member' in r && 'score' in r) {
+          redisCmds.push(`ZADD "${cleanTable}" ${Number(r.score) || 0} "${String(r.member).replace(/"/g, '\\"')}"`);
+        } else if ('member' in r) {
+          redisCmds.push(`SADD "${cleanTable}" "${String(r.member).replace(/"/g, '\\"')}"`);
+        } else if ('value' in r) {
+          redisCmds.push(`RPUSH "${cleanTable}" "${String(r.value ?? '').replace(/"/g, '\\"')}"`);
+        }
+      } else if (r.rowState === 'deleted') {
+        if ('field' in r) {
+          redisCmds.push(`HDEL "${cleanTable}" "${String(r.field).replace(/"/g, '\\"')}"`);
+        } else if ('member' in r) {
+          if ('score' in r) {
+            redisCmds.push(`ZREM "${cleanTable}" "${String(r.member).replace(/"/g, '\\"')}"`);
+          } else {
+            redisCmds.push(`SREM "${cleanTable}" "${String(r.member).replace(/"/g, '\\"')}"`);
+          }
+        } else if ('value' in r) {
+          redisCmds.push(`LREM "${cleanTable}" 1 "${String(r.value ?? '').replace(/"/g, '\\"')}"`);
+        } else {
+          redisCmds.push(`DEL "${cleanTable}"`);
+        }
+      } else if (r.dirtyFields && Object.keys(r.dirtyFields).length > 0) {
+        if ('field' in r && 'value' in r) {
+          redisCmds.push(`HSET "${cleanTable}" "${String(r.field).replace(/"/g, '\\"')}" "${String(r.value ?? '').replace(/"/g, '\\"')}"`);
+        } else if ('member' in r && 'score' in r) {
+          redisCmds.push(`ZADD "${cleanTable}" ${Number(r.score) || 0} "${String(r.member).replace(/"/g, '\\"')}"`);
+        } else if ('value' in r && 'index' in r) {
+          const idx = Math.max(0, Number(r.index) - 1);
+          redisCmds.push(`LSET "${cleanTable}" ${idx} "${String(r.value ?? '').replace(/"/g, '\\"')}"`);
+        } else if ('value' in r) {
+          redisCmds.push(`SET "${cleanTable}" "${String(r.value ?? '').replace(/"/g, '\\"')}"`);
+        }
+      }
+    }
+    if (redisCmds.length === 0) {
+      return '-- No pending changes in active transaction';
+    }
+    return redisCmds.join('\n');
+  }
+
   const qualifiedTable =
     norm === 'postgres' && schema && !tableName.includes('.')
       ? `${schema}.${tableName}`
@@ -201,5 +249,7 @@ export function buildPendingTransactionSql(
     return '-- No pending changes in active transaction';
   }
 
-  return `BEGIN TRANSACTION;\n\n${sqlStatements.join('\n')}\n\nCOMMIT;`;
+  const isMysql = norm === 'mysql';
+  const startTx = isMysql ? 'START TRANSACTION;' : 'BEGIN TRANSACTION;';
+  return `${startTx}\n\n${sqlStatements.join('\n')}\n\nCOMMIT;`;
 }

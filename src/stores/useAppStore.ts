@@ -2631,7 +2631,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       const res = await executeRealQuery(activeConnection, countSql);
       if (res.success && res.rows && res.rows.length > 0) {
-        const exactVal = Number(res.rows[0]?.total_count ?? Object.values(res.rows[0])[0] ?? 0);
+        let exactVal = 0;
+        if (activeConnection.engine === 'redis') {
+          exactVal = res.rows.length === 1 && 'result' in res.rows[0]
+            ? Number(res.rows[0].result ?? 0)
+            : res.rows.length;
+        } else {
+          exactVal = Number(res.rows[0]?.total_count ?? Object.values(res.rows[0])[0] ?? 0);
+        }
         set({
           gridTotalCount: exactVal,
           gridIsEstimatedCount: false,
@@ -2716,6 +2723,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           dirtyFields: {},
           rowState: 'clean',
         }));
+
+        if (activeOrderBy && activeConnection.engine === 'redis') {
+          const match = activeOrderBy.match(/["`]?([^"`\s]+)["`]?\s*(ASC|DESC)?/i);
+          if (match) {
+            const col = match[1];
+            const dir = (match[2] || 'ASC').toUpperCase();
+            liveRows.sort((a, b) => {
+              const va = a[col];
+              const vb = b[col];
+              if (va === vb) return 0;
+              if (va === null || va === undefined) return 1;
+              if (vb === null || vb === undefined) return -1;
+              if (typeof va === 'number' && typeof vb === 'number') {
+                return dir === 'ASC' ? va - vb : vb - va;
+              }
+              const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+              return dir === 'ASC' ? cmp : -cmp;
+            });
+          }
+        }
 
         let totalCount = get().gridTotalCount;
         let isEstimated = get().gridIsEstimatedCount;
@@ -3266,6 +3293,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       schema
     );
 
+    const norm = (activeConnection?.engine || 'postgres').toLowerCase();
+    const isRedis = norm.includes('redis');
+    const isMysql = norm.includes('mysql');
+
+    if (isRedis) {
+      return rowSql;
+    }
+
     const tableStatements = (pendingTableActions || []).map((a) => a.sql);
 
     if (tableStatements.length === 0) {
@@ -3273,12 +3308,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     // Combine table statements with row statements
-    const rowStatements = rowSql.startsWith('BEGIN TRANSACTION;')
-      ? rowSql.replace('BEGIN TRANSACTION;\n\n', '').replace('\n\nCOMMIT;', '').split('\n').filter(Boolean)
+    const startPrefix = isMysql ? 'START TRANSACTION;' : 'BEGIN TRANSACTION;';
+    const rowStatements = (rowSql.startsWith('BEGIN TRANSACTION;') || rowSql.startsWith('START TRANSACTION;'))
+      ? rowSql.replace(/^(BEGIN|START) TRANSACTION;\n\n/, '').replace(/\n\nCOMMIT;$/, '').split('\n').filter(Boolean)
       : [];
 
     const allStatements = [...tableStatements, ...rowStatements];
-    return `BEGIN TRANSACTION;\n\n${allStatements.join('\n')}\n\nCOMMIT;`;
+    return `${startPrefix}\n\n${allStatements.join('\n')}\n\nCOMMIT;`;
   },
 
   processes: [

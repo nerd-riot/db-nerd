@@ -469,39 +469,129 @@ export async function getRealTableSchema(
     } else if (normEngine === 'mysql') {
       const colSql = `
         SELECT
-          COLUMN_NAME AS name,
-          COLUMN_TYPE AS data_type,
-          (IS_NULLABLE = 'YES') AS is_nullable,
-          COLUMN_DEFAULT AS default_value,
-          (COLUMN_KEY = 'PRI') AS is_primary_key,
-          COLUMN_COMMENT AS comment
-        FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${safeTable}'
-        ORDER BY ORDINAL_POSITION ASC;
+          c.COLUMN_NAME AS name,
+          c.COLUMN_TYPE AS data_type,
+          (c.IS_NULLABLE = 'YES') AS is_nullable,
+          c.COLUMN_DEFAULT AS default_value,
+          (c.COLUMN_KEY = 'PRI') AS is_primary_key,
+          c.COLUMN_COMMENT AS comment,
+          kcu.REFERENCED_TABLE_NAME AS foreign_table,
+          kcu.REFERENCED_COLUMN_NAME AS foreign_column,
+          kcu.CONSTRAINT_NAME AS fk_name
+        FROM information_schema.COLUMNS c
+        LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu
+          ON kcu.TABLE_SCHEMA = c.TABLE_SCHEMA
+          AND kcu.TABLE_NAME = c.TABLE_NAME
+          AND kcu.COLUMN_NAME = c.COLUMN_NAME
+          AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+        WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = '${safeTable}'
+        ORDER BY c.ORDINAL_POSITION ASC;
       `;
-      const colRes = await executeRealQuery(profile, colSql);
+
+      const idxSql = `
+        SELECT
+          INDEX_NAME AS index_name,
+          COLUMN_NAME AS column_name,
+          NON_UNIQUE AS non_unique,
+          INDEX_TYPE AS index_type,
+          SEQ_IN_INDEX AS seq_in_index
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${safeTable}'
+        ORDER BY INDEX_NAME, SEQ_IN_INDEX ASC;
+      `;
+
+      const ddlSql = `SHOW CREATE TABLE \`${safeTable}\`;`;
+
+      const [colRes, idxRes, ddlRes] = await Promise.all([
+        executeRealQuery(profile, colSql),
+        executeRealQuery(profile, idxSql),
+        executeRealQuery(profile, ddlSql),
+      ]);
+
       if (!colRes.success || !colRes.rows || colRes.rows.length === 0) {
         return null;
       }
 
-      const rawColumns: ColumnDefinition[] = colRes.rows.map((r: any) => ({
-        name: String(r.name || ''),
-        type: String(r.data_type || 'varchar(255)'),
-        isNullable: Boolean(r.is_nullable),
-        defaultValue: r.default_value !== null && r.default_value !== undefined ? String(r.default_value) : undefined,
-        isPrimaryKey: Boolean(r.is_primary_key),
-        comment: r.comment ? String(r.comment) : undefined,
-      }));
+      const foreignKeys: TableForeignKeyDefinition[] = [];
+      const rawColumns: ColumnDefinition[] = colRes.rows.map((r: any) => {
+        const isFk = Boolean(r.foreign_table);
+        if (isFk) {
+          foreignKeys.push({
+            name: String(r.fk_name || `fk_${tableName}_${r.name}`),
+            column: String(r.name),
+            foreignTable: String(r.foreign_table),
+            foreignColumn: String(r.foreign_column || 'id'),
+            onUpdate: 'RESTRICT',
+            onDelete: 'RESTRICT',
+          });
+        }
+        return {
+          name: String(r.name || ''),
+          type: String(r.data_type || 'varchar(255)'),
+          isNullable: Boolean(r.is_nullable),
+          defaultValue: r.default_value !== null && r.default_value !== undefined ? String(r.default_value) : undefined,
+          isPrimaryKey: Boolean(r.is_primary_key),
+          isForeignKey: isFk,
+          foreignTable: isFk ? String(r.foreign_table) : undefined,
+          foreignColumn: isFk ? String(r.foreign_column || 'id') : undefined,
+          comment: r.comment ? String(r.comment) : undefined,
+        };
+      });
       const columns: ColumnDefinition[] = sortColumnsByDdlConvention(rawColumns);
 
-      const ddlLines = columns.map((c) => {
-        const nullStr = c.isNullable ? ' NULL' : ' NOT NULL';
-        const defStr = c.defaultValue ? ` DEFAULT '${c.defaultValue}'` : '';
-        return `  \`${c.name}\` ${c.type}${nullStr}${defStr}`;
-      });
-      const pkCols = columns.filter((c) => c.isPrimaryKey).map((c) => `\`${c.name}\``);
-      if (pkCols.length > 0) {
-        ddlLines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
+      const indexMap = new Map<string, {
+        name: string;
+        columns: string[];
+        type: TableIndexDefinition['type'];
+        isUnique: boolean;
+        isPrimary: boolean;
+      }>();
+
+      if (idxRes.success && Array.isArray(idxRes.rows)) {
+        for (const ir of idxRes.rows) {
+          const idxName = String(ir.index_name || '');
+          if (!idxName) continue;
+          const colName = String(ir.column_name || '');
+          const nonUnique = Number(ir.non_unique ?? 1);
+          const rawType = String(ir.index_type || 'BTREE').toUpperCase();
+          const idxType: TableIndexDefinition['type'] =
+            rawType === 'HASH' || rawType === 'FULLTEXT' || rawType === 'SPATIAL' ? (rawType as any) : 'BTREE';
+
+          if (!indexMap.has(idxName)) {
+            indexMap.set(idxName, {
+              name: idxName,
+              columns: colName ? [colName] : [],
+              type: idxType,
+              isUnique: nonUnique === 0,
+              isPrimary: idxName === 'PRIMARY',
+            });
+          } else if (colName) {
+            indexMap.get(idxName)!.columns.push(colName);
+          }
+        }
+      }
+      const indexes: TableIndexDefinition[] = Array.from(indexMap.values());
+
+      let ddl = '';
+      if (ddlRes.success && ddlRes.rows && ddlRes.rows.length > 0) {
+        const row0 = ddlRes.rows[0];
+        const serverDdl = row0['Create Table'] || row0['create table'] || Object.values(row0)[1];
+        if (serverDdl && typeof serverDdl === 'string') {
+          ddl = `-- Server DDL for table: ${tableName}\n${serverDdl};`;
+        }
+      }
+
+      if (!ddl) {
+        const ddlLines = columns.map((c) => {
+          const nullStr = c.isNullable ? ' NULL' : ' NOT NULL';
+          const defStr = c.defaultValue ? ` DEFAULT '${c.defaultValue}'` : '';
+          return `  \`${c.name}\` ${c.type}${nullStr}${defStr}`;
+        });
+        const pkCols = columns.filter((c) => c.isPrimaryKey).map((c) => `\`${c.name}\``);
+        if (pkCols.length > 0) {
+          ddlLines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
+        }
+        ddl = `-- DDL for table: ${tableName}\nCREATE TABLE \`${tableName}\` (\n${ddlLines.join(',\n')}\n) ENGINE=InnoDB;`;
       }
 
       const estRows = summary?.estimated_rows ?? 0;
@@ -516,9 +606,89 @@ export async function getRealTableSchema(
         rowCount: `${estRows.toLocaleString()} rows`,
         totalSize: `${totalSize} (Data: ${dataSize}, Index: ${idxSize})`,
         columns,
+        indexes,
+        foreignKeys,
+        ddl,
+      };
+    } else if (normEngine === 'redis') {
+      const [typeRes, ttlRes, memRes] = await Promise.all([
+        executeRealQuery(profile, `TYPE "${safeTable}"`),
+        executeRealQuery(profile, `TTL "${safeTable}"`),
+        executeRealQuery(profile, `MEMORY USAGE "${safeTable}"`),
+      ]);
+
+      const rawType = String(typeRes.rows?.[0]?.result ?? typeRes.rows?.[0]?.value ?? 'string').toLowerCase();
+      const ttl = Number(ttlRes.rows?.[0]?.result ?? ttlRes.rows?.[0]?.value ?? -1);
+      const memBytes = Number(memRes.rows?.[0]?.result ?? memRes.rows?.[0]?.value ?? 0);
+
+      let countCmd = '';
+      if (rawType === 'hash') countCmd = `HLEN "${safeTable}"`;
+      else if (rawType === 'set') countCmd = `SCARD "${safeTable}"`;
+      else if (rawType === 'zset') countCmd = `ZCARD "${safeTable}"`;
+      else if (rawType === 'list') countCmd = `LLEN "${safeTable}"`;
+      else if (rawType === 'string') countCmd = `STRLEN "${safeTable}"`;
+
+      let itemCount = 0;
+      if (countCmd) {
+        const countRes = await executeRealQuery(profile, countCmd);
+        itemCount = Number(countRes.rows?.[0]?.result ?? countRes.rows?.[0]?.value ?? 0);
+      }
+
+      let columns: ColumnDefinition[] = [];
+      if (rawType === 'hash') {
+        columns = [
+          { name: 'id', type: 'integer', isPrimaryKey: true, isNullable: false },
+          { name: 'field', type: 'string', isPrimaryKey: false, isNullable: false },
+          { name: 'value', type: 'string', isPrimaryKey: false, isNullable: true },
+        ];
+      } else if (rawType === 'zset') {
+        columns = [
+          { name: 'id', type: 'integer', isPrimaryKey: true, isNullable: false },
+          { name: 'rank', type: 'integer', isPrimaryKey: false, isNullable: false },
+          { name: 'member', type: 'string', isPrimaryKey: false, isNullable: false },
+          { name: 'score', type: 'float', isPrimaryKey: false, isNullable: false },
+        ];
+      } else if (rawType === 'set') {
+        columns = [
+          { name: 'id', type: 'integer', isPrimaryKey: true, isNullable: false },
+          { name: 'member', type: 'string', isPrimaryKey: false, isNullable: false },
+        ];
+      } else if (rawType === 'list') {
+        columns = [
+          { name: 'id', type: 'integer', isPrimaryKey: true, isNullable: false },
+          { name: 'index', type: 'integer', isPrimaryKey: false, isNullable: false },
+          { name: 'value', type: 'string', isPrimaryKey: false, isNullable: true },
+        ];
+      } else {
+        columns = [
+          { name: 'id', type: 'integer', isPrimaryKey: true, isNullable: false },
+          { name: 'key', type: 'string', isPrimaryKey: false, isNullable: false },
+          { name: 'type', type: 'string', isPrimaryKey: false, isNullable: false },
+          { name: 'ttl', type: 'integer', isPrimaryKey: false, isNullable: false },
+          { name: 'value', type: 'string', isPrimaryKey: false, isNullable: true },
+        ];
+      }
+
+      const ttlLabel = ttl === -1 ? 'Persistent (No Expiry)' : ttl === -2 ? 'Key Not Found / Expired' : `${ttl}s`;
+      const memLabel = memBytes > 0 ? (memBytes >= 1024 ? `${(memBytes / 1024).toFixed(1)} KB` : `${memBytes} B`) : '0 B';
+
+      const ddl = `-- Redis Key: ${tableName}
+-- Structure Type: ${rawType.toUpperCase()}
+-- Expiration (TTL): ${ttlLabel}
+-- Memory Footprint: ${memLabel} (${memBytes} bytes)
+-- Elements / Length: ${itemCount.toLocaleString()} items
+-- Engine: Redis In-Memory KV Store`;
+
+      return {
+        tableName,
+        schema: 'redis',
+        engine: `Redis (${rawType.toUpperCase()})`,
+        rowCount: `${itemCount.toLocaleString()} item(s)`,
+        totalSize: `${memLabel} (TTL: ${ttlLabel})`,
+        columns,
         indexes: [],
         foreignKeys: [],
-        ddl: `-- DDL for table: ${tableName}\nCREATE TABLE \`${tableName}\` (\n${ddlLines.join(',\n')}\n) ENGINE=InnoDB;`,
+        ddl,
       };
     }
   } catch (e) {

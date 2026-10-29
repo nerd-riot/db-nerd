@@ -179,5 +179,35 @@ describe('TablePlus-style Server-Side Pagination', () => {
     circular.self = circular;
     assert.doesNotThrow(() => safeFormatCellValue(circular));
   });
+
+  it('builds Redis pagination and exact count commands', () => {
+    const selectKeySql = buildPaginatedSelectSql({
+      tableName: 'user:profile:501',
+      engine: 'redis',
+      page: 0,
+      pageSize: 300,
+    });
+    assert.equal(selectKeySql, 'INSPECT_KEY "user:profile:501"');
+
+    const selectAllSql = buildPaginatedSelectSql({
+      tableName: '*',
+      engine: 'redis',
+      page: 0,
+      pageSize: 300,
+    });
+    assert.equal(selectAllSql, 'KEYS *');
+
+    const exactCountKeySql = buildExactCountSql({
+      tableName: 'user:profile:501',
+      engine: 'redis',
+    });
+    assert.equal(exactCountKeySql, 'INSPECT_KEY "user:profile:501"');
+
+    const exactCountDbSql = buildExactCountSql({
+      tableName: '*',
+      engine: 'redis',
+    });
+    assert.equal(exactCountDbSql, 'DBSIZE');
+  });
 });
 
