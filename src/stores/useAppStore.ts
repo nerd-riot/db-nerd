@@ -208,6 +208,9 @@ interface AppState {
   selectedStructureColumn: any | null;
   setSelectedStructureColumn: (col: any | null) => void;
 
+  structureAddColumnTrigger: number;
+  triggerAddStructureColumn: () => void;
+
   inspectorWidth: 'normal' | 'expanded';
   toggleInspectorWidth: () => void;
 
@@ -2899,6 +2902,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   selectedStructureColumn: null,
   setSelectedStructureColumn: (col) => set({ selectedStructureColumn: col }),
+
+  structureAddColumnTrigger: 0,
+  triggerAddStructureColumn: () =>
+    set((state) => ({ structureAddColumnTrigger: (state.structureAddColumnTrigger || 0) + 1 })),
 
   inspectorWidth: 'normal',
   toggleInspectorWidth: () =>

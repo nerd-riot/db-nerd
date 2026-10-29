@@ -84,6 +84,7 @@ export const TableGrid: React.FC = () => {
     pendingEditsCount,
     pendingTableActions,
     removeTableAction,
+    triggerAddStructureColumn,
   } = useAppStore();
 
   const stagedTableAction = useMemo(
@@ -799,15 +800,15 @@ export const TableGrid: React.FC = () => {
             </Tooltip>
           ) : tableViewMode === 'structure' ? (
             <div className="flex items-center space-x-1.5 h-full">
-              <button
-                onClick={() => {
-                  showToast('Added column column_new to structure');
-                }}
-                className="h-6 px-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 rounded-md text-[11px] font-semibold transition active:scale-95 flex items-center space-x-1 leading-none cursor-pointer shadow-2xs"
-              >
-                <Plus className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
-                <span>Column</span>
-              </button>
+              <Tooltip side="top" content="Add new column to structure" shortcut="+">
+                <button
+                  onClick={triggerAddStructureColumn}
+                  className="h-6 px-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 rounded-md text-[11px] font-semibold transition active:scale-95 flex items-center space-x-1 leading-none cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
+                  <span>Column</span>
+                </button>
+              </Tooltip>
               <button
                 onClick={() => showToast('Table Triggers: 0 triggers defined')}
                 className="h-6 px-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 rounded-md text-[11px] font-semibold transition flex items-center leading-none cursor-pointer shadow-2xs"
