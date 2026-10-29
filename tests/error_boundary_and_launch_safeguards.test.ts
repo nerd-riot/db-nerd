@@ -61,4 +61,31 @@ describe('Error Boundary & Launch Safeguards', () => {
     assert.match(mainContent, /window\.addEventListener\(["']error["']/);
     assert.match(mainContent, /window\.addEventListener\(["']unhandledrejection["']/);
   });
+
+  it('useAppStore.ts declares INITIAL_HISTORY and INITIAL_SETTINGS before createDefaultSessionForConnection and INITIAL_SESSIONS to prevent TDZ ReferenceError on launch', () => {
+    const storeContent = fs.readFileSync(path.join(rootDir, 'src', 'stores', 'useAppStore.ts'), 'utf-8');
+
+    const historyDeclIndex = storeContent.indexOf('const INITIAL_HISTORY =');
+    const settingsDeclIndex = storeContent.indexOf('const INITIAL_SETTINGS =');
+    const createSessionDeclIndex = storeContent.indexOf('const createDefaultSessionForConnection =');
+    const initialSessionsDeclIndex = storeContent.indexOf('const INITIAL_SESSIONS: Record<string, ConnectionSession> =');
+
+    assert.ok(historyDeclIndex > 0, 'INITIAL_HISTORY must be declared');
+    assert.ok(settingsDeclIndex > 0, 'INITIAL_SETTINGS must be declared');
+    assert.ok(createSessionDeclIndex > 0, 'createDefaultSessionForConnection must be declared');
+    assert.ok(initialSessionsDeclIndex > 0, 'INITIAL_SESSIONS must be declared');
+
+    assert.ok(
+      historyDeclIndex < createSessionDeclIndex,
+      'INITIAL_HISTORY must be declared before createDefaultSessionForConnection to prevent TDZ error when saved connections exist'
+    );
+    assert.ok(
+      settingsDeclIndex < initialSessionsDeclIndex,
+      'INITIAL_SETTINGS must be declared before INITIAL_SESSIONS'
+    );
+    assert.ok(
+      historyDeclIndex < initialSessionsDeclIndex,
+      'INITIAL_HISTORY must be declared before INITIAL_SESSIONS initialization loop'
+    );
+  });
 });

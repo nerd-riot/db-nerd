@@ -95,6 +95,15 @@
         margin-bottom: 12px;
       }
     </style>
+    <script>
+      window.addEventListener('error', function(e) {
+        var errDiv = document.getElementById('runtime-error-display');
+        if (errDiv) {
+          errDiv.style.display = 'block';
+          errDiv.innerText += '\n' + (e.message || 'Unknown runtime error');
+        }
+      });
+    </script>
   </head>
 
   <body class="bg-[#0a0f1d] text-slate-100 min-h-screen">
@@ -103,6 +112,7 @@
         <div class="app-initial-spinner"></div>
       </div>
     </div>
+    <div id="runtime-error-display" style="display:none;position:fixed;bottom:0;left:0;right:0;max-height:40%;overflow:auto;background:rgba(220,38,38,0.95);color:#fff;padding:12px;font-family:monospace;font-size:12px;z-index:99999;white-space:pre-wrap;"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -354,116 +354,6 @@ const persistConnections = (connections: ConnectionProfile[]) => {
 const INITIAL_GROUPS: ConnectionGroup[] = loadSavedGroups();
 const INITIAL_CONNECTIONS: ConnectionProfile[] = loadSavedConnections();
 
-const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionSession => {
-  const saved = loadSessionTabs(conn.id);
-  if (saved && saved.tabs && saved.tabs.length > 0) {
-    const sqlStates: Record<string, SqlTabState> = {};
-    if (saved.sqlQueries) {
-      for (const [tId, qText] of Object.entries(saved.sqlQueries)) {
-        sqlStates[tId] = {
-          tabId: tId,
-          query: qText,
-          results: [],
-          columns: [],
-          durationMs: 0,
-          rowsCount: 0,
-          executedAt: '',
-          isExecuting: false,
-        };
-      }
-    }
-    return {
-      connectionId: conn.id,
-      tabs: saved.tabs,
-      activeTabId: saved.activeTabId || saved.tabs[0]?.id || '',
-      sqlTabStates: sqlStates,
-      selectedTable: saved.selectedTable || '',
-      tableViewMode: 'data',
-      isFilterBarOpen: false,
-      filterWhereText: '',
-      filterOrderByText: '',
-      rows: [],
-      originalRows: [],
-      isTransactionOpen: false,
-      pendingEditsCount: 0,
-      history: INITIAL_HISTORY.filter((h) => !h.connectionId || h.connectionId === conn.id),
-      selectedRowData: null,
-      selectedStructureColumn: null,
-      structureSearchColumn: '',
-    };
-  }
-
-  // Check URL params for automated test runs: e.g. ?tab=sql or ?tab=stock_items
-  try {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const tabParam = urlParams.get('tab');
-      if (tabParam) {
-        if (tabParam === 'sql') {
-          const sqlTabId = `tab-sql-${conn.id}-1`;
-          return {
-            connectionId: conn.id,
-            tabs: [{ id: sqlTabId, type: 'sql', title: 'SQL Query', canClose: true }],
-            activeTabId: sqlTabId,
-            sqlTabStates: {
-              [sqlTabId]: {
-                tabId: sqlTabId,
-                query: 'SELECT 1;',
-                results: [{ result: 1 }],
-                columns: ['result'],
-                durationMs: 0.8,
-                rowsCount: 1,
-                executedAt: 'Just now',
-                isExecuting: false,
-              },
-            },
-            selectedTable: '',
-            tableViewMode: 'data',
-            isFilterBarOpen: false,
-            filterWhereText: '',
-            filterOrderByText: '',
-            rows: [],
-            originalRows: [],
-            isTransactionOpen: false,
-            pendingEditsCount: 0,
-            history: INITIAL_HISTORY.filter((h) => !h.connectionId || h.connectionId === conn.id),
-            selectedRowData: null,
-            selectedStructureColumn: null,
-            structureSearchColumn: '',
-          };
-        }
-      }
-    }
-  } catch {}
-
-  // 1/ không có previous tab thì không mở tab nào hết, màn hình default
-  return {
-    connectionId: conn.id,
-    tabs: [],
-    activeTabId: '',
-    sqlTabStates: {},
-    selectedTable: '',
-    tableViewMode: 'data',
-    isFilterBarOpen: false,
-    filterWhereText: '',
-    filterOrderByText: '',
-    rows: [],
-    originalRows: [],
-    isTransactionOpen: false,
-    pendingEditsCount: 0,
-    history: INITIAL_HISTORY.filter((h) => !h.connectionId || h.connectionId === conn.id),
-    selectedRowData: null,
-    selectedStructureColumn: null,
-    structureSearchColumn: '',
-  };
-};
-
-const INITIAL_SESSIONS: Record<string, ConnectionSession> = {};
-INITIAL_CONNECTIONS.forEach((c) => {
-  INITIAL_SESSIONS[c.id] = createDefaultSessionForConnection(c);
-});
-
-
 const getInitialSettings = (): UserSettings => {
   let initialMode: ThemeMode = 'auto';
   let initialTheme: AppThemeId = 'default-dark';
@@ -539,6 +429,115 @@ const resolveTheme = (mode: ThemeMode, appTheme?: AppThemeId): 'dark' | 'light' 
 const INITIAL_SETTINGS = getInitialSettings();
 const INITIAL_RESOLVED_THEME = resolveTheme(INITIAL_SETTINGS.themeMode, INITIAL_SETTINGS.appTheme);
 const INITIAL_HISTORY = loadPersistedHistory(INITIAL_SETTINGS.historyTtl);
+
+const createDefaultSessionForConnection = (conn: ConnectionProfile): ConnectionSession => {
+  const saved = loadSessionTabs(conn.id);
+  if (saved && saved.tabs && saved.tabs.length > 0) {
+    const sqlStates: Record<string, SqlTabState> = {};
+    if (saved.sqlQueries) {
+      for (const [tId, qText] of Object.entries(saved.sqlQueries)) {
+        sqlStates[tId] = {
+          tabId: tId,
+          query: qText,
+          results: [],
+          columns: [],
+          durationMs: 0,
+          rowsCount: 0,
+          executedAt: '',
+          isExecuting: false,
+        };
+      }
+    }
+    return {
+      connectionId: conn.id,
+      tabs: saved.tabs,
+      activeTabId: saved.activeTabId || saved.tabs[0]?.id || '',
+      sqlTabStates: sqlStates,
+      selectedTable: saved.selectedTable || '',
+      tableViewMode: 'data',
+      isFilterBarOpen: false,
+      filterWhereText: '',
+      filterOrderByText: '',
+      rows: [],
+      originalRows: [],
+      isTransactionOpen: false,
+      pendingEditsCount: 0,
+      history: (INITIAL_HISTORY || []).filter((h) => !h.connectionId || h.connectionId === conn.id),
+      selectedRowData: null,
+      selectedStructureColumn: null,
+      structureSearchColumn: '',
+    };
+  }
+
+  // Check URL params for automated test runs: e.g. ?tab=sql or ?tab=stock_items
+  try {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabParam = urlParams.get('tab');
+      if (tabParam) {
+        if (tabParam === 'sql') {
+          const sqlTabId = `tab-sql-${conn.id}-1`;
+          return {
+            connectionId: conn.id,
+            tabs: [{ id: sqlTabId, type: 'sql', title: 'SQL Query', canClose: true }],
+            activeTabId: sqlTabId,
+            sqlTabStates: {
+              [sqlTabId]: {
+                tabId: sqlTabId,
+                query: 'SELECT 1;',
+                results: [{ result: 1 }],
+                columns: ['result'],
+                durationMs: 0.8,
+                rowsCount: 1,
+                executedAt: 'Just now',
+                isExecuting: false,
+              },
+            },
+            selectedTable: '',
+            tableViewMode: 'data',
+            isFilterBarOpen: false,
+            filterWhereText: '',
+            filterOrderByText: '',
+            rows: [],
+            originalRows: [],
+            isTransactionOpen: false,
+            pendingEditsCount: 0,
+            history: (INITIAL_HISTORY || []).filter((h) => !h.connectionId || h.connectionId === conn.id),
+            selectedRowData: null,
+            selectedStructureColumn: null,
+            structureSearchColumn: '',
+          };
+        }
+      }
+    }
+  } catch {}
+
+  // 1/ không có previous tab thì không mở tab nào hết, màn hình default
+  return {
+    connectionId: conn.id,
+    tabs: [],
+    activeTabId: '',
+    sqlTabStates: {},
+    selectedTable: '',
+    tableViewMode: 'data',
+    isFilterBarOpen: false,
+    filterWhereText: '',
+    filterOrderByText: '',
+    rows: [],
+    originalRows: [],
+    isTransactionOpen: false,
+    pendingEditsCount: 0,
+    history: (INITIAL_HISTORY || []).filter((h) => !h.connectionId || h.connectionId === conn.id),
+    selectedRowData: null,
+    selectedStructureColumn: null,
+    structureSearchColumn: '',
+  };
+};
+
+const INITIAL_SESSIONS: Record<string, ConnectionSession> = {};
+INITIAL_CONNECTIONS.forEach((c) => {
+  INITIAL_SESSIONS[c.id] = createDefaultSessionForConnection(c);
+});
 
 const getInitialConnId = (): string => {
   try {
