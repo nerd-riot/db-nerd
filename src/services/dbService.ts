@@ -160,6 +160,17 @@ export async function closeRealConnection(profile: ConnectionProfile): Promise<v
 }
 
 export async function executeRealQuery(profile: ConnectionProfile, query: string): Promise<RealQueryResult> {
+  const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+  if (!isTauri) {
+    return {
+      success: false,
+      columns: ['info'],
+      rows: [{ info: 'Running in web mode' }],
+      duration_ms: 0,
+      rows_affected: 0,
+      error: 'Tauri native backend is not attached in browser mode.',
+    };
+  }
   try {
     const config = profileToConfig(profile);
     const res = await invoke<RealQueryResult>('execute_query', { config, query });
@@ -177,6 +188,8 @@ export async function executeRealQuery(profile: ConnectionProfile, query: string
 }
 
 export async function getRealTables(profile: ConnectionProfile): Promise<RealTableSummary[]> {
+  const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+  if (!isTauri) return [];
   try {
     const config = profileToConfig(profile);
     const res = await invoke<RealTableSummary[]>('get_tables', { config });
@@ -187,6 +200,12 @@ export async function getRealTables(profile: ConnectionProfile): Promise<RealTab
 }
 
 export async function getRealDatabases(profile: ConnectionProfile): Promise<string[]> {
+  const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+  if (!isTauri) {
+    return profile.databases && profile.databases.length > 0
+      ? profile.databases
+      : [profile.database || (normalizeDatabaseEngine(profile.engine) === 'postgres' ? 'postgres' : 'default')];
+  }
   try {
     const config = profileToConfig(profile);
     const res = await invoke<string[]>('get_databases', { config });

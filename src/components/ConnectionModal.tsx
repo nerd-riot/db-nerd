@@ -136,6 +136,7 @@ export const ConnectionModal = () => {
     moveConnection,
     showToast,
     connectionModalInitialMethod,
+    connectionModalSelectedId,
   } = useAppStore();
 
   const [selectedConnId, setSelectedConnId] = useState<string | null>(activeConnection?.id || null);
@@ -152,6 +153,14 @@ export const ConnectionModal = () => {
       setCreationStep('select-engine');
     }
   }, [isConnectionModalOpen, connectionModalInitialMethod]);
+
+  useEffect(() => {
+    if (isConnectionModalOpen && (connectionModalSelectedId || (activeConnection?.id && !connectionModalInitialMethod))) {
+      setSelectedConnId(connectionModalSelectedId || activeConnection?.id || null);
+      setIsCreatingNew(false);
+      setCreationStep('configure');
+    }
+  }, [isConnectionModalOpen, connectionModalSelectedId, activeConnection?.id, connectionModalInitialMethod]);
   const [urlInputValue, setUrlInputValue] = useState('');
   const [parsedUrlResult, setParsedUrlResult] = useState<ParsedConnectionUrl | null>(null);
   const [urlParseError, setUrlParseError] = useState<string | null>(null);

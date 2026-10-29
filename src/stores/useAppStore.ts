@@ -126,7 +126,8 @@ interface AppState {
 
   isConnectionModalOpen: boolean;
   connectionModalInitialMethod?: 'catalog' | 'url' | 'file';
-  setConnectionModalOpen: (open: boolean, method?: 'catalog' | 'url' | 'file') => void;
+  connectionModalSelectedId?: string;
+  setConnectionModalOpen: (open: boolean, method?: 'catalog' | 'url' | 'file', selectedId?: string) => void;
 
   reconnectModalOpen: boolean;
   setReconnectModalOpen: (open: boolean) => void;
@@ -352,6 +353,12 @@ const persistGroups = (groups: ConnectionGroup[]) => {
 
 const persistConnections = (connections: ConnectionProfile[]) => {
   safeSetLocalStorage('dbnerd_connections', JSON.stringify(connections));
+};
+
+export const isMockConnection = (conn?: ConnectionProfile | null): boolean => {
+  const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+  if (!isTauri) return true;
+  return !conn?.id || conn.id === 'demo' || conn.id.startsWith('mock');
 };
 
 const INITIAL_GROUPS: ConnectionGroup[] = loadSavedGroups();
@@ -1797,7 +1804,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addConnection: (profile) => {
     const newConn: ConnectionProfile = {
       ...profile,
-      id: `conn-${Date.now()}`,
+      id: (profile as any).id || `conn-${Date.now()}`,
     };
     set((state) => {
       const nextConnections = [...state.connections, newConn];
@@ -2099,7 +2106,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   isConnectionModalOpen: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modal') === 'connection') || INITIAL_CONNECTIONS.length === 0,
   connectionModalInitialMethod: undefined,
-  setConnectionModalOpen: (open, method) => set({ isConnectionModalOpen: open, connectionModalInitialMethod: method }),
+  connectionModalSelectedId: undefined,
+  setConnectionModalOpen: (open, method, selectedId) =>
+    set({
+      isConnectionModalOpen: open,
+      connectionModalInitialMethod: method,
+      connectionModalSelectedId: selectedId,
+    }),
 
   reconnectModalOpen: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modal') === 'disconnected',
   setReconnectModalOpen: (open) => set({ reconnectModalOpen: open }),
@@ -2497,7 +2510,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedTable: (tbl, pageReset = true) => {
     const { truncatedTables, liveTables, activeConnection } = get();
-    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    const isMock = isMockConnection(activeConnection);
     const targetRows = isMock ? getDefaultRowsForTable(tbl, truncatedTables[tbl]) : [];
     const liveSummary = liveTables[activeConnection?.id]?.find((t) => t.name === tbl);
     const initialEst = liveSummary?.estimated_rows && liveSummary.estimated_rows > 0 ? liveSummary.estimated_rows : null;
@@ -2794,7 +2807,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+      const isMock = isMockConnection(activeConnection);
       if (!isMock) {
         set({
           selectedTable: targetTable,
@@ -2813,7 +2826,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (e: any) {
       console.warn('Live table load failed, fallback:', e);
-      const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+      const isMock = isMockConnection(activeConnection);
       if (!isMock) {
         set({
           selectedTable: targetTable,
@@ -2830,7 +2843,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    const isMock = !activeConnection?.id || activeConnection.id === 'demo' || activeConnection.id.startsWith('mock');
+    const isMock = isMockConnection(activeConnection);
     if (!isMock) {
       set({ isReloading: false });
       return;

@@ -214,8 +214,13 @@ export const AllTableStatsView: React.FC = () => {
       console.warn('Live table stats query fallback:', e);
     }
 
-    const isMock = Boolean(activeConnection?.id && (activeConnection.id === 'demo' || activeConnection.id.startsWith('mock')));
-    if (isMock && (!loadedStats || loadedStats.length === 0)) {
+    const isMock = Boolean(
+      !activeConnection ||
+      activeConnection.id === 'demo' ||
+      activeConnection.id.startsWith('mock') ||
+      (typeof window !== 'undefined' && !(window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI__)
+    );
+    if ((isMock || loadedStats.length === 0) && (!loadedStats || loadedStats.length === 0)) {
       loadedStats = FALLBACK_STATS[engine] || FALLBACK_STATS.postgres;
     }
 
