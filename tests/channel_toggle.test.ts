@@ -76,4 +76,9 @@ describe('Build Channel & App Icon Toggle System', () => {
     const releaseIconBuf = fs.readFileSync(publicReleaseIcon);
     assert.ok(activeIconBuf.equals(releaseIconBuf), 'Active icon must match release icon in release channel');
   });
+
+  it('guarantees APP_NAME is canonical to prevent redundant double Beta in UI headings', () => {
+    const channelSource = fs.readFileSync(path.join(rootDir, 'src', 'config', 'channel.ts'), 'utf-8');
+    assert.match(channelSource, /export const APP_NAME: string = 'DBNerd';/);
+  });
 });
