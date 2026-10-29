@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { BorderChase } from './BorderChase';
+import { Tooltip } from './Tooltip';
 import {
   ContextMenuContainer,
   ContextMenuItem,
@@ -335,18 +336,19 @@ export const AllTableStatsView: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
-          <button
-            onClick={() => fetchStats()}
-            disabled={loading}
-            className="relative overflow-hidden h-6 px-2.5 rounded bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white flex items-center space-x-1.5 text-xs transition active:scale-95 border border-slate-300/80 dark:border-slate-700/60 shadow-2xs"
-            title="Refresh Table Statistics"
-          >
-            {loading && (
-              <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
-            )}
-            <RefreshCw className={`relative z-1 w-3 h-3 ${loading ? 'animate-pulse text-sky-500 dark:text-sky-400' : ''}`} />
-            <span className="relative z-1">{loading ? 'Refreshing...' : 'Refresh'}</span>
-          </button>
+          <Tooltip side="bottom" content="Refresh Table Statistics">
+            <button
+              onClick={() => fetchStats()}
+              disabled={loading}
+              className="relative overflow-hidden h-6 px-2.5 rounded bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white flex items-center space-x-1.5 text-xs transition active:scale-95 border border-slate-300/80 dark:border-slate-700/60 shadow-2xs cursor-pointer"
+            >
+              {loading && (
+                <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
+              )}
+              <RefreshCw className={`relative z-1 w-3 h-3 ${loading ? 'animate-pulse text-sky-500 dark:text-sky-400' : ''}`} />
+              <span className="relative z-1">{loading ? 'Refreshing...' : 'Refresh'}</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
 

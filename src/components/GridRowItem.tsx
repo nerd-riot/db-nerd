@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { GridRow, ColumnDefinition } from '../types';
 import { InlineCellEditor } from './InlineCellEditor';
+import { Tooltip } from './Tooltip';
 import { safeFormatCellValue } from '../lib/memory/memoryGuard';
 
 export interface GridRowItemProps {
@@ -69,12 +70,6 @@ export const GridRowItem = memo<GridRowItemProps>(
             maxWidth: colWidth ? `${colWidth}px` : undefined,
           };
 
-          const rawTitle = val !== null && val !== undefined
-            ? typeof val === 'object'
-              ? safeFormatCellValue(val)
-              : String(val)
-            : undefined;
-
           return (
             <td
               key={col.name}
@@ -92,14 +87,14 @@ export const GridRowItem = memo<GridRowItemProps>(
                   ? 'whitespace-pre-wrap break-words leading-relaxed'
                   : 'truncate whitespace-nowrap overflow-hidden text-ellipsis'
               } ${isDirty ? 'bg-amber-500/15 text-amber-900 dark:text-amber-100 font-medium' : ''}`}
-              title={rawTitle}
             >
               {/* Dirty indicator dot */}
               {isDirty && (
-                <span
-                  className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-amber-500 rounded-full shadow-xs ring-1 ring-amber-600/30"
-                  title="Modified"
-                />
+                <Tooltip side="top" content="Cell modified" shortcut="⌘S">
+                  <span
+                    className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-amber-500 rounded-full shadow-xs ring-1 ring-amber-600/30"
+                  />
+                </Tooltip>
               )}
 
               {isEditing ? (

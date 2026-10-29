@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { executeRealQuery } from '../services/dbService';
 import { RefreshCw, XCircle } from 'lucide-react';
 import { BorderChase } from './BorderChase';
+import { Tooltip } from './Tooltip';
 
 export interface RunningQueryRow {
   datname: string;
@@ -296,8 +297,10 @@ export const RunningQueriesModal: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-1.5 px-3 border-r border-slate-200 dark:border-slate-900/80 text-slate-400 dark:text-slate-500">{q.query_id || 0}</td>
-                    <td className="py-1.5 px-3 truncate max-w-md text-slate-800 dark:text-slate-200 select-text font-mono" title={q.query}>
-                      {q.query}
+                    <td className="py-1.5 px-3 truncate max-w-md text-slate-800 dark:text-slate-200 select-text font-mono">
+                      <Tooltip side="top" content={q.query} className="max-w-xl font-mono text-xs whitespace-pre-wrap break-all">
+                        <span className="truncate block cursor-help">{q.query}</span>
+                      </Tooltip>
                     </td>
                   </tr>
                 );
@@ -329,34 +332,40 @@ export const RunningQueriesModal: React.FC = () => {
 
         {/* Bottom Actions Bar (Dismiss on Left, Refresh & Kill on Right) */}
         <div className="h-12 bg-slate-50 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800/80 px-4 flex items-center justify-between flex-shrink-0">
-          <button
-            onClick={() => setRunningQueriesModalOpen(false)}
-            className="h-7 px-3.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition active:scale-95 cursor-pointer leading-none"
-          >
-            Dismiss
-          </button>
+          <Tooltip side="top" content="Close" shortcut="Esc">
+            <button
+              onClick={() => setRunningQueriesModalOpen(false)}
+              className="h-7 px-3.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition active:scale-95 cursor-pointer leading-none"
+            >
+              Dismiss
+            </button>
+          </Tooltip>
 
           <div className="flex items-center space-x-2">
-            <button
-              onClick={() => fetchQueries()}
-              disabled={loading}
-              className="relative overflow-hidden h-7 px-3.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center space-x-1.5 transition active:scale-95 cursor-pointer leading-none"
-            >
-              {loading && (
-                <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
-              )}
-              <RefreshCw className={`relative z-1 w-3 h-3 ${loading ? 'animate-pulse text-sky-500' : ''}`} />
-              <span className="relative z-1">{loading ? 'Refreshing...' : 'Refresh'}</span>
-            </button>
+            <Tooltip side="top" content="Refresh active queries and locks">
+              <button
+                onClick={() => fetchQueries()}
+                disabled={loading}
+                className="relative overflow-hidden h-7 px-3.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center space-x-1.5 transition active:scale-95 cursor-pointer leading-none"
+              >
+                {loading && (
+                  <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
+                )}
+                <RefreshCw className={`relative z-1 w-3 h-3 ${loading ? 'animate-pulse text-sky-500' : ''}`} />
+                <span className="relative z-1">{loading ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
+            </Tooltip>
 
-            <button
-              onClick={handleKill}
-              disabled={!selectedPid}
-              className="h-7 px-4 rounded-md bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center space-x-1.5 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer leading-none shadow-xs"
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              <span>Kill</span>
-            </button>
+            <Tooltip side="top" content={selectedPid ? `Terminate backend connection (PID ${selectedPid})` : 'Select a query to terminate'}>
+              <button
+                onClick={handleKill}
+                disabled={!selectedPid}
+                className="h-7 px-4 rounded-md bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center space-x-1.5 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer leading-none shadow-xs"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                <span>Kill</span>
+              </button>
+            </Tooltip>
           </div>
         </div>
 

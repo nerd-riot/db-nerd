@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { Activity, Database, Zap, Cpu, Server } from 'lucide-react';
 import { HeartbeatDot } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
+import { Tooltip } from './Tooltip';
 
 export const Observability: React.FC = () => {
   const { processes, killProcess, showToast, heartbeatMetrics, activeConnection } = useAppStore();
@@ -179,8 +180,10 @@ export const Observability: React.FC = () => {
                     <span>{proc.state}</span>
                   </span>
                 </td>
-                <td className="p-2.5 border-r border-slate-200 dark:border-slate-800/60 text-slate-800 dark:text-slate-300 truncate max-w-md" title={proc.query}>
-                  {proc.query}
+                <td className="p-2.5 border-r border-slate-200 dark:border-slate-800/60 text-slate-800 dark:text-slate-300 truncate max-w-md">
+                  <Tooltip side="top" content={proc.query} className="max-w-xl font-mono text-xs whitespace-pre-wrap break-all">
+                    <span className="truncate block cursor-help">{proc.query}</span>
+                  </Tooltip>
                 </td>
                 <td className="p-2.5 pr-4 text-right select-none">
                   <button

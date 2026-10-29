@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2, Copy, Check } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 interface Props {
   children: ReactNode;
@@ -96,34 +97,36 @@ export class ErrorBoundary extends Component<Props, State> {
                 <span>Reload Application</span>
               </button>
 
-              <button
-                type="button"
-                onClick={this.handleResetWorkspace}
-                className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium text-xs rounded-lg transition active:scale-95 cursor-pointer"
-                title="Clears saved session tabs and reloads"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-slate-400" />
-                <span>Reset Workspace</span>
-              </button>
+              <Tooltip side="top" content="Clears saved session tabs and reloads">
+                <button
+                  type="button"
+                  onClick={this.handleResetWorkspace}
+                  className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium text-xs rounded-lg transition active:scale-95 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Reset Workspace</span>
+                </button>
+              </Tooltip>
 
-              <button
-                type="button"
-                onClick={this.handleCopyDetails}
-                className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium text-xs rounded-lg transition active:scale-95 cursor-pointer"
-                title="Copy error details to clipboard"
-              >
-                {this.state.copied ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400">Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Copy Error</span>
-                  </>
-                )}
-              </button>
+              <Tooltip side="top" content="Copy error details to clipboard">
+                <button
+                  type="button"
+                  onClick={this.handleCopyDetails}
+                  className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium text-xs rounded-lg transition active:scale-95 cursor-pointer"
+                >
+                  {this.state.copied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Copy Error</span>
+                    </>
+                  )}
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>

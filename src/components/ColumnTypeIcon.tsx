@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 import {
   Hash,
   Type,
@@ -196,8 +197,10 @@ export const ColumnTypeIcon: React.FC<ColumnTypeIconProps> = ({
   };
 
   return (
-    <span title={`Type: ${label}`} className="inline-flex items-center flex-shrink-0">
-      {renderIcon()}
-    </span>
+    <Tooltip side="top" content={`Type: ${label}`}>
+      <span className="inline-flex items-center flex-shrink-0 cursor-help">
+        {renderIcon()}
+      </span>
+    </Tooltip>
   );
 };

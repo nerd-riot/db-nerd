@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ColumnDefinition } from '../types';
 import { resolveColumnTypeCategory } from './ColumnTypeIcon';
+import { Tooltip } from './Tooltip';
 
 interface InlineCellEditorProps {
   col: ColumnDefinition;
@@ -313,66 +314,70 @@ export const InlineCellEditor: React.FC<InlineCellEditorProps> = ({
         <div className="absolute right-1 flex items-center space-x-0.5">
           {/* Boolean Quick Toggle Button */}
           {category === 'boolean' && (
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                const nextVal = textValue.toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE';
-                setTextValue(nextVal);
-                handleCommit(nextVal === 'TRUE');
-              }}
-              title="Click to toggle TRUE / FALSE"
-              className="p-0.5 rounded text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition cursor-pointer"
-            >
-              {textValue.toUpperCase() === 'TRUE' ? (
-                <ToggleRight className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <ToggleLeft className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
+            <Tooltip side="top" content="Click to toggle TRUE / FALSE">
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const nextVal = textValue.toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE';
+                  setTextValue(nextVal);
+                  handleCommit(nextVal === 'TRUE');
+                }}
+                className="p-0.5 rounded text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition cursor-pointer"
+              >
+                {textValue.toUpperCase() === 'TRUE' ? (
+                  <ToggleRight className="w-4 h-4 text-emerald-500" />
+                ) : (
+                  <ToggleLeft className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
+            </Tooltip>
           )}
 
           {/* Number Stepper (▲ / ▼) */}
           {category === 'number' && (
             <div className="flex flex-col -space-y-0.5">
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleStep(e.shiftKey ? 10 : 1);
-                }}
-                className="p-0.5 rounded hover:bg-sky-500/20 text-slate-400 hover:text-sky-500 transition cursor-pointer"
-                title="Increment (+1, Shift for +10)"
-              >
-                <ChevronUp className="w-2.5 h-2.5" />
-              </button>
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleStep(e.shiftKey ? -10 : -1);
-                }}
-                className="p-0.5 rounded hover:bg-sky-500/20 text-slate-400 hover:text-sky-500 transition cursor-pointer"
-                title="Decrement (-1, Shift for -10)"
-              >
-                <ChevronDown className="w-2.5 h-2.5" />
-              </button>
+              <Tooltip side="left" content="Increment (+1, Shift for +10)">
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleStep(e.shiftKey ? 10 : 1);
+                  }}
+                  className="p-0.5 rounded hover:bg-sky-500/20 text-slate-400 hover:text-sky-500 transition cursor-pointer"
+                >
+                  <ChevronUp className="w-2.5 h-2.5" />
+                </button>
+              </Tooltip>
+              <Tooltip side="left" content="Decrement (-1, Shift for -10)">
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleStep(e.shiftKey ? -10 : -1);
+                  }}
+                  className="p-0.5 rounded hover:bg-sky-500/20 text-slate-400 hover:text-sky-500 transition cursor-pointer"
+                >
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </button>
+              </Tooltip>
             </div>
           )}
 
           {/* DateTime Calendar Toggle */}
           {(category === 'datetime' || category === 'date' || category === 'time') && (
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setShowPopover((prev) => !prev);
-              }}
-              className="p-0.5 rounded text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition cursor-pointer"
-              title="Toggle Calendar & Suggestions"
-            >
-              <CalendarIcon className="w-3.5 h-3.5 text-sky-400" />
-            </button>
+            <Tooltip side="left" content="Toggle Calendar & Suggestions">
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setShowPopover((prev) => !prev);
+                }}
+                className="p-0.5 rounded text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition cursor-pointer"
+              >
+                <CalendarIcon className="w-3.5 h-3.5 text-sky-400" />
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>
@@ -474,50 +479,54 @@ export const InlineCellEditor: React.FC<InlineCellEditorProps> = ({
 
                 {/* Stepper buttons row */}
                 <div className="grid grid-cols-4 gap-1">
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleStep(-10);
-                    }}
-                    className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
-                    title="Subtract 10"
-                  >
-                    -10
-                  </button>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleStep(-1);
-                    }}
-                    className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
-                    title="Subtract 1"
-                  >
-                    -1
-                  </button>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleStep(1);
-                    }}
-                    className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
-                    title="Add 1"
-                  >
-                    +1
-                  </button>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleStep(10);
-                    }}
-                    className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
-                    title="Add 10"
-                  >
-                    +10
-                  </button>
+                  <Tooltip side="top" content="Subtract 10">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleStep(-10);
+                      }}
+                      className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
+                    >
+                      -10
+                    </button>
+                  </Tooltip>
+                  <Tooltip side="top" content="Subtract 1">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleStep(-1);
+                      }}
+                      className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
+                    >
+                      -1
+                    </button>
+                  </Tooltip>
+                  <Tooltip side="top" content="Add 1">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleStep(1);
+                      }}
+                      className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
+                    >
+                      +1
+                    </button>
+                  </Tooltip>
+                  <Tooltip side="top" content="Add 10">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleStep(10);
+                      }}
+                      className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 font-mono text-[11px] rounded transition cursor-pointer text-center"
+                    >
+                      +10
+                    </button>
+                  </Tooltip>
                 </div>
 
                 {/* Quick Values */}

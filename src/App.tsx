@@ -536,16 +536,17 @@ export function App() {
         {isSidebarOpen ? (
           <>
             <Sidebar />
-            <div
-              onMouseDown={handleSidebarResizeStart}
-              onDoubleClick={() => setSidebarWidth(240)}
-              className="w-1 hover:w-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-col-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
-              title="Drag to resize sidebar • Double-click to reset (240px)"
-            >
-              <div className="absolute top-1/2 -translate-y-1/2 -left-1 -right-1 h-8 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
-                <div className="w-0.5 h-3 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+            <Tooltip side="right" content="Drag to resize sidebar • Double-click to reset (240px)">
+              <div
+                onMouseDown={handleSidebarResizeStart}
+                onDoubleClick={() => setSidebarWidth(240)}
+                className="w-1 hover:w-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-col-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
+              >
+                <div className="absolute top-1/2 -translate-y-1/2 -left-1 -right-1 h-8 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
+                  <div className="w-0.5 h-3 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+                </div>
               </div>
-            </div>
+            </Tooltip>
           </>
         ) : (
           <Tooltip side="right" content="Expand Sidebar" shortcut="⌘B">
@@ -723,16 +724,17 @@ export function App() {
           {isBottomPanelOpen && (
             <>
               {/* Bottom Splitter Handle */}
-              <div
-                onMouseDown={handleBottomPanelResizeStart}
-                onDoubleClick={() => setBottomPanelHeight(190)}
-                className="h-1 hover:h-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-row-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
-                title="Drag to resize console • Double-click to reset (190px)"
-              >
-                <div className="absolute left-1/2 -translate-x-1/2 -top-1 -bottom-1 w-12 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
-                  <div className="h-0.5 w-6 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+              <Tooltip side="top" content="Drag to resize console • Double-click to reset (190px)">
+                <div
+                  onMouseDown={handleBottomPanelResizeStart}
+                  onDoubleClick={() => setBottomPanelHeight(190)}
+                  className="h-1 hover:h-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-row-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
+                >
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-1 -bottom-1 w-12 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
+                    <div className="h-0.5 w-6 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+                  </div>
                 </div>
-              </div>
+              </Tooltip>
               <BottomPanel />
             </>
           )}
@@ -743,16 +745,17 @@ export function App() {
         {openSessionIds.length > 0 && Boolean(activeConnection?.id) && (
           isRightInspectorOpen ? (
             <>
-              <div
-                onMouseDown={handleInspectorResizeStart}
-                onDoubleClick={() => setRightInspectorWidth(320)}
-                className="w-1 hover:w-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-col-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
-                title="Drag to resize inspector • Double-click to reset (320px)"
-              >
-                <div className="absolute top-1/2 -translate-y-1/2 -left-1 -right-1 h-8 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
-                  <div className="w-0.5 h-3 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+              <Tooltip side="left" content="Drag to resize inspector • Double-click to reset (320px)">
+                <div
+                  onMouseDown={handleInspectorResizeStart}
+                  onDoubleClick={() => setRightInspectorWidth(320)}
+                  className="w-1 hover:w-1.5 bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-col-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
+                >
+                  <div className="absolute top-1/2 -translate-y-1/2 -left-1 -right-1 h-8 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
+                    <div className="w-0.5 h-3 bg-sky-300 rounded-full opacity-0 group-hover:opacity-100" />
+                  </div>
                 </div>
-              </div>
+              </Tooltip>
               <RightInspector />
             </>
           ) : (
@@ -824,13 +827,14 @@ export function App() {
                 )}
               </div>
               <span className="font-sans leading-relaxed text-xs flex-1">{activeToast.message}</span>
-              <button
-                onClick={() => useAppStore.setState({ toast: null, toastMessage: null })}
-                className="p-0.5 hover:bg-white/10 rounded text-slate-400 hover:text-slate-200 transition cursor-pointer shrink-0 ml-1"
-                title="Dismiss"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              <Tooltip side="top" content="Dismiss">
+                <button
+                  onClick={() => useAppStore.setState({ toast: null, toastMessage: null })}
+                  className="p-0.5 hover:bg-white/10 rounded text-slate-400 hover:text-slate-200 transition cursor-pointer shrink-0 ml-1"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Tooltip>
             </div>
           </div>
         );

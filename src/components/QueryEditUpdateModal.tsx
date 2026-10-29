@@ -16,6 +16,7 @@ import {
   Edit2,
   Eye,
 } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 interface QueryEditUpdateModalProps {
   isOpen: boolean;
@@ -184,13 +185,14 @@ export const QueryEditUpdateModal: React.FC<QueryEditUpdateModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-            title="Close (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <Tooltip side="left" content="Close" shortcut="Esc">
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Content Body */}
@@ -315,18 +317,19 @@ export const QueryEditUpdateModal: React.FC<QueryEditUpdateModalProps> = ({
 
               <div className="flex items-center space-x-1.5">
                 {onSendToEditor && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSendToEditor(sqlText);
-                      onClose();
-                    }}
-                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-medium flex items-center space-x-1 transition cursor-pointer border border-white/5"
-                    title="Paste this SQL into active query editor"
-                  >
-                    <Terminal className="w-3 h-3 text-sky-400" />
-                    <span>Send to Editor</span>
-                  </button>
+                  <Tooltip side="top" content="Paste this SQL into active query editor">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSendToEditor(sqlText);
+                        onClose();
+                      }}
+                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-medium flex items-center space-x-1 transition cursor-pointer border border-white/5"
+                    >
+                      <Terminal className="w-3 h-3 text-sky-400" />
+                      <span>Send to Editor</span>
+                    </button>
+                  </Tooltip>
                 )}
                 <button
                   type="button"

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 
 export interface ConnectorIconProps {
   engine: string;
@@ -131,14 +132,15 @@ export const ConnectorIcon: React.FC<ConnectorIconProps> = ({
   if (hasError) {
     const color = ENGINE_COLORS[normalized] || ENGINE_COLORS.generic;
     return (
-      <div
-        className={`relative flex items-center justify-center shrink-0 select-none shadow-sm font-mono font-bold ${color.bg} ${color.text} ${sizeClasses} ${className}`}
-        title={alt || meta.label}
-      >
-        <span className={`${fontSizes} uppercase tracking-tighter`}>
-          {meta.tag || normalized.slice(0, 2)}
-        </span>
-      </div>
+      <Tooltip side="top" content={alt || meta.label}>
+        <div
+          className={`relative flex items-center justify-center shrink-0 select-none shadow-sm font-mono font-bold ${color.bg} ${color.text} ${sizeClasses} ${className}`}
+        >
+          <span className={`${fontSizes} uppercase tracking-tighter`}>
+            {meta.tag || normalized.slice(0, 2)}
+          </span>
+        </div>
+      </Tooltip>
     );
   }
 

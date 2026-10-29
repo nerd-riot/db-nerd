@@ -1133,22 +1133,23 @@ export const SqlEditor: React.FC = () => {
           <div className="flex items-center space-x-2">
             {/* Limit Selector */}
             <div className="relative" ref={limitMenuRef}>
-              <div className="inline-flex items-center bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/10 rounded-md text-xs font-medium transition shadow-xs overflow-hidden h-6.5">
-                <button
-                  onClick={() => setIsLimitMenuOpen(!isLimitMenuOpen)}
-                  className="px-2.5 py-0.5 flex items-center space-x-1 cursor-pointer"
-                  title="Query result limit"
-                >
-                  <span>{queryLimit}</span>
-                </button>
-                <div className="h-3 w-px bg-slate-300 dark:bg-white/10" />
-                <button
-                  onClick={() => setIsLimitMenuOpen(!isLimitMenuOpen)}
-                  className="px-1.5 py-0.5 flex items-center justify-center cursor-pointer hover:bg-black/10 dark:hover:bg-white/10"
-                >
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
-                </button>
-              </div>
+              <Tooltip side="bottom" content="Query result limit" disabled={isLimitMenuOpen}>
+                <div className="inline-flex items-center bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/10 rounded-md text-xs font-medium transition shadow-xs overflow-hidden h-6.5">
+                  <button
+                    onClick={() => setIsLimitMenuOpen(!isLimitMenuOpen)}
+                    className="px-2.5 py-0.5 flex items-center space-x-1 cursor-pointer"
+                  >
+                    <span>{queryLimit}</span>
+                  </button>
+                  <div className="h-3 w-px bg-slate-300 dark:bg-white/10" />
+                  <button
+                    onClick={() => setIsLimitMenuOpen(!isLimitMenuOpen)}
+                    className="px-1.5 py-0.5 flex items-center justify-center cursor-pointer hover:bg-black/10 dark:hover:bg-white/10"
+                  >
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                  </button>
+                </div>
+              </Tooltip>
 
               {isLimitMenuOpen && (
                 <div className="absolute right-0 top-7.5 w-36 bg-white dark:bg-[#1f2023] border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 py-1 text-slate-800 dark:text-slate-200 font-sans text-xs animate-in fade-in zoom-in-95 duration-100">
@@ -1322,16 +1323,17 @@ export const SqlEditor: React.FC = () => {
 
       {/* Draggable Horizontal Splitter Handle between Editor and Results */}
       {!isSqlResultsCollapsed && (
-        <div
-          onMouseDown={handleSplitterResizeStart}
-          onDoubleClick={() => setSqlEditorSplitHeight(220)}
-          className="h-1 hover:h-1.5 bg-slate-200 dark:bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-row-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
-          title="Drag to resize SQL editor & results • Double-click to reset (220px)"
-        >
-          <div className="absolute left-1/2 -translate-x-1/2 -top-1 -bottom-1 w-12 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
-            <div className="h-0.5 w-6 bg-sky-400 rounded-full opacity-0 group-hover:opacity-100" />
+        <Tooltip content="Drag to resize SQL editor & results • Double-click to reset (220px)" side="top">
+          <div
+            onMouseDown={handleSplitterResizeStart}
+            onDoubleClick={() => setSqlEditorSplitHeight(220)}
+            className="h-1 hover:h-1.5 bg-slate-200 dark:bg-slate-800/80 hover:bg-sky-500/60 active:bg-sky-500 cursor-row-resize transition-all duration-100 relative group flex-shrink-0 z-20 select-none"
+          >
+            <div className="absolute left-1/2 -translate-x-1/2 -top-1 -bottom-1 w-12 rounded-full bg-sky-400/0 group-hover:bg-sky-400/40 transition-colors pointer-events-none flex items-center justify-center">
+              <div className="h-0.5 w-6 bg-sky-400 rounded-full opacity-0 group-hover:opacity-100" />
+            </div>
           </div>
-        </div>
+        </Tooltip>
       )}
 
       {/* Bottom Split: Query Result Grid (Collapsible & Resizable) */}
@@ -1361,16 +1363,17 @@ export const SqlEditor: React.FC = () => {
                   >
                     {/* Close Tab Button */}
                     {queryItems.length > 1 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          closeQueryResultTab(activeTabId, qItem.id);
-                        }}
-                        className="w-3.5 h-3.5 rounded hover:bg-black/20 dark:hover:bg-white/20 flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer -ml-1"
-                        title="Close tab"
-                      >
-                        <X className="w-2.5 h-2.5" />
-                      </button>
+                      <Tooltip content="Close tab" side="top">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closeQueryResultTab(activeTabId, qItem.id);
+                          }}
+                          className="w-3.5 h-3.5 rounded hover:bg-black/20 dark:hover:bg-white/20 flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer -ml-1"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </Tooltip>
                     )}
 
                     {/* Status Dot */}
@@ -1384,22 +1387,23 @@ export const SqlEditor: React.FC = () => {
                     <span>{qItem.title || `Query ${idx + 1}`}</span>
 
                     {/* Pin Tab Button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        togglePinQueryResultTab(activeTabId, qItem.id);
-                      }}
-                      className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/20 transition cursor-pointer"
-                      title={qItem.isPinned ? 'Unpin tab' : 'Pin tab'}
-                    >
-                      <Pin
-                        className={`w-3 h-3 transition-transform ${
-                          qItem.isPinned
-                            ? 'text-amber-500 fill-amber-500 rotate-45'
-                            : 'text-slate-400/40 hover:text-slate-600 dark:text-white/30 dark:hover:text-white group-hover:opacity-100 opacity-40'
-                        }`}
-                      />
-                    </button>
+                    <Tooltip content={qItem.isPinned ? 'Unpin tab' : 'Pin tab'} side="top">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePinQueryResultTab(activeTabId, qItem.id);
+                        }}
+                        className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/20 transition cursor-pointer"
+                      >
+                        <Pin
+                          className={`w-3 h-3 transition-transform ${
+                            qItem.isPinned
+                              ? 'text-amber-500 fill-amber-500 rotate-45'
+                              : 'text-slate-400/40 hover:text-slate-600 dark:text-white/30 dark:hover:text-white group-hover:opacity-100 opacity-40'
+                          }`}
+                        />
+                      </button>
+                    </Tooltip>
                   </div>
                 </React.Fragment>
               );
@@ -1540,10 +1544,11 @@ export const SqlEditor: React.FC = () => {
                       <th
                         style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
                         className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold cursor-pointer"
-                        title="Double-click to fit all columns"
                         onDoubleClick={handleAutoFitAll}
                       >
-                        #
+                        <Tooltip content="Double-click to fit all columns" side="bottom">
+                          <span className="block w-full">#</span>
+                        </Tooltip>
                       </th>
                       {columns.map((col) => {
                         const isErrorCol = col.toLowerCase() === 'error';
@@ -1574,9 +1579,11 @@ export const SqlEditor: React.FC = () => {
                                 )}
                                 <span className={`font-semibold truncate ${isErrorCol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>{col}</span>
                                 {meta?.isPk && (
-                                  <span title="Primary Key" className="inline-flex items-center ml-0.5">
-                                    <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
-                                  </span>
+                                  <Tooltip content="Primary Key" side="top">
+                                    <span className="inline-flex items-center ml-0.5">
+                                      <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
+                                    </span>
+                                  </Tooltip>
                                 )}
                               </div>
                               {isSorted && (
@@ -1591,29 +1598,30 @@ export const SqlEditor: React.FC = () => {
                             </div>
 
                             {/* Column Resizer Handle with Double-Click Auto-Fit (Excel / TablePlus) */}
-                            <div
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }}
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleResizeStart(col, e);
-                              }}
-                              onDoubleClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                if (sqlClickTimerRef.current) {
-                                  clearTimeout(sqlClickTimerRef.current);
-                                  sqlClickTimerRef.current = null;
-                                }
-                                handleAutoFitColumn(col);
-                              }}
-                              className="absolute top-0 right-0 bottom-0 w-4 -mr-2 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
-                              title="Drag to resize, double-click to fit content"
-                            >
-                              <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors pointer-events-none" />
-                            </div>
+                            <Tooltip content="Drag to resize • Double-click to auto-fit" side="top">
+                              <div
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  handleResizeStart(col, e);
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (sqlClickTimerRef.current) {
+                                    clearTimeout(sqlClickTimerRef.current);
+                                    sqlClickTimerRef.current = null;
+                                  }
+                                  handleAutoFitColumn(col);
+                                }}
+                                className="absolute top-0 right-0 bottom-0 w-4 -mr-2 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
+                              >
+                                <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors pointer-events-none" />
+                              </div>
+                            </Tooltip>
                           </th>
                         );
                       })}
@@ -1711,12 +1719,6 @@ export const SqlEditor: React.FC = () => {
                                 );
                               }
 
-                              const rawTitle = val !== null && val !== undefined
-                                ? typeof val === 'object'
-                                  ? safeFormatCellValue(val)
-                                  : String(val)
-                                : undefined;
-
                               return (
                                 <td 
                                   key={col} 
@@ -1736,14 +1738,14 @@ export const SqlEditor: React.FC = () => {
                                       ? 'whitespace-pre-wrap break-words leading-relaxed'
                                       : 'truncate whitespace-nowrap overflow-hidden text-ellipsis'
                                   } ${isErrorCol ? 'bg-rose-50/40 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 font-mono' : ''}`}
-                                  title={rawTitle}
                                 >
                                   {/* Dirty indicator dot */}
                                   {isDirty && (
-                                    <span
-                                      className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-amber-500 dark:bg-amber-400 rounded-full shadow-xs ring-1 ring-amber-600/30"
-                                      title="Cell modified. Press ⌘S or click 'Review & Execute SQL' to apply."
-                                    />
+                                    <Tooltip side="top" content="Cell modified" shortcut="⌘S">
+                                      <span
+                                        className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 bg-amber-500 dark:bg-amber-400 rounded-full shadow-xs ring-1 ring-amber-600/30"
+                                      />
+                                    </Tooltip>
                                   )}
 
                                   {val === null || val === undefined ? (
@@ -1861,36 +1863,39 @@ export const SqlEditor: React.FC = () => {
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                   <span>{Object.keys(pendingEdits).length} modified</span>
                   <span className="text-slate-400">·</span>
-                  <button
-                    onClick={handleDiscardPendingEdits}
-                    className="hover:underline text-rose-600 dark:text-rose-400 cursor-pointer"
-                    title="Discard all pending cell changes"
-                  >
-                    Discard
-                  </button>
+                  <Tooltip side="top" content="Discard all pending cell changes">
+                    <button
+                      onClick={handleDiscardPendingEdits}
+                      className="hover:underline text-rose-600 dark:text-rose-400 cursor-pointer"
+                    >
+                      Discard
+                    </button>
+                  </Tooltip>
                   <span className="text-slate-400">·</span>
-                  <button
-                    disabled={isApplyingDirect}
-                    onClick={handleDirectApplyPendingEdits}
-                    className="hover:underline font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1 cursor-pointer disabled:opacity-50"
-                    title="Commit & Apply cell changes directly to database (⌘S)"
-                  >
-                    {isApplyingDirect ? (
-                      <div className="w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Check className="w-3 h-3 stroke-[2.5]" />
-                    )}
-                    <span>Apply Changes</span>
-                    <kbd className="px-1 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded text-[9px] font-mono">⌘S</kbd>
-                  </button>
+                  <Tooltip side="top" content="Commit & Apply cell changes directly to database" shortcut="⌘S">
+                    <button
+                      disabled={isApplyingDirect}
+                      onClick={handleDirectApplyPendingEdits}
+                      className="hover:underline font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {isApplyingDirect ? (
+                        <div className="w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Check className="w-3 h-3 stroke-[2.5]" />
+                      )}
+                      <span>Apply Changes</span>
+                      <kbd className="px-1 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded text-[9px] font-mono">⌘S</kbd>
+                    </button>
+                  </Tooltip>
                   <span className="text-slate-400">·</span>
-                  <button
-                    onClick={() => setIsQueryEditModalOpen(true)}
-                    className="hover:underline text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer text-[11px]"
-                    title="Review SQL diff & customize statement"
-                  >
-                    Review SQL...
-                  </button>
+                  <Tooltip side="top" content="Review SQL diff & customize statement">
+                    <button
+                      onClick={() => setIsQueryEditModalOpen(true)}
+                      className="hover:underline text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer text-[11px]"
+                    >
+                      Review SQL...
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -2049,13 +2054,14 @@ export const SqlEditor: React.FC = () => {
               </div>
               <div className="h-5.5 bg-slate-950 dark:bg-[#1a1b1e] border-t border-slate-800 dark:border-white/5 px-3 flex items-center justify-between text-[11px] text-slate-400 select-none">
                 <div className="flex items-center space-x-3">
-                  <button
-                    onClick={() => showToast('Cleared console log')}
-                    className="hover:text-slate-200 transition cursor-pointer p-0.5"
-                    title="Clear log"
-                  >
-                    <Trash2 className="w-3 h-3 text-slate-400 hover:text-slate-200" />
-                  </button>
+                  <Tooltip side="top" content="Clear log">
+                    <button
+                      onClick={() => showToast('Cleared console log')}
+                      className="hover:text-slate-200 transition cursor-pointer p-0.5"
+                    >
+                      <Trash2 className="w-3 h-3 text-slate-400 hover:text-slate-200" />
+                    </button>
+                  </Tooltip>
                   <label className="flex items-center space-x-1.5 cursor-pointer text-[10px] text-slate-400 hover:text-slate-200">
                     <input
                       type="checkbox"
@@ -2066,13 +2072,14 @@ export const SqlEditor: React.FC = () => {
                     <span>Enable syntax highlighting</span>
                   </label>
                 </div>
-                <button
-                  onClick={() => setIsConsoleDrawerOpen(false)}
-                  className="hover:text-slate-200 transition cursor-pointer p-0.5 text-[10px] text-slate-500 hover:text-slate-300"
-                  title="Hide console"
-                >
-                  <ChevronDown className="w-3 h-3" />
-                </button>
+                <Tooltip side="top" content="Hide console">
+                  <button
+                    onClick={() => setIsConsoleDrawerOpen(false)}
+                    className="hover:text-slate-200 transition cursor-pointer p-0.5 text-[10px] text-slate-500 hover:text-slate-300"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </Tooltip>
               </div>
             </div>
           )}

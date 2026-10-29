@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAppStore } from '../stores/useAppStore';
 import { SafetyMode } from '../types';
 import { Unlock, Check } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 export const SafetyModeSelector: React.FC = () => {
   const { activeConnection, setConnectionSafeMode } = useAppStore();
@@ -98,23 +99,24 @@ export const SafetyModeSelector: React.FC = () => {
   return (
     <div className="relative inline-flex items-center">
       {/* TablePlus Iconic Capsule Lock Button */}
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={toggleDropdown}
-        className={`no-drag h-7 px-2.5 flex items-center justify-center space-x-1.5 rounded-lg border transition-all cursor-pointer shadow-xs active:scale-95 group leading-none ${
-          isOpen
-            ? 'bg-slate-200 dark:bg-slate-800 border-slate-400 dark:border-slate-600'
-            : currentMode === 'silent'
-            ? 'bg-white dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-700/80 text-slate-600 dark:text-slate-300'
-            : currentMode.startsWith('alert')
-            ? 'bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 border-amber-300 dark:border-amber-700/80 text-amber-600 dark:text-amber-300'
-            : 'bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 border-rose-300 dark:border-rose-700/80 text-rose-600 dark:text-rose-300'
-        }`}
-        title={`Safety Mode: ${currentMode} (Click to change)`}
-      >
-        {renderIconForMode(currentMode)}
-      </button>
+      <Tooltip side="bottom" content={`Safety Mode: ${currentMode} (Click to change)`} disabled={isOpen}>
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleDropdown}
+          className={`no-drag h-7 px-2.5 flex items-center justify-center space-x-1.5 rounded-lg border transition-all cursor-pointer shadow-xs active:scale-95 group leading-none ${
+            isOpen
+              ? 'bg-slate-200 dark:bg-slate-800 border-slate-400 dark:border-slate-600'
+              : currentMode === 'silent'
+              ? 'bg-white dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-700/80 text-slate-600 dark:text-slate-300'
+              : currentMode.startsWith('alert')
+              ? 'bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 border-amber-300 dark:border-amber-700/80 text-amber-600 dark:text-amber-300'
+              : 'bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 border-rose-300 dark:border-rose-700/80 text-rose-600 dark:text-rose-300'
+          }`}
+        >
+          {renderIconForMode(currentMode)}
+        </button>
+      </Tooltip>
 
       {/* TablePlus Pixel-Perfect Safety Level Dropdown Menu (Rendered via Portal to avoid overflow clipping) */}
       {isOpen &&

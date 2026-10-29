@@ -232,7 +232,6 @@ export const LedMatrixBanner: React.FC<LedMatrixBannerProps> = ({ onOpenDatabase
             ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-500/60 hover:border-amber-300 dark:hover:border-amber-400'
             : 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-500/60 hover:border-emerald-300 dark:hover:border-emerald-400'
         }`}
-        title={isFailed ? "Database is disconnected! Tap to reconnect (⌘⇧R)" : "Click to Switch Database or Change Schema (⌘O)"}
       >
         {/* Apple-grade Border Chase Highlight Runner */}
         {isConnecting && (
@@ -423,6 +422,12 @@ export const LedMatrixBanner: React.FC<LedMatrixBannerProps> = ({ onOpenDatabase
               <span className="text-slate-500">Throughput:</span>
               <span className="text-amber-600 dark:text-amber-300 font-bold">{speedDisplay}</span>
             </div>
+          </div>
+          <div className="mt-2 pt-1.5 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <span>{isFailed ? 'Tap to reconnect' : 'Click to switch database / schema'}</span>
+            <kbd className="font-mono bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 rounded text-[9px] text-slate-700 dark:text-slate-300 shadow-2xs font-semibold">
+              {isFailed ? '⌘⇧R' : '⌘O'}
+            </kbd>
           </div>
         </div>
       )}

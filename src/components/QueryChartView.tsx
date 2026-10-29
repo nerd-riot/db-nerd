@@ -11,6 +11,7 @@ import {
   Hash,
   Activity,
 } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 interface QueryChartViewProps {
   results: Record<string, any>[];
@@ -270,54 +271,58 @@ export const QueryChartView: React.FC<QueryChartViewProps> = ({ results, columns
         {/* Left: Chart Type Selector */}
         <div className="flex items-center space-x-2">
           <div className="inline-flex rounded-lg p-0.5 bg-slate-100 dark:bg-[#23252b] border border-slate-200/80 dark:border-white/5">
-            <button
-              onClick={() => setChartType('bar')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
-                chartType === 'bar'
-                  ? 'bg-sky-500 text-white shadow-xs font-semibold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Vertical Column / Multi-Bar Chart"
-            >
-              <BarChart2 className="w-3.5 h-3.5" />
-              <span>Column</span>
-            </button>
-            <button
-              onClick={() => setChartType('area')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
-                chartType === 'area'
-                  ? 'bg-sky-500 text-white shadow-xs font-semibold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Smooth Area & Trend Line Chart"
-            >
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Line / Area</span>
-            </button>
-            <button
-              onClick={() => setChartType('horizontal')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
-                chartType === 'horizontal'
-                  ? 'bg-sky-500 text-white shadow-xs font-semibold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Horizontal Leaderboard & Share Breakdown"
-            >
-              <AlignLeft className="w-3.5 h-3.5" />
-              <span>Leaderboard</span>
-            </button>
-            <button
-              onClick={() => setChartType('donut')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
-                chartType === 'donut'
-                  ? 'bg-sky-500 text-white shadow-xs font-semibold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Donut / Distribution Share Chart"
-            >
-              <PieChart className="w-3.5 h-3.5" />
-              <span>Donut</span>
-            </button>
+            <Tooltip side="bottom" content="Vertical Column / Multi-Bar Chart">
+              <button
+                onClick={() => setChartType('bar')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
+                  chartType === 'bar'
+                    ? 'bg-sky-500 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <BarChart2 className="w-3.5 h-3.5" />
+                <span>Column</span>
+              </button>
+            </Tooltip>
+            <Tooltip side="bottom" content="Smooth Area & Trend Line Chart">
+              <button
+                onClick={() => setChartType('area')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
+                  chartType === 'area'
+                    ? 'bg-sky-500 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>Line / Area</span>
+              </button>
+            </Tooltip>
+            <Tooltip side="bottom" content="Horizontal Leaderboard & Share Breakdown">
+              <button
+                onClick={() => setChartType('horizontal')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
+                  chartType === 'horizontal'
+                    ? 'bg-sky-500 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <AlignLeft className="w-3.5 h-3.5" />
+                <span>Leaderboard</span>
+              </button>
+            </Tooltip>
+            <Tooltip side="bottom" content="Donut / Distribution Share Chart">
+              <button
+                onClick={() => setChartType('donut')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center space-x-1.5 transition cursor-pointer ${
+                  chartType === 'donut'
+                    ? 'bg-sky-500 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <PieChart className="w-3.5 h-3.5" />
+                <span>Donut</span>
+              </button>
+            </Tooltip>
           </div>
 
           <div className="h-4 w-px bg-slate-200 dark:bg-white/10 hidden sm:block" />
@@ -349,84 +354,88 @@ export const QueryChartView: React.FC<QueryChartViewProps> = ({ results, columns
               const isSelected = !isFrequencyActive && idx !== -1;
               const color = PALETTE[(idx >= 0 ? idx : 0) % PALETTE.length];
               return (
-                <button
-                  key={col}
-                  onClick={() => toggleYCol(col)}
-                  className={`h-6 px-2 rounded-md font-mono text-[11px] border transition flex items-center space-x-1.5 cursor-pointer ${
-                    isSelected
-                      ? 'bg-sky-500/15 dark:bg-sky-500/20 text-sky-700 dark:text-sky-200 border-sky-500/50 font-semibold shadow-2xs'
-                      : 'bg-slate-100 dark:bg-[#23252b] text-slate-600 dark:text-slate-400 border-slate-300/70 dark:border-white/10 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                  title="Click to toggle metric series on chart (up to 3)"
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: isSelected ? color.stroke : '#64748b' }}
-                  />
-                  <span>{col}</span>
-                </button>
+                <Tooltip key={col} side="top" content="Click to toggle metric series on chart (up to 3)">
+                  <button
+                    onClick={() => toggleYCol(col)}
+                    className={`h-6 px-2 rounded-md font-mono text-[11px] border transition flex items-center space-x-1.5 cursor-pointer ${
+                      isSelected
+                        ? 'bg-sky-500/15 dark:bg-sky-500/20 text-sky-700 dark:text-sky-200 border-sky-500/50 font-semibold shadow-2xs'
+                        : 'bg-slate-100 dark:bg-[#23252b] text-slate-600 dark:text-slate-400 border-slate-300/70 dark:border-white/10 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: isSelected ? color.stroke : '#64748b' }}
+                    />
+                    <span>{col}</span>
+                  </button>
+                </Tooltip>
               );
             })}
-            <button
-              onClick={() => setUseFrequencyMode(!isFrequencyActive)}
-              className={`h-6 px-2 rounded-md font-mono text-[11px] border transition flex items-center space-x-1 cursor-pointer ${
-                isFrequencyActive
-                  ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/50 font-semibold'
-                  : 'bg-slate-100 dark:bg-[#23252b] text-slate-500 dark:text-slate-400 border-slate-300/70 dark:border-white/10 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Aggregate & count rows by X-Axis category"
-            >
-              <Hash className="w-3 h-3" />
-              <span>COUNT(*)</span>
-            </button>
+            <Tooltip side="top" content="Aggregate & count rows by X-Axis category">
+              <button
+                onClick={() => setUseFrequencyMode(!isFrequencyActive)}
+                className={`h-6 px-2 rounded-md font-mono text-[11px] border transition flex items-center space-x-1 cursor-pointer ${
+                  isFrequencyActive
+                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/50 font-semibold'
+                    : 'bg-slate-100 dark:bg-[#23252b] text-slate-500 dark:text-slate-400 border-slate-300/70 dark:border-white/10 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Hash className="w-3 h-3" />
+                <span>COUNT(*)</span>
+              </button>
+            </Tooltip>
           </div>
         </div>
 
         {/* Right: Sort, Limit & Labels */}
         <div className="flex items-center space-x-1.5 text-[11px]">
-          <button
-            onClick={() =>
-              setSortMode((prev) =>
-                prev === 'original' ? 'desc' : prev === 'desc' ? 'asc' : 'original'
-              )
-            }
-            className={`h-6.5 px-2 rounded-md border flex items-center space-x-1 transition cursor-pointer ${
-              sortMode !== 'original'
-                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/40 font-semibold'
-                : 'bg-slate-100 dark:bg-[#23252b] text-slate-600 dark:text-slate-400 border-slate-300/80 dark:border-white/10 hover:text-slate-900 dark:hover:text-white'
-            }`}
-            title="Cycle Sort Order (Original -> High-to-Low -> Low-to-High)"
-          >
-            <ArrowUpDown className="w-3 h-3" />
-            <span className="font-mono">
-              {sortMode === 'original' ? 'Order: SQL' : sortMode === 'desc' ? 'Sort: High↓' : 'Sort: Low↑'}
-            </span>
-          </button>
+          <Tooltip side="top" content="Cycle Sort Order (Original -> High-to-Low -> Low-to-High)">
+            <button
+              onClick={() =>
+                setSortMode((prev) =>
+                  prev === 'original' ? 'desc' : prev === 'desc' ? 'asc' : 'original'
+                )
+              }
+              className={`h-6.5 px-2 rounded-md border flex items-center space-x-1 transition cursor-pointer ${
+                sortMode !== 'original'
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/40 font-semibold'
+                  : 'bg-slate-100 dark:bg-[#23252b] text-slate-600 dark:text-slate-400 border-slate-300/80 dark:border-white/10 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ArrowUpDown className="w-3 h-3" />
+              <span className="font-mono">
+                {sortMode === 'original' ? 'Order: SQL' : sortMode === 'desc' ? 'Sort: High↓' : 'Sort: Low↑'}
+              </span>
+            </button>
+          </Tooltip>
 
-          <select
-            value={maxItems}
-            onChange={(e) => setMaxItems(Number(e.target.value))}
-            className="h-6.5 px-2 rounded-md bg-slate-100 dark:bg-[#23252b] border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 font-mono text-[11px] outline-none cursor-pointer"
-            title="Max records plotted"
-          >
-            <option value={10}>Top 10</option>
-            <option value={25}>Top 25</option>
-            <option value={50}>Top 50</option>
-            <option value={100}>Top 100</option>
-          </select>
+          <Tooltip side="top" content="Max records plotted">
+            <select
+              value={maxItems}
+              onChange={(e) => setMaxItems(Number(e.target.value))}
+              className="h-6.5 px-2 rounded-md bg-slate-100 dark:bg-[#23252b] border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 font-mono text-[11px] outline-none cursor-pointer"
+            >
+              <option value={10}>Top 10</option>
+              <option value={25}>Top 25</option>
+              <option value={50}>Top 50</option>
+              <option value={100}>Top 100</option>
+            </select>
+          </Tooltip>
 
-          <button
-            onClick={() => setShowValues(!showValues)}
-            className={`h-6.5 px-2 rounded-md border flex items-center space-x-1 transition cursor-pointer ${
-              showValues
-                ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/40 font-medium'
-                : 'bg-slate-100 dark:bg-[#23252b] text-slate-500 border-slate-300/80 dark:border-white/10'
-            }`}
-            title="Toggle Value Labels on Chart"
-          >
-            <Eye className="w-3 h-3" />
-            <span className="hidden md:inline">Labels</span>
-          </button>
+          <Tooltip side="top" content="Toggle Value Labels on Chart">
+            <button
+              onClick={() => setShowValues(!showValues)}
+              className={`h-6.5 px-2 rounded-md border flex items-center space-x-1 transition cursor-pointer ${
+                showValues
+                  ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/40 font-medium'
+                  : 'bg-slate-100 dark:bg-[#23252b] text-slate-500 border-slate-300/80 dark:border-white/10'
+              }`}
+            >
+              <Eye className="w-3 h-3" />
+              <span className="hidden md:inline">Labels</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { X, Search, Copy, Play, Check, ChevronDown, ChevronRight, Terminal, Clock, CheckCircle2 } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 export const QueryHistoryModal = () => {
   const { isHistoryModalOpen, setHistoryModalOpen, history, openNewQueryTab, showToast } = useAppStore();
@@ -75,13 +76,14 @@ export const QueryHistoryModal = () => {
               {filteredHistory.length} entries
             </span>
           </div>
-          <button
-            onClick={() => setHistoryModalOpen(false)}
-            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
-            title="Close (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <Tooltip side="left" content="Close" shortcut="Esc">
+            <button
+              onClick={() => setHistoryModalOpen(false)}
+              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Search & Actions Toolbar */}
@@ -131,18 +133,18 @@ export const QueryHistoryModal = () => {
                   key={item.id}
                   onDoubleClick={() => handleRunInEditor(item.sql)}
                   className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800/80 rounded-xl p-3.5 space-y-2.5 hover:border-slate-300 dark:hover:border-slate-700 transition shadow-2xs hover:shadow-xs group cursor-pointer"
-                  title="Double-click to open in new SQL Query tab"
                 >
                   {/* Header Row */}
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center space-x-2">
-                      <button
-                        onClick={(e) => toggleExpand(item.id, e)}
-                        className="p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
-                        title={isExpanded ? 'Collapse query' : 'Expand query'}
-                      >
-                        {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                      </button>
+                      <Tooltip side="top" content={isExpanded ? 'Collapse query' : 'Expand query'}>
+                        <button
+                          onClick={(e) => toggleExpand(item.id, e)}
+                          className="p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+                        >
+                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        </button>
+                      </Tooltip>
 
                       <span
                         className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase border ${
@@ -174,23 +176,25 @@ export const QueryHistoryModal = () => {
 
                     {/* Actions */}
                     <div className="flex items-center space-x-1.5">
-                      <button
-                        onClick={(e) => handleCopy(item.id, item.sql, e)}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold flex items-center space-x-1 transition active:scale-95 cursor-pointer shadow-2xs"
-                        title="Copy SQL to Clipboard"
-                      >
-                        {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedId === item.id ? 'Copied' : 'Copy'}</span>
-                      </button>
+                      <Tooltip side="top" content="Copy SQL to Clipboard">
+                        <button
+                          onClick={(e) => handleCopy(item.id, item.sql, e)}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold flex items-center space-x-1 transition active:scale-95 cursor-pointer shadow-2xs"
+                        >
+                          {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedId === item.id ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </Tooltip>
 
-                      <button
-                        onClick={(e) => handleRunInEditor(item.sql, e)}
-                        className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 dark:bg-sky-500/20 dark:hover:bg-sky-500/30 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/40 rounded-lg text-xs font-semibold flex items-center space-x-1 transition active:scale-95 cursor-pointer shadow-2xs"
-                        title="Open in new Query Editor tab"
-                      >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Run in Editor</span>
-                      </button>
+                      <Tooltip side="top" content="Open in new Query Editor tab">
+                        <button
+                          onClick={(e) => handleRunInEditor(item.sql, e)}
+                          className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 dark:bg-sky-500/20 dark:hover:bg-sky-500/30 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/40 rounded-lg text-xs font-semibold flex items-center space-x-1 transition active:scale-95 cursor-pointer shadow-2xs"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>Run in Editor</span>
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
 

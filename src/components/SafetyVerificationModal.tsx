@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { analyzeSqlSafety } from '../utils/sqlSafety';
 import { ShieldAlert, Lock, AlertTriangle, X, Check, Copy, Terminal, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 export const SafetyVerificationModal: React.FC = () => {
   const {
@@ -115,13 +116,14 @@ export const SafetyVerificationModal: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={cancelSafetyAction}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
-            title="Cancel (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <Tooltip side="bottom" content="Cancel" shortcut="Esc">
+            <button
+              onClick={cancelSafetyAction}
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Content Body */}

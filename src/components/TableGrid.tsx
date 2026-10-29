@@ -539,19 +539,20 @@ export const TableGrid: React.FC = () => {
               <Zap className="w-3 h-3" />
               <span>Run</span>
             </button>
-            <button
-              onClick={() => {
-                setFilterWhereText('');
-                setFilterOrderByText('');
-                setSortConfig(null);
-                showToast('Filter cleared');
-                setTimeout(() => reloadData(selectedTable), 0);
-              }}
-              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition cursor-pointer"
-              title="Clear Filter"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <Tooltip side="bottom" content="Clear Filter">
+              <button
+                onClick={() => {
+                  setFilterWhereText('');
+                  setFilterOrderByText('');
+                  setSortConfig(null);
+                  showToast('Filter cleared');
+                  setTimeout(() => reloadData(selectedTable), 0);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
           </div>
 
           <div className="flex items-center space-x-2 font-mono text-[11px] text-slate-500 dark:text-slate-400">
@@ -575,13 +576,14 @@ export const TableGrid: React.FC = () => {
             <span className="text-slate-600 dark:text-slate-400">
               Press <kbd className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-bold">⌘S</kbd> to Commit or <kbd className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-bold">⌘Z</kbd> to Discard
             </span>
-            <button
-              onClick={() => removeTableAction(stagedTableAction.id)}
-              className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 text-[11px] font-sans font-semibold transition active:scale-95 cursor-pointer ml-1"
-              title="Revert this staged action"
-            >
-              Revert
-            </button>
+            <Tooltip side="bottom" content="Revert this staged action">
+              <button
+                onClick={() => removeTableAction(stagedTableAction.id)}
+                className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 text-[11px] font-sans font-semibold transition active:scale-95 cursor-pointer ml-1"
+              >
+                Revert
+              </button>
+            </Tooltip>
           </div>
         </div>
       )}
@@ -614,10 +616,11 @@ export const TableGrid: React.FC = () => {
                 <th
                   style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
                   className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800/80 text-center text-slate-500 dark:text-slate-600 font-bold cursor-pointer"
-                  title="Double-click to fit all columns"
                   onDoubleClick={handleAutoFitAll}
                 >
-                  #
+                  <Tooltip content="Double-click to fit all columns" side="bottom">
+                    <span className="block w-full">#</span>
+                  </Tooltip>
                 </th>
                 {activeCols.map((col) => {
                   const isSorted = sortConfig?.col === col.name;
@@ -645,9 +648,11 @@ export const TableGrid: React.FC = () => {
                           <ColumnTypeIcon type={col.type} />
                           <span className="text-slate-800 dark:text-slate-200 font-semibold truncate">{col.name}</span>
                           {col.isPrimaryKey && (
-                            <span title="Primary Key" className="inline-flex items-center ml-0.5">
-                              <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
-                            </span>
+                            <Tooltip content="Primary Key" side="top">
+                              <span className="inline-flex items-center ml-0.5">
+                                <Key className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400/90 flex-shrink-0" />
+                              </span>
+                            </Tooltip>
                           )}
                         </div>
                         {isSorted && (
@@ -662,29 +667,30 @@ export const TableGrid: React.FC = () => {
                       </div>
 
                       {/* Resize Handle with Double-Click Auto-Fit (Excel / TablePlus) */}
-                      <div
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          handleResizeStart(col.name, e);
-                        }}
-                        onDoubleClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (clickTimerRef.current) {
-                            clearTimeout(clickTimerRef.current);
-                            clickTimerRef.current = null;
-                          }
-                          handleAutoFitColumn(col.name);
-                        }}
-                        className="absolute top-0 right-0 bottom-0 w-4 -mr-2 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
-                        title="Drag to resize, double-click to fit content"
-                      >
-                        <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors pointer-events-none" />
-                      </div>
+                      <Tooltip content="Drag to resize • Double-click to auto-fit" side="top">
+                        <div
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleResizeStart(col.name, e);
+                          }}
+                          onDoubleClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (clickTimerRef.current) {
+                              clearTimeout(clickTimerRef.current);
+                              clickTimerRef.current = null;
+                            }
+                            handleAutoFitColumn(col.name);
+                          }}
+                          className="absolute top-0 right-0 bottom-0 w-4 -mr-2 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
+                        >
+                          <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors pointer-events-none" />
+                        </div>
+                      </Tooltip>
                     </th>
                   );
                 })}

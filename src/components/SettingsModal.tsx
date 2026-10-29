@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { RowDensity } from '../types';
 import { APP_THEMES } from '../themes/themeRegistry';
+import { Tooltip } from './Tooltip';
 
 export const SettingsModal: React.FC = () => {
   const {
@@ -275,12 +276,12 @@ export const SettingsModal: React.FC = () => {
                         {/* Color Swatches Bar */}
                         <div className="flex items-center space-x-1.5 pt-2 border-t border-slate-200 dark:border-slate-800/60 w-full">
                           {th.swatches.map((color, idx) => (
-                            <span
-                              key={idx}
-                              className="w-4 h-4 rounded-full border border-black/10 dark:border-white/20 shadow-xs inline-block shrink-0"
-                              style={{ backgroundColor: color }}
-                              title={`Theme color ${idx + 1}: ${color}`}
-                            />
+                            <Tooltip key={idx} side="top" content={`Theme color ${idx + 1}: ${color}`}>
+                              <span
+                                className="w-4 h-4 rounded-full border border-black/10 dark:border-white/20 shadow-xs inline-block shrink-0 cursor-help"
+                                style={{ backgroundColor: color }}
+                              />
+                            </Tooltip>
                           ))}
                           <span
                             className="ml-auto text-[9px] font-mono font-semibold"
@@ -517,15 +518,16 @@ export const SettingsModal: React.FC = () => {
                     Storage: ~{(JSON.stringify(history).length / 1024).toFixed(1)} KB persisted
                   </span>
                   <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => purgeHistory()}
-                      className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium transition cursor-pointer flex items-center space-x-1"
-                      title="Purge queries older than current TTL"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Purge Expired</span>
-                    </button>
+                    <Tooltip side="top" content="Purge queries older than current TTL">
+                      <button
+                        type="button"
+                        onClick={() => purgeHistory()}
+                        className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium transition cursor-pointer flex items-center space-x-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Purge Expired</span>
+                      </button>
+                    </Tooltip>
                     <button
                       type="button"
                       onClick={() => {

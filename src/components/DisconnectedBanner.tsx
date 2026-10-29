@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { Unplug, RefreshCw } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 export const DisconnectedBanner: React.FC = () => {
   const {
@@ -18,13 +19,13 @@ export const DisconnectedBanner: React.FC = () => {
   const dbName = activeConnection.database || activeConnection.name;
 
   return (
-    <div
-      role="banner"
-      data-testid="disconnected-banner"
-      className="w-full bg-[#c53030] hover:bg-[#b02b2b] text-white px-4 py-1.5 flex items-center justify-between font-mono text-xs select-none shadow-md transition-colors cursor-pointer border-b border-red-800/60 z-30 flex-shrink-0 animate-in fade-in slide-in-from-top-1 duration-200"
-      onClick={() => reconnectActiveConnection()}
-      title="Click to reconnect (or press ⌘⇧R)"
-    >
+    <Tooltip side="bottom" content="Click banner to reconnect" shortcut="⌘⇧R">
+      <div
+        role="banner"
+        data-testid="disconnected-banner"
+        className="w-full bg-[#c53030] hover:bg-[#b02b2b] text-white px-4 py-1.5 flex items-center justify-between font-mono text-xs select-none shadow-md transition-colors cursor-pointer border-b border-red-800/60 z-30 flex-shrink-0 animate-in fade-in slide-in-from-top-1 duration-200"
+        onClick={() => reconnectActiveConnection()}
+      >
       <div className="flex items-center space-x-2 truncate">
         {isReconnecting ? (
           <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-white" />
@@ -54,5 +55,6 @@ export const DisconnectedBanner: React.FC = () => {
         </button>
       </div>
     </div>
+    </Tooltip>
   );
 };

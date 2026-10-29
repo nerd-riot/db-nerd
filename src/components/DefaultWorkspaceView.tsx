@@ -18,6 +18,7 @@ import {
 import { HeartbeatDot } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
 import { ConnectorIcon } from './ConnectorIcon';
+import { Tooltip } from './Tooltip';
 import { ConnectionProfile } from '../types';
 import appIcon from '../assets/app-icon.png';
 import { IS_BETA, APP_NAME } from '../config/channel';
@@ -325,14 +326,15 @@ export const DefaultWorkspaceView: React.FC = () => {
                       {/* Right: Actions */}
                       <div className="flex items-center space-x-2 flex-shrink-0 pl-3 relative z-1">
                         {!isThisConnecting && (
-                          <button
-                            onClick={(e) => handleDeleteConnection(e, conn)}
-                            disabled={isConnecting}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                            title="Delete Connection"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <Tooltip side="left" content="Delete Connection">
+                            <button
+                              onClick={(e) => handleDeleteConnection(e, conn)}
+                              disabled={isConnecting}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </Tooltip>
                         )}
 
                         <button
@@ -575,18 +577,19 @@ export const DefaultWorkspaceView: React.FC = () => {
 
         {/* Hype Ping Benchmark & Shortcuts Banner */}
         <div className="w-full max-w-md flex items-center justify-between space-x-2">
-          <button
-            onClick={() => triggerConnectingAnimation(activeConnection.id)}
-            disabled={isConnecting}
-            className="relative overflow-hidden flex-1 py-2 px-3 rounded-xl bg-white dark:bg-slate-900/70 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/40 text-xs font-mono text-sky-700 dark:text-sky-400 flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs group"
-            title="Trigger connection handshake animation & ping benchmark"
-          >
-            {isConnecting && (
-              <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
-            )}
-            <Zap className="relative z-1 w-3.5 h-3.5 fill-current" />
-            <span className="relative z-1">⚡ Test Connection &amp; Latency</span>
-          </button>
+          <Tooltip side="top" content="Trigger connection handshake animation & ping benchmark">
+            <button
+              onClick={() => triggerConnectingAnimation(activeConnection.id)}
+              disabled={isConnecting}
+              className="relative overflow-hidden flex-1 py-2 px-3 rounded-xl bg-white dark:bg-slate-900/70 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500/40 text-xs font-mono text-sky-700 dark:text-sky-400 flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs group"
+            >
+              {isConnecting && (
+                <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
+              )}
+              <Zap className="relative z-1 w-3.5 h-3.5 fill-current" />
+              <span className="relative z-1">⚡ Test Connection &amp; Latency</span>
+            </button>
+          </Tooltip>
         </div>
 
         {/* Shortcuts & Navigation Hint Banner */}

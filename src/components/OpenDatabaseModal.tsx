@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { Search, Database, Plus, X, RefreshCw } from 'lucide-react';
 import { HeartbeatDot } from './HeartbeatDot';
+import { Tooltip } from './Tooltip';
 
 export const OpenDatabaseModal: React.FC = () => {
   const {
@@ -103,22 +104,25 @@ export const OpenDatabaseModal: React.FC = () => {
             </span>
           </div>
           <div className="flex items-center space-x-1">
-            <button
-              onClick={() => {
-                setIsLoading(true);
-                fetchLiveDatabases(activeConnection).finally(() => setIsLoading(false));
-              }}
-              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
-              title="Refresh databases from server"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-sky-500' : ''}`} />
-            </button>
-            <button
-              onClick={() => setDatabaseModalOpen(false)}
-              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <Tooltip side="bottom" content="Refresh databases from server">
+              <button
+                onClick={() => {
+                  setIsLoading(true);
+                  fetchLiveDatabases(activeConnection).finally(() => setIsLoading(false));
+                }}
+                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-sky-500' : ''}`} />
+              </button>
+            </Tooltip>
+            <Tooltip side="bottom" content="Close" shortcut="Esc">
+              <button
+                onClick={() => setDatabaseModalOpen(false)}
+                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
           </div>
         </div>
 
