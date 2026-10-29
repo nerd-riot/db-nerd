@@ -175,3 +175,60 @@ describe('Query-Driven ORDER BY Sorting Across Pagination & Filters', () => {
     assert.strictEqual(mySql, 'SELECT * FROM `users` ORDER BY `user_name` DESC LIMIT 50 OFFSET 0;');
   });
 });
+
+describe('Double-Click Auto-Fit vs Single-Click Sort Conflict Prevention', () => {
+  it('cancels single-click sort timer when double-click occurs within threshold', async () => {
+    let sortCalled = false;
+    let autoFitCalled = false;
+    let clickTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleSingleClick = () => {
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+        return;
+      }
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        sortCalled = true;
+      }, 50);
+    };
+
+    const handleDoubleClick = () => {
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+      }
+      autoFitCalled = true;
+    };
+
+    // User double-clicks: 1st click
+    handleSingleClick();
+    // 2nd click arrives after 10ms (standard double-click window < 220ms)
+    handleSingleClick();
+    handleDoubleClick();
+
+    // Wait 70ms past the single click timeout
+    await new Promise((r) => setTimeout(r, 70));
+
+    assert.strictEqual(autoFitCalled, true, 'Auto-fit handler must have been executed');
+    assert.strictEqual(sortCalled, false, 'Sort handler must NOT be executed on double-click');
+  });
+
+  it('triggers sort when single-click timer expires without a second click', async () => {
+    let sortCalled = false;
+    let clickTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleSingleClick = () => {
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        sortCalled = true;
+      }, 20);
+    };
+
+    handleSingleClick();
+    await new Promise((r) => setTimeout(r, 40));
+
+    assert.strictEqual(sortCalled, true, 'Sort handler must execute for deliberate single click');
+  });
+});

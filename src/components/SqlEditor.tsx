@@ -990,6 +990,43 @@ export const SqlEditor: React.FC = () => {
     [showToast]
   );
 
+  // Discriminator timer: prevents double-click auto-fit from triggering single-click sort
+  const sqlClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (sqlClickTimerRef.current) clearTimeout(sqlClickTimerRef.current);
+    };
+  }, []);
+
+  const handleHeaderCellClick = useCallback(
+    (col: string) => {
+      if (sqlClickTimerRef.current) {
+        clearTimeout(sqlClickTimerRef.current);
+        sqlClickTimerRef.current = null;
+        return;
+      }
+      sqlClickTimerRef.current = setTimeout(() => {
+        sqlClickTimerRef.current = null;
+        handleHeaderClick(col);
+      }, 220);
+    },
+    [handleHeaderClick]
+  );
+
+  const handleHeaderCellDoubleClick = useCallback(
+    (col: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (sqlClickTimerRef.current) {
+        clearTimeout(sqlClickTimerRef.current);
+        sqlClickTimerRef.current = null;
+      }
+      handleAutoFitColumn(col);
+    },
+    [handleAutoFitColumn]
+  );
+
   const activeDuration = activeResultItem ? activeResultItem.durationMs : tabState.durationMs;
   const activeError = activeResultItem ? activeResultItem.error : tabState.error;
   const isErrorResult = Boolean(
@@ -1522,7 +1559,8 @@ export const SqlEditor: React.FC = () => {
                               minWidth: `${colWidth}px`,
                               maxWidth: `${colWidth}px`,
                             }}
-                            onClick={() => handleHeaderClick(col)}
+                            onClick={() => handleHeaderCellClick(col)}
+                            onDoubleClick={(e) => handleHeaderCellDoubleClick(col, e)}
                             className={`relative px-2.5 py-1.5 border-r border-slate-300 dark:border-slate-800/80 font-semibold cursor-pointer group/th hover:bg-slate-200/60 dark:hover:bg-slate-900/60 transition-colors ${
                               isErrorCol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'
                             }`}
@@ -1554,15 +1592,27 @@ export const SqlEditor: React.FC = () => {
 
                             {/* Column Resizer Handle with Double-Click Auto-Fit (Excel / TablePlus) */}
                             <div
-                              onMouseDown={(e) => handleResizeStart(col, e)}
-                              onDoubleClick={(e) => {
+                              onClick={(e) => {
+                                e.preventDefault();
                                 e.stopPropagation();
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleResizeStart(col, e);
+                              }}
+                              onDoubleClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (sqlClickTimerRef.current) {
+                                  clearTimeout(sqlClickTimerRef.current);
+                                  sqlClickTimerRef.current = null;
+                                }
                                 handleAutoFitColumn(col);
                               }}
-                              className="absolute top-0 right-0 bottom-0 w-3 -mr-1.5 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
+                              className="absolute top-0 right-0 bottom-0 w-4 -mr-2 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
                               title="Drag to resize, double-click to fit content"
                             >
-                              <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors" />
+                              <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors pointer-events-none" />
                             </div>
                           </th>
                         );

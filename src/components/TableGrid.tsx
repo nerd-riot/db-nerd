@@ -313,6 +313,43 @@ export const TableGrid: React.FC = () => {
     [activeConnection, setFilterOrderByText, goToGridPage, showToast]
   );
 
+  // Discriminator timer: prevents double-click auto-fit from triggering single-click sort
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    };
+  }, []);
+
+  const handleHeaderCellClick = useCallback(
+    (colName: string) => {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+        return;
+      }
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null;
+        handleSortColumn(colName);
+      }, 220);
+    },
+    [handleSortColumn]
+  );
+
+  const handleHeaderCellDoubleClick = useCallback(
+    (colName: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      handleAutoFitColumn(colName);
+    },
+    [handleAutoFitColumn]
+  );
+
   // For real database connections, the database query executes ORDER BY.
   // For offline/mock demo data without active database, fallback to FE sort.
   const processedRows = useMemo(() => {
@@ -593,7 +630,8 @@ export const TableGrid: React.FC = () => {
                         minWidth: `${colWidth}px`,
                         maxWidth: `${colWidth}px`,
                       }}
-                      onClick={() => handleSortColumn(col.name)}
+                      onClick={() => handleHeaderCellClick(col.name)}
+                      onDoubleClick={(e) => handleHeaderCellDoubleClick(col.name, e)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -625,15 +663,27 @@ export const TableGrid: React.FC = () => {
 
                       {/* Resize Handle with Double-Click Auto-Fit (Excel / TablePlus) */}
                       <div
-                        onMouseDown={(e) => handleResizeStart(col.name, e)}
-                        onDoubleClick={(e) => {
+                        onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleResizeStart(col.name, e);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (clickTimerRef.current) {
+                            clearTimeout(clickTimerRef.current);
+                            clickTimerRef.current = null;
+                          }
                           handleAutoFitColumn(col.name);
                         }}
-                        className="absolute top-0 right-0 bottom-0 w-3 -mr-1.5 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
+                        className="absolute top-0 right-0 bottom-0 w-4 -mr-2 cursor-col-resize z-20 flex items-center justify-center group/resizer hover:bg-sky-500/20 active:bg-sky-500/40"
                         title="Drag to resize, double-click to fit content"
                       >
-                        <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors" />
+                        <div className="w-[1.5px] h-full bg-slate-300 dark:bg-slate-700/80 group-hover/resizer:bg-sky-500 group-active/resizer:bg-sky-500 transition-colors pointer-events-none" />
                       </div>
                     </th>
                   );
