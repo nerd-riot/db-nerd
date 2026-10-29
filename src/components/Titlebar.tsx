@@ -21,6 +21,7 @@ import { HeartbeatDot } from './HeartbeatDot';
 import { LedMatrixBanner } from './LedMatrixBanner';
 import { BorderChase } from './BorderChase';
 import { SafetyModeSelector } from './SafetyModeSelector';
+import { IS_BETA } from '../config/channel';
 
 export const Titlebar = () => {
   const {
@@ -106,6 +107,15 @@ export const Titlebar = () => {
     >
       {/* Left: Window Controls spacer + Sidebar Toggle + Connection Selector + SQL Capsule + Filter Toggle */}
       <div className="titlebar-left pl-[70px] space-x-1.5 pointer-events-auto">
+        {IS_BETA && (
+          <span 
+            className="no-drag h-5 px-1.5 flex items-center rounded text-[9px] font-mono font-black uppercase tracking-wider bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 shrink-0 shadow-2xs select-none"
+            title="DBNerd Beta Build Channel"
+          >
+            BETA
+          </span>
+        )}
+
         {/* Sidebar Toggle */}
         <button
           onClick={toggleSidebar}

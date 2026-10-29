@@ -6,13 +6,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:beta": "node scripts/set-channel.js beta && pnpm dev",
+    "dev:release": "node scripts/set-channel.js release && pnpm dev",
     "lint": "tsc --noEmit",
     "test": "node --test tests/*.test.ts",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --lib",
     "test:all": "node --test tests/*.test.ts && cargo test --manifest-path src-tauri/Cargo.toml --lib",
     "build": "tsc && vite build",
+    "build:beta": "node scripts/set-channel.js beta && pnpm build && pnpm tauri build",
+    "build:release": "node scripts/set-channel.js release && pnpm build && pnpm tauri build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "channel:status": "node scripts/set-channel.js status",
+    "channel:beta": "node scripts/set-channel.js beta",
+    "channel:release": "node scripts/set-channel.js release",
+    "channel:toggle": "node scripts/set-channel.js toggle",
     "update-readme": "node scripts/capture_readme_screenshots.js"
   },
   "dependencies": {

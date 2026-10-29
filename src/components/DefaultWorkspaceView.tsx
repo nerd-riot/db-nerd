@@ -20,6 +20,7 @@ import { BorderChase } from './BorderChase';
 import { ConnectorIcon } from './ConnectorIcon';
 import { ConnectionProfile } from '../types';
 import appIcon from '../assets/app-icon.png';
+import { IS_BETA, APP_NAME } from '../config/channel';
 
 export const DefaultWorkspaceView: React.FC = () => {
   const {
@@ -148,10 +149,16 @@ export const DefaultWorkspaceView: React.FC = () => {
             {/* App Introduction Title & Description */}
             <div className="space-y-1.5 pt-1">
               <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center justify-center space-x-2">
-                <span>DBNerd</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-mono font-semibold bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
-                  Native IDE
-                </span>
+                <span>{APP_NAME}</span>
+                {IS_BETA ? (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-mono font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+                    BETA
+                  </span>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-mono font-semibold bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
+                    Native IDE
+                  </span>
+                )}
               </h1>
               <p className="text-xs text-slate-600 dark:text-slate-400 max-w-lg mx-auto leading-relaxed">
                 Fast, native-speed, lightweight database client built with Tauri & Rust.
