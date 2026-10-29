@@ -95,6 +95,13 @@ export interface ConnectionProfile {
   sshPassphrase?: string;
   accountIdentifier?: string;
   warehouse?: string;
+  snowflakeAccount?: string;
+  snowflakeWarehouse?: string;
+  snowflakeSchema?: string;
+  snowflakeRole?: string;
+  snowflakeAuthMethod?: 'externalbrowser' | 'password' | 'keypair';
+  snowflakePrivateKey?: string;
+  snowflakePassphrase?: string;
   active: boolean;
   latencyMs: number;
   connectionStatus?: 'connected' | 'connecting' | 'failed';

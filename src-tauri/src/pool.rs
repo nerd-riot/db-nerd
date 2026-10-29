@@ -16,6 +16,7 @@ struct PoolRegistry {
     pg_pools: RwLock<HashMap<String, PgPool>>,
     mysql_pools: RwLock<HashMap<String, MySqlPool>>,
     redis_clients: RwLock<HashMap<String, redis::Client>>,
+    snowflake_sessions: RwLock<HashMap<String, std::sync::Arc<snowflake_connector_rs::Session>>>,
 }
 
 static POOL_REGISTRY: OnceLock<PoolRegistry> = OnceLock::new();
@@ -25,6 +26,7 @@ fn registry() -> &'static PoolRegistry {
         pg_pools: RwLock::new(HashMap::new()),
         mysql_pools: RwLock::new(HashMap::new()),
         redis_clients: RwLock::new(HashMap::new()),
+        snowflake_sessions: RwLock::new(HashMap::new()),
     })
 }
 
@@ -53,6 +55,8 @@ pub fn normalize_engine_str(engine: &str) -> &'static str {
         "mysql"
     } else if lower.starts_with("redis") || lower == "valkey" || lower == "dragonfly" {
         "redis"
+    } else if lower.starts_with("snowflake") {
+        "snowflake"
     } else {
         "postgres"
     }
@@ -271,6 +275,121 @@ pub async fn get_or_create_redis_connection(
         .map_err(|e| format!("Redis connection failed: {}", e))
 }
 
+pub async fn get_or_create_snowflake_session(
+    config: &DbConfig,
+) -> Result<std::sync::Arc<snowflake_connector_rs::Session>, String> {
+    let account = config
+        .snowflake_account
+        .as_deref()
+        .or_else(|| {
+            let h = config.host.trim();
+            if h.ends_with(".snowflakecomputing.com") {
+                Some(h.trim_end_matches(".snowflakecomputing.com"))
+            } else if !h.is_empty() && h != "localhost" && h != "127.0.0.1" {
+                Some(h)
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| "Snowflake Account is required (e.g. 'xy12345.us-east-1' or 'myorg-myaccount')".to_string())?;
+
+    let username = config
+        .username
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| "Snowflake Username / Email is required".to_string())?;
+
+    let auth_method = config
+        .snowflake_auth_method
+        .as_deref()
+        .unwrap_or("externalbrowser")
+        .to_lowercase();
+
+    let auth = match auth_method.as_str() {
+        "externalbrowser" | "external_browser" | "sso" => {
+            snowflake_connector_rs::AuthConfig::external_browser(
+                snowflake_connector_rs::ExternalBrowserConfig::default(),
+            )
+        }
+        "password" => {
+            let pass = config.password.as_deref().unwrap_or_default();
+            snowflake_connector_rs::AuthConfig::password(pass)
+        }
+        "keypair" | "key_pair" => {
+            let pkey = config.snowflake_private_key.as_deref().unwrap_or_default();
+            let keypair_cfg = if let Some(passphrase) = config.snowflake_passphrase.as_deref().filter(|p| !p.is_empty()) {
+                snowflake_connector_rs::KeyPairConfig::from_encrypted_pem(pkey, passphrase.as_bytes())
+            } else {
+                snowflake_connector_rs::KeyPairConfig::from_pem(pkey)
+            };
+            snowflake_connector_rs::AuthConfig::key_pair(keypair_cfg)
+        }
+        other => return Err(format!("Unsupported Snowflake authentication method: '{}'. Supported: 'externalbrowser', 'password', 'keypair'", other)),
+    };
+
+    let mut session_config = snowflake_connector_rs::SessionConfig::new();
+    if let Some(wh) = config.snowflake_warehouse.as_deref().filter(|s| !s.trim().is_empty()) {
+        session_config = session_config.with_warehouse(wh);
+    }
+    if !config.database.trim().is_empty() {
+        session_config = session_config.with_database(config.database.trim());
+    }
+    if let Some(schema) = config.snowflake_schema.as_deref().filter(|s| !s.trim().is_empty()) {
+        session_config = session_config.with_schema(schema);
+    }
+    if let Some(role) = config.snowflake_role.as_deref().filter(|s| !s.trim().is_empty()) {
+        session_config = session_config.with_role(role);
+    }
+
+    let client_config = snowflake_connector_rs::ClientConfig::new(username, account, auth)
+        .with_session(session_config);
+
+    let key = format!(
+        "snowflake://{}@{}:{}/{}?auth={}&wh={}&role={}&h={:016x}",
+        username,
+        account,
+        config.port,
+        config.database.trim(),
+        auth_method,
+        config.snowflake_warehouse.as_deref().unwrap_or_default(),
+        config.snowflake_role.as_deref().unwrap_or_default(),
+        {
+            let mut hasher = DefaultHasher::new();
+            config.password.as_deref().unwrap_or_default().hash(&mut hasher);
+            config.snowflake_private_key.as_deref().unwrap_or_default().hash(&mut hasher);
+            hasher.finish()
+        }
+    );
+
+    // Fast read check
+    {
+        let read_guard = registry().snowflake_sessions.read().await;
+        if let Some(session) = read_guard.get(&key) {
+            return Ok(session.clone());
+        }
+    }
+
+    let client = snowflake_connector_rs::Client::new(client_config)
+        .map_err(|e| format!("Failed to create Snowflake client: {}", e))?;
+
+    let session = client
+        .create_session()
+        .await
+        .map_err(|e| format!("Snowflake session creation failed: {}", e))?;
+
+    let arc_session = std::sync::Arc::new(session);
+
+    let mut write_guard = registry().snowflake_sessions.write().await;
+    if write_guard.len() >= MAX_CACHED_POOLS {
+        if let Some(evict_key) = write_guard.keys().next().cloned() {
+            write_guard.remove(&evict_key);
+        }
+    }
+    write_guard.insert(key, arc_session.clone());
+
+    Ok(arc_session)
+}
+
 /// Closes cached connection pools and SSH tunnels matching the given configuration.
 pub async fn close_pool(config: &DbConfig) {
     let engine = normalize_engine_str(&config.engine);
@@ -311,6 +430,17 @@ pub async fn close_pool(config: &DbConfig) {
         }
         "redis" => {
             let mut write_guard = registry().redis_clients.write().await;
+            let keys_to_remove: Vec<String> = write_guard
+                .keys()
+                .filter(|k| k.starts_with(&target_prefix))
+                .cloned()
+                .collect();
+            for k in keys_to_remove {
+                write_guard.remove(&k);
+            }
+        }
+        "snowflake" => {
+            let mut write_guard = registry().snowflake_sessions.write().await;
             let keys_to_remove: Vec<String> = write_guard
                 .keys()
                 .filter(|k| k.starts_with(&target_prefix))
@@ -400,6 +530,30 @@ mod tests {
         assert_ne!(cache_key(&cfg1, "db.internal", 5432), cache_key(&cfg2, "db.internal", 5432));
         assert_ne!(cache_key(&cfg1, "db.internal", 5432), cache_key(&cfg3, "db.internal", 5432));
         assert!(cache_key(&cfg1, "db.internal", 5432).starts_with("postgres://"));
+    }
+
+    #[test]
+    fn test_normalize_engine_snowflake() {
+        assert_eq!(normalize_engine_str("Snowflake"), "snowflake");
+        assert_eq!(normalize_engine_str("SNOWFLAKE"), "snowflake");
+        assert_eq!(normalize_engine_str("snowflake_dw"), "snowflake");
+    }
+
+    #[tokio::test]
+    async fn test_snowflake_pool_close_isolation() {
+        let sf_cfg = DbConfig {
+            engine: "snowflake".into(),
+            host: "xy12345.us-east-1.snowflakecomputing.com".into(),
+            port: 443,
+            database: "SALES_PROD".into(),
+            username: Some("analyst".into()),
+            snowflake_account: Some("xy12345.us-east-1".into()),
+            snowflake_warehouse: Some("COMPUTE_WH".into()),
+            ..Default::default()
+        };
+
+        // Closing snowflake pool should execute cleanly without affecting or locking any other engine
+        close_pool(&sf_cfg).await;
     }
 }
 

@@ -1,14 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
-import {
+import type {
   ConnectionProfile,
   FunctionItem,
   TableSchemaInfo,
   ColumnDefinition,
   TableIndexDefinition,
   TableForeignKeyDefinition,
-} from '../types';
-import { escapeSqlStringLiteral, normalizeDatabaseEngine } from '../lib/security/sqlSanitizer';
-import { sortColumnsByDdlConvention } from '../lib/grid/columnOrdering';
+} from '../types/index.ts';
+import { escapeSqlStringLiteral, normalizeDatabaseEngine } from '../lib/security/sqlSanitizer.ts';
+import { sortColumnsByDdlConvention } from '../lib/grid/columnOrdering.ts';
 
 export interface DbConfigPayload {
   engine: string;
@@ -25,6 +25,13 @@ export interface DbConfigPayload {
   use_ssh_key?: boolean;
   ssh_key_path?: string;
   ssh_passphrase?: string;
+  snowflake_account?: string;
+  snowflake_warehouse?: string;
+  snowflake_schema?: string;
+  snowflake_role?: string;
+  snowflake_auth_method?: string;
+  snowflake_private_key?: string;
+  snowflake_passphrase?: string;
 }
 
 export interface RealQueryResult {
@@ -73,15 +80,15 @@ export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => 
   }
 
   let username = profile.username;
-  if (!username) {
+  if (!username && normalizedEngine !== 'snowflake') {
     username = normalizedEngine === 'postgres' ? 'dev_user' : normalizedEngine === 'mysql' ? 'dev_user' : 'default';
   }
 
   return {
     engine: normalizedEngine,
     host: profile.host === '127.0.0.1' ? 'localhost' : (profile.host || 'localhost'),
-    port: Number(profile.port) || (normalizedEngine === 'mysql' ? 3306 : normalizedEngine === 'redis' ? 6379 : 5432),
-    database: profile.database || (normalizedEngine === 'postgres' ? 'postgres' : normalizedEngine === 'mysql' ? '' : '0'),
+    port: Number(profile.port) || (normalizedEngine === 'mysql' ? 3306 : normalizedEngine === 'redis' ? 6379 : normalizedEngine === 'snowflake' ? 443 : 5432),
+    database: profile.database || (normalizedEngine === 'postgres' ? 'postgres' : (normalizedEngine === 'mysql' || normalizedEngine === 'snowflake') ? '' : '0'),
     username,
     password,
     use_ssh: profile.useSsh,
@@ -92,6 +99,13 @@ export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => 
     use_ssh_key: profile.useSshKey,
     ssh_key_path: profile.sshKeyPath,
     ssh_passphrase: profile.sshPassphrase,
+    snowflake_account: profile.snowflakeAccount || profile.accountIdentifier,
+    snowflake_warehouse: profile.snowflakeWarehouse || profile.warehouse,
+    snowflake_schema: profile.snowflakeSchema,
+    snowflake_role: profile.snowflakeRole,
+    snowflake_auth_method: profile.snowflakeAuthMethod || 'externalbrowser',
+    snowflake_private_key: profile.snowflakePrivateKey,
+    snowflake_passphrase: profile.snowflakePassphrase,
   };
 };
 
@@ -191,6 +205,11 @@ export async function getRealDatabases(profile: ConnectionProfile): Promise<stri
         const q = await executeRealQuery(profile, 'SHOW DATABASES;');
         if (q.success && q.rows && q.rows.length > 0) {
           return q.rows.map((r: any) => String(r.Database || Object.values(r)[0]));
+        }
+      } else if (normEngine === 'snowflake') {
+        const q = await executeRealQuery(profile, 'SHOW DATABASES;');
+        if (q.success && q.rows && q.rows.length > 0) {
+          return q.rows.map((r: any) => String(r.name || r.NAME || Object.values(r)[0]));
         }
       }
     } catch {}

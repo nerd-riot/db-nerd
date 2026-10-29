@@ -8,3 +8,4 @@ export * from './grid/rowEditing';
 export * from './grid/columnOrdering';
 export * from './editor/sqlAutocomplete';
 export * from './grid/columnWidth';
+export * from './diagnostics/crashReporter';

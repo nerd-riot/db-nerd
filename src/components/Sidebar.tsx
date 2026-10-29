@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/useAppStore';
 import {
   Search,
@@ -96,7 +97,38 @@ export const Sidebar = () => {
     activeTabId,
     openSessionIds,
     isConnecting,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      selectedTable: s.selectedTable,
+      setSelectedTable: s.setSelectedTable,
+      setSelectedRowData: s.setSelectedRowData,
+      openTableGridTab: s.openTableGridTab,
+      openTableSchemaTab: s.openTableSchemaTab,
+      openAllTableStatsTab: s.openAllTableStatsTab,
+      openAllFunctionsTab: s.openAllFunctionsTab,
+      openNewQueryTab: s.openNewQueryTab,
+      activeConnection: s.activeConnection,
+      setConnectionModalOpen: s.setConnectionModalOpen,
+      setDatabaseModalOpen: s.setDatabaseModalOpen,
+      history: s.history,
+      showToast: s.showToast,
+      reloadData: s.reloadData,
+      openTableActionModal: s.openTableActionModal,
+      deletedTables: s.deletedTables,
+      settings: s.settings,
+      setTableViewMode: s.setTableViewMode,
+      liveTables: s.liveTables,
+      fetchLiveTables: s.fetchLiveTables,
+      liveFunctions: s.liveFunctions,
+      fetchLiveFunctions: s.fetchLiveFunctions,
+      sidebarWidth: s.sidebarWidth,
+      toggleSidebar: s.toggleSidebar,
+      tabs: s.tabs,
+      activeTabId: s.activeTabId,
+      openSessionIds: s.openSessionIds,
+      isConnecting: s.isConnecting,
+    }))
+  );
 
   const [sidebarTab, setSidebarTab] = useState<'items' | 'queries' | 'history'>('items');
   const [historyScope, setHistoryScope] = useState<'current' | 'all'>('current');
@@ -137,9 +169,11 @@ export const Sidebar = () => {
       )
   ).filter((t) => !deletedForConn.includes(t.name));
 
-  const filteredTables = connectionTables.filter((t) =>
-    t.name.toLowerCase().includes(searchFilter.toLowerCase())
-  );
+  const searchQuery = searchFilter.trim().toLowerCase();
+
+  const filteredTables = searchQuery
+    ? connectionTables.filter((t) => t.name.toLowerCase().includes(searchQuery))
+    : connectionTables;
 
   const liveFuncsForConn = hasActiveSession && activeConnection?.id ? liveFunctions[activeConnection.id] : undefined;
   const isFunctionsLoading = Boolean(hasActiveSession && !isMockConn && liveFuncsForConn === undefined);
@@ -150,27 +184,31 @@ export const Sidebar = () => {
         : (isMockConn ? getFunctionsForConnection(activeConnection.name, activeConnection.engine) : [])
       );
 
-  const filteredFunctions = connectionFunctions.filter((f) =>
-    f.name.toLowerCase().includes(searchFilter.toLowerCase())
-  );
+  const filteredFunctions = searchQuery
+    ? connectionFunctions.filter((f) => f.name.toLowerCase().includes(searchQuery))
+    : connectionFunctions;
 
   const filteredQueries = !hasActiveSession || !activeConnection?.id
     ? []
-    : SAVED_QUERIES.filter(
-        (q) =>
-          q.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
-          q.desc.toLowerCase().includes(searchFilter.toLowerCase())
-      );
+    : (searchQuery
+        ? SAVED_QUERIES.filter(
+            (q) =>
+              q.title.toLowerCase().includes(searchQuery) ||
+              q.desc.toLowerCase().includes(searchQuery)
+          )
+        : SAVED_QUERIES);
 
-  const filteredHistory = history.filter((h) => {
-    // If no active connection session is open, never display or leak history
+  const scopedHistory = history.filter((h) => {
     if (!hasActiveSession || !activeConnection?.id) return false;
-
     if (historyScope === 'current') {
       return h.connectionId === activeConnection.id;
     }
     return true;
-  }).filter((h) => h.sql.toLowerCase().includes(searchFilter.toLowerCase()));
+  });
+
+  const filteredHistory = searchQuery
+    ? scopedHistory.filter((h) => h.sql.toLowerCase().includes(searchQuery))
+    : scopedHistory;
 
   const activeTabObj = tabs.find((t) => t.id === activeTabId);
   const isAllTablesActive = activeTabObj?.type === 'stats' && (activeTabObj?.tableName === '__all_tables__' || activeTabObj?.title.startsWith('Tables.'));

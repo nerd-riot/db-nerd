@@ -4,6 +4,7 @@ import { parseConnectionUrl, buildConnectionUrl } from '../src/utils/connectionU
 import { parseConnectionImportFile } from '../src/utils/connectionImport.ts';
 import { splitSqlStatements, getQueryToExecute, extractTableAndPkFromQuery } from '../src/utils/sqlParser.ts';
 import { analyzeSqlSafety, isReadOnlySql } from '../src/utils/sqlSafety.ts';
+import { profileToConfig } from '../src/services/dbService.ts';
 
 describe('Connection URL Parser & Builder', () => {
   it('parses complex AWS Aurora PostgreSQL URLs with TablePlus query parameters', () => {
@@ -33,6 +34,9 @@ describe('Connection URL Parser & Builder', () => {
       database: 'orders_db',
       name: 'Staging Orders',
       env: 'staging',
+      groupId: 'grp-1',
+      active: false,
+      latencyMs: 1.0,
     });
     const parsed = parseConnectionUrl(url);
     assert.ok(parsed);
@@ -42,6 +46,23 @@ describe('Connection URL Parser & Builder', () => {
     assert.equal(parsed.username, 'app_user');
     assert.equal(parsed.password, 'p@ss:word/123');
     assert.equal(parsed.database, 'orders_db');
+  });
+
+  it('parses Snowflake connection URLs with SSO, Account, Warehouse, and Schema', () => {
+    const snowflakeUrl =
+      'snowflake://alex.chen%40company.com@xy12345.us-east-1.snowflakecomputing.com:443/ANALYTICS_DB?warehouse=COMPUTE_WH&schema=PUBLIC&role=ACCOUNTADMIN&authenticator=externalbrowser&name=Data%20Warehouse';
+    const parsed = parseConnectionUrl(snowflakeUrl);
+    assert.ok(parsed);
+    assert.equal(parsed.engine, 'snowflake');
+    assert.equal(parsed.username, 'alex.chen@company.com');
+    assert.equal(parsed.port, 443);
+    assert.equal(parsed.database, 'ANALYTICS_DB');
+    assert.equal(parsed.snowflakeAccount, 'xy12345.us-east-1');
+    assert.equal(parsed.snowflakeWarehouse, 'COMPUTE_WH');
+    assert.equal(parsed.snowflakeSchema, 'PUBLIC');
+    assert.equal(parsed.snowflakeRole, 'ACCOUNTADMIN');
+    assert.equal(parsed.snowflakeAuthMethod, 'externalbrowser');
+    assert.equal(parsed.name, 'Data Warehouse');
   });
 });
 
@@ -121,5 +142,62 @@ describe('SQL Statement Parser & Safety Analyzer', () => {
     assert.equal(analysis.hasCriticalIssue, true);
     assert.ok(analysis.issues.some((i) => i.type === 'UNRESTRICTED_DELETE'));
     assert.ok(analysis.issues.some((i) => i.type === 'DROP'));
+  });
+
+  it('maps Snowflake connection profile into DbConfigPayload with browser SSO and keypair options', () => {
+    const ssoProfile = {
+      id: 'conn-sf-1',
+      name: 'Snowflake Analytics Prod',
+      groupId: 'grp-dw',
+      engine: 'snowflake' as const,
+      env: 'prod' as const,
+      host: 'myorg-myaccount.snowflakecomputing.com',
+      port: 443,
+      database: 'DW_PROD',
+      username: 'analyst@company.com',
+      snowflakeAccount: 'myorg-myaccount',
+      snowflakeWarehouse: 'ANALYTICS_WH',
+      snowflakeSchema: 'PUBLIC',
+      snowflakeRole: 'SYSADMIN',
+      snowflakeAuthMethod: 'externalbrowser' as const,
+      active: true,
+      latencyMs: 1.5,
+    };
+
+    const ssoPayload = profileToConfig(ssoProfile);
+    assert.equal(ssoPayload.engine, 'snowflake');
+    assert.equal(ssoPayload.port, 443);
+    assert.equal(ssoPayload.username, 'analyst@company.com');
+    assert.equal(ssoPayload.snowflake_account, 'myorg-myaccount');
+    assert.equal(ssoPayload.snowflake_warehouse, 'ANALYTICS_WH');
+    assert.equal(ssoPayload.snowflake_schema, 'PUBLIC');
+    assert.equal(ssoPayload.snowflake_role, 'SYSADMIN');
+    assert.equal(ssoPayload.snowflake_auth_method, 'externalbrowser');
+
+    const keypairProfile = {
+      id: 'conn-sf-2',
+      name: 'Snowflake Pipeline Service Account',
+      groupId: 'grp-dw',
+      engine: 'snowflake' as const,
+      env: 'prod' as const,
+      host: 'myorg-myaccount.snowflakecomputing.com',
+      port: 443,
+      database: 'DW_RAW',
+      username: 'svc_pipeline',
+      snowflakeAccount: 'myorg-myaccount',
+      snowflakeWarehouse: 'LOAD_WH',
+      snowflakeAuthMethod: 'keypair' as const,
+      snowflakePrivateKey: '-----BEGIN ENCRYPTED PRIVATE KEY-----\nMII...',
+      snowflakePassphrase: 'test-passphrase',
+      active: false,
+      latencyMs: 2.0,
+    };
+
+    const keypairPayload = profileToConfig(keypairProfile);
+    assert.equal(keypairPayload.engine, 'snowflake');
+    assert.equal(keypairPayload.username, 'svc_pipeline');
+    assert.equal(keypairPayload.snowflake_auth_method, 'keypair');
+    assert.equal(keypairPayload.snowflake_private_key, '-----BEGIN ENCRYPTED PRIVATE KEY-----\nMII...');
+    assert.equal(keypairPayload.snowflake_passphrase, 'test-passphrase');
   });
 });

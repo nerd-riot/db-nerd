@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/useAppStore';
 import {
   RefreshCw,
@@ -51,7 +52,35 @@ export const Titlebar = () => {
     getPendingSQL,
     requestSafetyConfirmation,
     showToast,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      activeConnection: s.activeConnection,
+      openSessionIds: s.openSessionIds,
+      setConnectionModalOpen: s.setConnectionModalOpen,
+      setDatabaseModalOpen: s.setDatabaseModalOpen,
+      setRunningQueriesModalOpen: s.setRunningQueriesModalOpen,
+      setSqlDiffModalOpen: s.setSqlDiffModalOpen,
+      pendingEditsCount: s.pendingEditsCount,
+      commitTransaction: s.commitTransaction,
+      rollbackTransaction: s.rollbackTransaction,
+      isRightInspectorOpen: s.isRightInspectorOpen,
+      toggleRightInspector: s.toggleRightInspector,
+      isSidebarOpen: s.isSidebarOpen,
+      toggleSidebar: s.toggleSidebar,
+      isBottomPanelOpen: s.isBottomPanelOpen,
+      toggleBottomPanel: s.toggleBottomPanel,
+      isFilterBarOpen: s.isFilterBarOpen,
+      toggleFilterBar: s.toggleFilterBar,
+      openNewQueryTab: s.openNewQueryTab,
+      isReloading: s.isReloading,
+      reloadData: s.reloadData,
+      setSettingsModalOpen: s.setSettingsModalOpen,
+      sqlTabStates: s.sqlTabStates,
+      getPendingSQL: s.getPendingSQL,
+      requestSafetyConfirmation: s.requestSafetyConfirmation,
+      showToast: s.showToast,
+    }))
+  );
 
   const isAnyQueryRunning = Object.values(sqlTabStates).some((s) => Boolean((s as any).isExecuting || (s as any).isRunning));
 

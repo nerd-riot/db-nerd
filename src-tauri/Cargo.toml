@@ -40,6 +40,8 @@ rust_decimal = "1.36"
 
 redis = { version = "0.27", default-features = false, features = ["tokio-comp", "aio"] }
 
+snowflake-connector-rs = { version = "1.1.1", features = ["external-browser-sso"] }
+
 async-trait = "0.1"
 futures-util = "0.3"
 thiserror = "2.0"

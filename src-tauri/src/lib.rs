@@ -22,6 +22,21 @@ fn truncate_cell_string(mut s: String) -> String {
     s
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ColCategory {
+    Int,
+    Float,
+    Decimal,
+    Bool,
+    Json,
+    DateTime,
+    Date,
+    Time,
+    Uuid,
+    Bytes,
+    Text,
+}
+
 /// Strips leading whitespace, `--` single-line comments, and `/* ... */` block comments.
 pub fn strip_leading_sql_comments( mut s: &str) -> &str {
     loop {
@@ -137,6 +152,20 @@ pub struct DbConfig {
     pub ssh_key_path: Option<String>,
     #[serde(default)]
     pub ssh_passphrase: Option<String>,
+    #[serde(default)]
+    pub snowflake_account: Option<String>,
+    #[serde(default)]
+    pub snowflake_warehouse: Option<String>,
+    #[serde(default)]
+    pub snowflake_schema: Option<String>,
+    #[serde(default)]
+    pub snowflake_role: Option<String>,
+    #[serde(default)]
+    pub snowflake_auth_method: Option<String>,
+    #[serde(default)]
+    pub snowflake_private_key: Option<String>,
+    #[serde(default)]
+    pub snowflake_passphrase: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -328,6 +357,36 @@ async fn test_connection(config: DbConfig) -> Result<TestConnectionResult, Strin
                 version: None,
             }),
         },
+        "snowflake" => match pool::get_or_create_snowflake_session(&config).await {
+            Ok(session) => {
+                let version = match session.query("SELECT CURRENT_VERSION()").await {
+                    Ok(cursor) => {
+                        let rows = cursor.collect_table().await.ok();
+                        rows.and_then(|t| {
+                            if t.row_count() > 0 {
+                                Some("Snowflake Cloud Data Warehouse".to_string())
+                            } else {
+                                None
+                            }
+                        })
+                    }
+                    Err(_) => None,
+                };
+                let latency = start.elapsed().as_secs_f64() * 1000.0;
+                Ok(TestConnectionResult {
+                    success: true,
+                    message: "Successfully authenticated to Snowflake!".into(),
+                    latency_ms: (latency * 10.0).round() / 10.0,
+                    version: version.or_else(|| Some("Snowflake".into())),
+                })
+            }
+            Err(e) => Ok(TestConnectionResult {
+                success: false,
+                message: e,
+                latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                version: None,
+            }),
+        },
         _ => Err(format!("Unsupported database engine: {}", config.engine)),
     }
 }
@@ -345,7 +404,8 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
             if is_row_returning_query(q_trimmed) {
                 use sqlx::{Column, Row, TypeInfo};
                 let mut stream = sqlx::query(&query).fetch(&pool);
-                let mut columns = Vec::new();
+                let mut columns: Vec<String> = Vec::new();
+                let mut col_categories: Vec<ColCategory> = Vec::new();
                 let mut json_rows = Vec::new();
 
                 while let Some(row) = stream
@@ -355,92 +415,126 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 {
                     if columns.is_empty() {
                         for col in row.columns() {
+                            let type_name = col.type_info().name();
+                            let cat = if type_name.eq_ignore_ascii_case("int2")
+                                || type_name.eq_ignore_ascii_case("int4")
+                                || type_name.eq_ignore_ascii_case("int8")
+                                || type_name.contains("int")
+                                || type_name.contains("serial")
+                            {
+                                ColCategory::Int
+                            } else if type_name.contains("float") || type_name.contains("double") {
+                                ColCategory::Float
+                            } else if type_name.contains("numeric") || type_name.contains("decimal") {
+                                ColCategory::Decimal
+                            } else if type_name.eq_ignore_ascii_case("bool")
+                                || type_name.eq_ignore_ascii_case("boolean")
+                            {
+                                ColCategory::Bool
+                            } else if type_name.eq_ignore_ascii_case("json")
+                                || type_name.eq_ignore_ascii_case("jsonb")
+                            {
+                                ColCategory::Json
+                            } else if type_name.contains("time") || type_name.contains("date") {
+                                ColCategory::DateTime
+                            } else if type_name.contains("uuid") {
+                                ColCategory::Uuid
+                            } else {
+                                ColCategory::Text
+                            };
+                            col_categories.push(cat);
                             columns.push(col.name().to_string());
                         }
                     }
 
-                    let mut map = serde_json::Map::with_capacity(row.columns().len());
-                    for (i, col) in row.columns().iter().enumerate() {
-                        let col_name = col.name().to_string();
-                        let type_name = col.type_info().name().to_uppercase();
-
-                        let val: serde_json::Value = if type_name.contains("INT")
-                            || type_name.contains("SERIAL")
-                        {
-                            if let Ok(n) = row.try_get::<i64, _>(i) {
-                                serde_json::Value::Number(n.into())
-                            } else if let Ok(n) = row.try_get::<i32, _>(i) {
-                                serde_json::Value::Number(n.into())
-                            } else if let Ok(n) = row.try_get::<i16, _>(i) {
-                                serde_json::Value::Number(n.into())
-                            } else {
-                                serde_json::Value::Null
-                            }
-                        } else if type_name.contains("FLOAT") || type_name.contains("DOUBLE") {
-                            if let Ok(f) = row.try_get::<f64, _>(i) {
-                                serde_json::Number::from_f64(f)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            } else if let Ok(f) = row.try_get::<f32, _>(i) {
-                                serde_json::Number::from_f64(f as f64)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            } else {
-                                serde_json::Value::Null
-                            }
-                        } else if type_name.contains("NUMERIC") || type_name.contains("DECIMAL") {
-                            if let Ok(d) = row.try_get::<rust_decimal::Decimal, _>(i) {
-                                if let Some(n) = serde_json::Number::from_f64(
-                                    d.to_string().parse::<f64>().unwrap_or(0.0),
-                                ) {
-                                    serde_json::Value::Number(n)
+                    let mut map = serde_json::Map::with_capacity(columns.len());
+                    for (i, cat) in col_categories.iter().enumerate() {
+                        let col_name = columns[i].clone();
+                        let val: serde_json::Value = match cat {
+                            ColCategory::Int => {
+                                if let Ok(n) = row.try_get::<i64, _>(i) {
+                                    serde_json::Value::Number(n.into())
+                                } else if let Ok(n) = row.try_get::<i32, _>(i) {
+                                    serde_json::Value::Number(n.into())
+                                } else if let Ok(n) = row.try_get::<i16, _>(i) {
+                                    serde_json::Value::Number(n.into())
                                 } else {
-                                    serde_json::Value::String(d.to_string())
+                                    serde_json::Value::Null
                                 }
-                            } else if let Ok(f) = row.try_get::<f64, _>(i) {
-                                serde_json::Number::from_f64(f)
-                                    .map(serde_json::Value::Number)
+                            }
+                            ColCategory::Float => {
+                                if let Ok(f) = row.try_get::<f64, _>(i) {
+                                    serde_json::Number::from_f64(f)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::Null)
+                                } else if let Ok(f) = row.try_get::<f32, _>(i) {
+                                    serde_json::Number::from_f64(f as f64)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::Null)
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Decimal => {
+                                if let Ok(d) = row.try_get::<rust_decimal::Decimal, _>(i) {
+                                    if let Some(n) = serde_json::Number::from_f64(
+                                        d.to_string().parse::<f64>().unwrap_or(0.0),
+                                    ) {
+                                        serde_json::Value::Number(n)
+                                    } else {
+                                        serde_json::Value::String(d.to_string())
+                                    }
+                                } else if let Ok(f) = row.try_get::<f64, _>(i) {
+                                    serde_json::Number::from_f64(f)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::Null)
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Bool => {
+                                if let Ok(b) = row.try_get::<bool, _>(i) {
+                                    serde_json::Value::Bool(b)
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Json => {
+                                row.try_get::<serde_json::Value, _>(i)
                                     .unwrap_or(serde_json::Value::Null)
-                            } else {
-                                serde_json::Value::Null
                             }
-                        } else if type_name == "BOOL" || type_name == "BOOLEAN" {
-                            if let Ok(b) = row.try_get::<bool, _>(i) {
-                                serde_json::Value::Bool(b)
-                            } else {
-                                serde_json::Value::Null
+                            ColCategory::DateTime => {
+                                if let Ok(dt) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(i) {
+                                    serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                                } else if let Ok(dt) = row.try_get::<chrono::NaiveDateTime, _>(i) {
+                                    serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                                } else if let Ok(d) = row.try_get::<chrono::NaiveDate, _>(i) {
+                                    serde_json::Value::String(d.to_string())
+                                } else if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else {
+                                    serde_json::Value::Null
+                                }
                             }
-                        } else if type_name == "JSON" || type_name == "JSONB" {
-                            row.try_get::<serde_json::Value, _>(i)
-                                .unwrap_or(serde_json::Value::Null)
-                        } else if type_name.contains("TIME") || type_name.contains("DATE") {
-                            if let Ok(dt) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(i) {
-                                serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                            } else if let Ok(dt) = row.try_get::<chrono::NaiveDateTime, _>(i) {
-                                serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                            } else if let Ok(d) = row.try_get::<chrono::NaiveDate, _>(i) {
-                                serde_json::Value::String(d.to_string())
-                            } else if let Ok(s) = row.try_get::<String, _>(i) {
-                                serde_json::Value::String(truncate_cell_string(s))
-                            } else {
-                                serde_json::Value::Null
+                            ColCategory::Uuid => {
+                                if let Ok(u) = row.try_get::<sqlx::types::Uuid, _>(i) {
+                                    serde_json::Value::String(u.to_string())
+                                } else if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else {
+                                    serde_json::Value::Null
+                                }
                             }
-                        } else if type_name.contains("UUID") {
-                            if let Ok(u) = row.try_get::<sqlx::types::Uuid, _>(i) {
-                                serde_json::Value::String(u.to_string())
-                            } else if let Ok(s) = row.try_get::<String, _>(i) {
-                                serde_json::Value::String(truncate_cell_string(s))
-                            } else {
-                                serde_json::Value::Null
+                            _ => {
+                                if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else if let Ok(n) = row.try_get::<i64, _>(i) {
+                                    serde_json::Value::Number(n.into())
+                                } else {
+                                    serde_json::Value::Null
+                                }
                             }
-                        } else if let Ok(s) = row.try_get::<String, _>(i) {
-                            serde_json::Value::String(truncate_cell_string(s))
-                        } else if let Ok(n) = row.try_get::<i64, _>(i) {
-                            serde_json::Value::Number(n.into())
-                        } else {
-                            serde_json::Value::Null
                         };
-
                         map.insert(col_name, val);
                     }
                     json_rows.push(serde_json::Value::Object(map));
@@ -482,9 +576,10 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
             let pool = pool::get_or_create_mysql_pool(&config).await?;
 
             if is_row_returning_query(q_trimmed) {
-                use sqlx::{Column, Row};
+                use sqlx::{Column, Row, TypeInfo};
                 let mut stream = sqlx::query(&query).fetch(&pool);
-                let mut columns = Vec::new();
+                let mut columns: Vec<String> = Vec::new();
+                let mut col_categories: Vec<ColCategory> = Vec::new();
                 let mut json_rows = Vec::new();
 
                 while let Some(row) = stream
@@ -494,47 +589,158 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 {
                     if columns.is_empty() {
                         for col in row.columns() {
+                            let type_name = col.type_info().name();
+                            let cat = if type_name.eq_ignore_ascii_case("bool")
+                                || type_name.eq_ignore_ascii_case("boolean")
+                            {
+                                ColCategory::Bool
+                            } else if type_name.contains("int") || type_name.contains("INT") {
+                                ColCategory::Int
+                            } else if type_name.contains("float") || type_name.contains("double") {
+                                ColCategory::Float
+                            } else if type_name.contains("decimal") || type_name.contains("numeric") {
+                                ColCategory::Decimal
+                            } else if type_name.eq_ignore_ascii_case("json") {
+                                ColCategory::Json
+                            } else if type_name.contains("datetime") || type_name.contains("timestamp") {
+                                ColCategory::DateTime
+                            } else if type_name.contains("date") {
+                                ColCategory::Date
+                            } else if type_name.contains("time") {
+                                ColCategory::Time
+                            } else if type_name.contains("blob") || type_name.contains("binary") {
+                                ColCategory::Bytes
+                            } else {
+                                ColCategory::Text
+                            };
+                            col_categories.push(cat);
                             columns.push(col.name().to_string());
                         }
                     }
 
-                    let mut map = serde_json::Map::with_capacity(row.columns().len());
-                    for (i, col) in row.columns().iter().enumerate() {
-                        let col_name = col.name().to_string();
-                        let val: serde_json::Value = if let Ok(s) = row.try_get::<String, _>(i) {
-                            serde_json::Value::String(truncate_cell_string(s))
-                        } else if let Ok(bytes) = row.try_get::<Vec<u8>, _>(i) {
-                            serde_json::Value::String(truncate_cell_string(
-                                String::from_utf8_lossy(&bytes).to_string(),
-                            ))
-                        } else if let Ok(n) = row.try_get::<i64, _>(i) {
-                            serde_json::Value::Number(n.into())
-                        } else if let Ok(u) = row.try_get::<u64, _>(i) {
-                            serde_json::Value::Number(u.into())
-                        } else if let Ok(f) = row.try_get::<f64, _>(i) {
-                            serde_json::Number::from_f64(f)
-                                .map(serde_json::Value::Number)
-                                .unwrap_or(serde_json::Value::Null)
-                        } else if let Ok(d) = row.try_get::<rust_decimal::Decimal, _>(i) {
-                            if let Some(n) = serde_json::Number::from_f64(
-                                d.to_string().parse::<f64>().unwrap_or(0.0),
-                            ) {
-                                serde_json::Value::Number(n)
-                            } else {
-                                serde_json::Value::String(d.to_string())
+                    let mut map = serde_json::Map::with_capacity(columns.len());
+                    for (i, cat) in col_categories.iter().enumerate() {
+                        let col_name = columns[i].clone();
+                        let val: serde_json::Value = match cat {
+                            ColCategory::Int => {
+                                if let Ok(n) = row.try_get::<i64, _>(i) {
+                                    serde_json::Value::Number(n.into())
+                                } else if let Ok(u) = row.try_get::<u64, _>(i) {
+                                    serde_json::Value::Number(u.into())
+                                } else if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else {
+                                    serde_json::Value::Null
+                                }
                             }
-                        } else if let Ok(j) = row.try_get::<serde_json::Value, _>(i) {
-                            j
-                        } else if let Ok(dt) = row.try_get::<chrono::NaiveDateTime, _>(i) {
-                            serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                        } else if let Ok(d) = row.try_get::<chrono::NaiveDate, _>(i) {
-                            serde_json::Value::String(d.to_string())
-                        } else if let Ok(t) = row.try_get::<chrono::NaiveTime, _>(i) {
-                            serde_json::Value::String(t.format("%H:%M:%S").to_string())
-                        } else if let Ok(b) = row.try_get::<bool, _>(i) {
-                            serde_json::Value::Bool(b)
-                        } else {
-                            serde_json::Value::Null
+                            ColCategory::Float => {
+                                if let Ok(f) = row.try_get::<f64, _>(i) {
+                                    serde_json::Number::from_f64(f)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::Null)
+                                } else if let Ok(f) = row.try_get::<f32, _>(i) {
+                                    serde_json::Number::from_f64(f as f64)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::Null)
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Decimal => {
+                                if let Ok(d) = row.try_get::<rust_decimal::Decimal, _>(i) {
+                                    if let Some(n) = serde_json::Number::from_f64(
+                                        d.to_string().parse::<f64>().unwrap_or(0.0),
+                                    ) {
+                                        serde_json::Value::Number(n)
+                                    } else {
+                                        serde_json::Value::String(d.to_string())
+                                    }
+                                } else if let Ok(n) = row.try_get::<i64, _>(i) {
+                                    serde_json::Value::Number(n.into())
+                                } else if let Ok(u) = row.try_get::<u64, _>(i) {
+                                    serde_json::Value::Number(u.into())
+                                } else if let Ok(f) = row.try_get::<f64, _>(i) {
+                                    serde_json::Number::from_f64(f)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::Null)
+                                } else if let Ok(s) = row.try_get::<String, _>(i) {
+                                    if let Ok(n) = s.parse::<i64>() {
+                                        serde_json::Value::Number(n.into())
+                                    } else if let Ok(f) = s.parse::<f64>() {
+                                        serde_json::Number::from_f64(f)
+                                            .map(serde_json::Value::Number)
+                                            .unwrap_or(serde_json::Value::String(s))
+                                    } else {
+                                        serde_json::Value::String(s)
+                                    }
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Bool => {
+                                if let Ok(b) = row.try_get::<bool, _>(i) {
+                                    serde_json::Value::Bool(b)
+                                } else if let Ok(n) = row.try_get::<i8, _>(i) {
+                                    serde_json::Value::Bool(n != 0)
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Json => {
+                                row.try_get::<serde_json::Value, _>(i)
+                                    .unwrap_or(serde_json::Value::Null)
+                            }
+                            ColCategory::DateTime => {
+                                if let Ok(dt) = row.try_get::<chrono::NaiveDateTime, _>(i) {
+                                    serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                                } else if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Date => {
+                                if let Ok(d) = row.try_get::<chrono::NaiveDate, _>(i) {
+                                    serde_json::Value::String(d.to_string())
+                                } else if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Time => {
+                                if let Ok(t) = row.try_get::<chrono::NaiveTime, _>(i) {
+                                    serde_json::Value::String(t.format("%H:%M:%S").to_string())
+                                } else if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            ColCategory::Bytes => {
+                                if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else if let Ok(bytes) = row.try_get::<Vec<u8>, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(
+                                        String::from_utf8_lossy(&bytes).to_string(),
+                                    ))
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            _ => {
+                                if let Ok(s) = row.try_get::<String, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(s))
+                                } else if let Ok(bytes) = row.try_get::<Vec<u8>, _>(i) {
+                                    serde_json::Value::String(truncate_cell_string(
+                                        String::from_utf8_lossy(&bytes).to_string(),
+                                    ))
+                                } else if let Ok(n) = row.try_get::<i64, _>(i) {
+                                    serde_json::Value::Number(n.into())
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
                         };
                         map.insert(col_name, val);
                     }
@@ -937,6 +1143,52 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 }),
             }
         }
+        "snowflake" => {
+            let session = pool::get_or_create_snowflake_session(&config).await?;
+            let cursor = session
+                .query_as::<snowflake_connector_rs::DynamicRow, _>(query)
+                .await
+                .map_err(|e| format!("Snowflake query error: {}", e))?;
+
+            let mut columns = Vec::new();
+            for col in cursor.schema().columns() {
+                columns.push(col.name().to_string());
+            }
+
+            let typed_table = cursor
+                .collect_table()
+                .await
+                .map_err(|e| format!("Snowflake fetch error: {}", e))?;
+
+            let mut json_rows = Vec::with_capacity(typed_table.row_count().min(MAX_RESULT_ROWS));
+            for row_res in typed_table.rows() {
+                let dyn_row = row_res.map_err(|e| format!("Snowflake decode error: {}", e))?;
+                match dyn_row.into_json_object() {
+                    Ok(mut map) => {
+                        for (_, val) in map.iter_mut() {
+                            if let serde_json::Value::String(s) = val {
+                                *s = truncate_cell_string(s.clone());
+                            }
+                        }
+                        json_rows.push(serde_json::Value::Object(map));
+                        if json_rows.len() >= MAX_RESULT_ROWS {
+                            break;
+                        }
+                    }
+                    Err(e) => return Err(format!("Snowflake formatting error: {}", e)),
+                }
+            }
+
+            let duration = start.elapsed().as_secs_f64() * 1000.0;
+            Ok(QueryResult {
+                success: true,
+                columns,
+                rows: json_rows,
+                duration_ms: (duration * 10.0).round() / 10.0,
+                rows_affected: 0,
+                error: None,
+            })
+        }
         _ => Err(format!("Unsupported database engine: {}", config.engine)),
     }
 }
@@ -1199,6 +1451,115 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
             }
             Ok(summaries)
         }
+        "snowflake" => {
+            let sql = r#"
+                SELECT
+                    TABLE_NAME AS table_name,
+                    TABLE_SCHEMA AS schema_name,
+                    TABLE_TYPE AS kind,
+                    COALESCE(TABLE_OWNER, '') AS owner,
+                    COALESCE(ROW_COUNT, 0) AS estimated_rows,
+                    COALESCE(BYTES, 0) AS total_bytes,
+                    COALESCE(COMMENT, '') AS comment
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA'
+                ORDER BY TABLE_NAME ASC;
+            "#;
+            let res = execute_query(config.clone(), sql.into()).await;
+            if let Ok(res) = res {
+                if res.success && !res.rows.is_empty() {
+                    let mut tables = Vec::new();
+                    for r in res.rows {
+                        let name_opt = r
+                            .get("table_name")
+                            .or_else(|| r.get("TABLE_NAME"))
+                            .and_then(|v| v.as_str());
+                        if let Some(name) = name_opt {
+                            let est_rows = r
+                                .get("estimated_rows")
+                                .or_else(|| r.get("ESTIMATED_ROWS"))
+                                .or_else(|| r.get("ROW_COUNT"))
+                                .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                                .unwrap_or(0);
+                            let total_bytes = r
+                                .get("total_bytes")
+                                .or_else(|| r.get("TOTAL_BYTES"))
+                                .or_else(|| r.get("BYTES"))
+                                .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse::<i64>().ok()))
+                                .unwrap_or(0);
+
+                            let total_size = format_byte_size(total_bytes);
+                            let schema = r
+                                .get("schema_name")
+                                .or_else(|| r.get("SCHEMA_NAME"))
+                                .or_else(|| r.get("TABLE_SCHEMA"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let kind = r
+                                .get("kind")
+                                .or_else(|| r.get("KIND"))
+                                .or_else(|| r.get("TABLE_TYPE"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let owner = r
+                                .get("owner")
+                                .or_else(|| r.get("OWNER"))
+                                .or_else(|| r.get("TABLE_OWNER"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let comment = r
+                                .get("comment")
+                                .or_else(|| r.get("COMMENT"))
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .map(|s| s.to_string());
+
+                            tables.push(TableSummary {
+                                name: name.to_string(),
+                                count: format_compact_table_badge(est_rows, &total_size),
+                                schema,
+                                kind,
+                                owner,
+                                estimated_rows: Some(est_rows),
+                                total_size: if total_size.is_empty() || total_size == "0 bytes" { None } else { Some(total_size) },
+                                data_size: None,
+                                index_size: None,
+                                total_bytes: Some(total_bytes),
+                                data_bytes: None,
+                                index_bytes: None,
+                                comment,
+                            });
+                        }
+                    }
+                    if !tables.is_empty() {
+                        return Ok(tables);
+                    }
+                }
+            }
+
+            // Fallback: SHOW TABLES
+            if let Ok(res) = execute_query(config, "SHOW TABLES;".into()).await {
+                let mut tables = Vec::new();
+                for r in res.rows {
+                    let name_opt = r
+                        .get("name")
+                        .or_else(|| r.get("NAME"))
+                        .and_then(|v| v.as_str());
+                    if let Some(name) = name_opt {
+                        tables.push(TableSummary {
+                            name: name.to_string(),
+                            count: "0".into(),
+                            schema: r.get("schema_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            kind: Some("TABLE".into()),
+                            ..Default::default()
+                        });
+                    }
+                }
+                return Ok(tables);
+            }
+
+            Ok(Vec::new())
+        }
         _ => Ok(Vec::new()),
     }
 }
@@ -1266,12 +1627,47 @@ async fn get_databases(config: DbConfig) -> Result<Vec<String>, String> {
             let list = (0..16).map(|i| i.to_string()).collect();
             Ok(list)
         }
+        "snowflake" => {
+            let res = execute_query(config.clone(), "SHOW DATABASES;".into()).await;
+            if let Ok(res) = res {
+                if res.success && !res.rows.is_empty() {
+                    let mut dbs = Vec::new();
+                    for r in res.rows {
+                        let name_opt = r
+                            .get("name")
+                            .or_else(|| r.get("NAME"))
+                            .or_else(|| r.get("database_name"))
+                            .or_else(|| r.get("DATABASE_NAME"))
+                            .and_then(|v| v.as_str());
+                        if let Some(name) = name_opt {
+                            dbs.push(name.to_string());
+                        }
+                    }
+                    if !dbs.is_empty() {
+                        return Ok(dbs);
+                    }
+                }
+            }
+            Ok(vec![config.database])
+        }
         _ => Ok(vec![config.database]),
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::panic::set_hook(Box::new(|info| {
+        let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_else(|| "unknown".into());
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            *s
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.as_str()
+        } else {
+            "unknown panic payload"
+        };
+        eprintln!("[DB-NERD CRASH HOOK] Caught panic at {}: {}", location, payload);
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

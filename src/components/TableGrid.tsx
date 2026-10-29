@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/useAppStore';
 import { getTableSchema } from '../data/schemas';
 import {
@@ -85,7 +86,46 @@ export const TableGrid: React.FC = () => {
     pendingTableActions,
     removeTableAction,
     triggerAddStructureColumn,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      rows: s.rows,
+      updateCell: s.updateCell,
+      insertRow: s.insertRow,
+      duplicateRow: s.duplicateRow,
+      deleteRow: s.deleteRow,
+      selectedTable: s.selectedTable,
+      selectedRowData: s.selectedRowData,
+      setSelectedRowData: s.setSelectedRowData,
+      tableViewMode: s.tableViewMode,
+      setTableViewMode: s.setTableViewMode,
+      isFilterBarOpen: s.isFilterBarOpen,
+      toggleFilterBar: s.toggleFilterBar,
+      filterWhereText: s.filterWhereText,
+      setFilterWhereText: s.setFilterWhereText,
+      filterOrderByText: s.filterOrderByText,
+      setFilterOrderByText: s.setFilterOrderByText,
+      setSelectedStructureColumn: s.setSelectedStructureColumn,
+      isReloading: s.isReloading,
+      reloadData: s.reloadData,
+      activeConnection: s.activeConnection,
+      liveSchemas: s.liveSchemas,
+      setConnectionModalOpen: s.setConnectionModalOpen,
+      reconnectActiveConnection: s.reconnectActiveConnection,
+      showToast: s.showToast,
+      gridPage: s.gridPage,
+      gridPageSize: s.gridPageSize,
+      gridTotalCount: s.gridTotalCount,
+      gridIsEstimatedCount: s.gridIsEstimatedCount,
+      gridIsCounting: s.gridIsCounting,
+      setGridPageSize: s.setGridPageSize,
+      goToGridPage: s.goToGridPage,
+      fetchTableExactCount: s.fetchTableExactCount,
+      pendingEditsCount: s.pendingEditsCount,
+      pendingTableActions: s.pendingTableActions,
+      removeTableAction: s.removeTableAction,
+      triggerAddStructureColumn: s.triggerAddStructureColumn,
+    }))
+  );
 
   const stagedTableAction = useMemo(
     () => pendingTableActions?.find((a) => a.tableName === selectedTable),

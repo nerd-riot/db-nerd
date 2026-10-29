@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2, Copy, Check } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { recordCrashReport } from '../lib';
 
 interface Props {
   children: ReactNode;
@@ -28,6 +29,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error in React component tree:', error, errorInfo);
+    recordCrashReport('boundary', error, {
+      componentStack: errorInfo.componentStack,
+    });
     this.setState({ errorInfo });
   }
 

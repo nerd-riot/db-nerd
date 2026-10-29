@@ -18,6 +18,13 @@ export interface ParsedConnectionUrl {
   sshKeyPath?: string;
   statusColor?: string;
   rawParams?: Record<string, string>;
+  snowflakeAccount?: string;
+  snowflakeWarehouse?: string;
+  snowflakeSchema?: string;
+  snowflakeRole?: string;
+  snowflakeAuthMethod?: 'externalbrowser' | 'password' | 'keypair';
+  snowflakePrivateKey?: string;
+  snowflakePassphrase?: string;
 }
 
 const DEFAULT_PORTS: Record<string, number> = {
@@ -204,6 +211,22 @@ export function parseConnectionUrl(urlString: string): ParsedConnectionUrl {
     queryParams['sshKeyPath'] ||
     (useSshKey ? (name.toLowerCase().includes('vigo') ? '~/.ssh/vigo/id_rsa' : 'id_rsa') : undefined);
 
+  let snowflakeAccount = queryParams['account'] || queryParams['snowflakeAccount'];
+  if (!snowflakeAccount && host.includes('.snowflakecomputing.com')) {
+    snowflakeAccount = host.replace('.snowflakecomputing.com', '');
+  }
+  const snowflakeWarehouse = queryParams['warehouse'] || queryParams['snowflakeWarehouse'];
+  const snowflakeSchema = queryParams['schema'] || queryParams['snowflakeSchema'];
+  const snowflakeRole = queryParams['role'] || queryParams['snowflakeRole'];
+  const rawAuth = (queryParams['authenticator'] || queryParams['auth'] || queryParams['snowflakeAuthMethod'] || '').toLowerCase();
+  const snowflakeAuthMethod = rawAuth.includes('browser') || rawAuth.includes('sso')
+    ? 'externalbrowser'
+    : rawAuth.includes('key')
+    ? 'keypair'
+    : rawAuth.includes('pass')
+    ? 'password'
+    : (engine === 'snowflake' ? 'externalbrowser' : undefined);
+
   return {
     name,
     engine,
@@ -222,6 +245,11 @@ export function parseConnectionUrl(urlString: string): ParsedConnectionUrl {
     sshKeyPath: useSsh ? (sshKeyPath || 'id_rsa') : undefined,
     statusColor: queryParams['statusColor'],
     rawParams: queryParams,
+    snowflakeAccount,
+    snowflakeWarehouse,
+    snowflakeSchema,
+    snowflakeRole,
+    snowflakeAuthMethod,
   };
 }
 
@@ -238,6 +266,24 @@ export function serializeConnectionUrl(conn: ConnectionProfile): string {
   if (conn.name) params.set('name', conn.name);
   if (conn.env) params.set('env', conn.env);
   params.set('tLSMode', '0');
+
+  if (conn.engine === 'snowflake') {
+    if (conn.snowflakeAccount || conn.accountIdentifier) {
+      params.set('account', (conn.snowflakeAccount || conn.accountIdentifier)!);
+    }
+    if (conn.snowflakeWarehouse || conn.warehouse) {
+      params.set('warehouse', (conn.snowflakeWarehouse || conn.warehouse)!);
+    }
+    if (conn.snowflakeSchema) {
+      params.set('schema', conn.snowflakeSchema);
+    }
+    if (conn.snowflakeRole) {
+      params.set('role', conn.snowflakeRole);
+    }
+    if (conn.snowflakeAuthMethod) {
+      params.set('authenticator', conn.snowflakeAuthMethod);
+    }
+  }
 
   if (conn.useSsh && conn.sshHost) {
     let sshCreds = '';

@@ -33,6 +33,8 @@ import {
   CheckCircle2,
   Sparkles,
   Loader2,
+  Globe,
+  Lock,
 } from 'lucide-react';
 import { HeartbeatDot, HeartbeatColor } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
@@ -229,7 +231,9 @@ export const ConnectionModal = () => {
 
   // Connection Form state
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pemFileInputRef = useRef<HTMLInputElement>(null);
   const [showSshPassword, setShowSshPassword] = useState(false);
+  const [showSnowflakePassword, setShowSnowflakePassword] = useState(false);
   const [formData, setFormData] = useState<Omit<ConnectionProfile, 'id'>>({
     name: 'new-postgres-connection',
     groupId: connectionGroups[0]?.id || '',
@@ -250,6 +254,13 @@ export const ConnectionModal = () => {
     sshPassphrase: '',
     accountIdentifier: '',
     warehouse: '',
+    snowflakeAccount: '',
+    snowflakeWarehouse: '',
+    snowflakeSchema: '',
+    snowflakeRole: '',
+    snowflakeAuthMethod: 'externalbrowser',
+    snowflakePrivateKey: '',
+    snowflakePassphrase: '',
     active: false,
     latencyMs: 1.0,
     safeMode: 'silent',
@@ -292,6 +303,13 @@ export const ConnectionModal = () => {
           sshPassphrase: conn.sshPassphrase || '',
           accountIdentifier: conn.accountIdentifier || '',
           warehouse: conn.warehouse || '',
+          snowflakeAccount: conn.snowflakeAccount || conn.accountIdentifier || '',
+          snowflakeWarehouse: conn.snowflakeWarehouse || conn.warehouse || '',
+          snowflakeSchema: conn.snowflakeSchema || '',
+          snowflakeRole: conn.snowflakeRole || '',
+          snowflakeAuthMethod: conn.snowflakeAuthMethod || 'externalbrowser',
+          snowflakePrivateKey: conn.snowflakePrivateKey || '',
+          snowflakePassphrase: conn.snowflakePassphrase || '',
           active: conn.active,
           latencyMs: conn.latencyMs,
           safeMode: conn.safeMode || (conn.env === 'prod' ? 'alert-2' : 'silent'),
@@ -408,6 +426,13 @@ export const ConnectionModal = () => {
       sshPassphrase: '',
       accountIdentifier: '',
       warehouse: '',
+      snowflakeAccount: '',
+      snowflakeWarehouse: '',
+      snowflakeSchema: '',
+      snowflakeRole: '',
+      snowflakeAuthMethod: 'externalbrowser',
+      snowflakePrivateKey: '',
+      snowflakePassphrase: '',
       active: false,
       latencyMs: 1.2,
       safeMode: 'silent',
@@ -428,6 +453,8 @@ export const ConnectionModal = () => {
       let defaultDb = prev.database;
       if (engine === 'redis') {
         defaultDb = '0';
+      } else if (engine === 'snowflake') {
+        defaultDb = '';
       } else if (meta.id === 'sqlite' || meta.id === 'duckdb') {
         defaultDb = `${meta.id}.db`;
       } else if (!defaultDb || defaultDb === '0' || defaultDb === 'postgres' || defaultDb === 'sqlite.db' || defaultDb === 'duckdb.db') {
@@ -436,6 +463,8 @@ export const ConnectionModal = () => {
 
       let defaultUser = prev.username;
       if (engine === 'redis') {
+        defaultUser = '';
+      } else if (engine === 'snowflake') {
         defaultUser = '';
       } else if (engine === 'postgres') {
         defaultUser = 'postgres';
@@ -452,6 +481,7 @@ export const ConnectionModal = () => {
           : prev.name,
         database: defaultDb,
         username: defaultUser,
+        snowflakeAuthMethod: prev.snowflakeAuthMethod || 'externalbrowser',
       };
     });
   };
@@ -476,6 +506,11 @@ export const ConnectionModal = () => {
       sshPassword: parsedUrlResult.sshPassword || '',
       useSshKey: parsedUrlResult.useSshKey ?? true,
       sshKeyPath: parsedUrlResult.sshKeyPath || (parsedUrlResult.useSsh ? 'id_rsa' : ''),
+      snowflakeAccount: parsedUrlResult.snowflakeAccount || '',
+      snowflakeWarehouse: parsedUrlResult.snowflakeWarehouse || '',
+      snowflakeSchema: parsedUrlResult.snowflakeSchema || '',
+      snowflakeRole: parsedUrlResult.snowflakeRole || '',
+      snowflakeAuthMethod: parsedUrlResult.snowflakeAuthMethod || 'externalbrowser',
     }));
     setCreationStep('configure');
     showToast(`Loaded URL settings for ${meta.label}`);
@@ -2213,108 +2248,378 @@ export const ConnectionModal = () => {
                   );
                 })()}
 
-            {/* Host & Port (Postgres, MySQL, Redis) */}
-            {formData.engine !== 'snowflake' && (
-              <div className="grid grid-cols-12 gap-3">
-                <div className="col-span-9">
-                  <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
-                    Host / Server Address
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.host}
-                    onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                    placeholder="localhost or db.cloud.internal"
-                    className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
-                  />
-                </div>
-                <div className="col-span-3">
-                  <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
-                    Port
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.port}
-                    onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value, 10) || 5432 })}
-                    className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
-                  />
-                </div>
-              </div>
-            )}
+            {/* SNOWFLAKE SPECIFIC CONNECTION CONFIGURATION */}
+            {formData.engine === 'snowflake' ? (
+              <div className="space-y-3.5 animate-in fade-in duration-200">
+                {/* Hidden File Input for PEM Key Loading */}
+                <input
+                  type="file"
+                  ref={pemFileInputRef}
+                  className="hidden"
+                  accept=".pem,.p8,.key,.txt"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        const content = ev.target?.result as string;
+                        setFormData((prev) => ({
+                          ...prev,
+                          snowflakePrivateKey: content,
+                        }));
+                        showToast(`Loaded private key from ${file.name}`);
+                      };
+                      reader.readAsText(file);
+                    }
+                  }}
+                />
 
-            {/* Database / Keyspace Name */}
-            <div>
-              <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
-                {formData.engine === 'redis' ? 'Database Index (0-15)' : 'Database / Schema'}
-              </label>
-              <input
-                type="text"
-                value={formData.database}
-                onChange={(e) => setFormData({ ...formData, database: e.target.value })}
-                placeholder={formData.engine === 'redis' ? '0' : 'ecom_prod_db'}
-                className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
-              />
-            </div>
-
-            {/* Snowflake Specific Fields */}
-            {formData.engine === 'snowflake' && (
-              <div className="space-y-3 bg-sky-50/70 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-500/30 p-3 rounded-xl animate-in fade-in duration-200 shadow-2xs">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
-                      Account Identifier
-                    </label>
+                {/* Snowflake Account & Warehouse */}
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-7">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                        Account Identifier
+                      </label>
+                      <Tooltip side="top" content="e.g. xy12345.us-east-1 or org-account (resolves to https://<account>.snowflakecomputing.com)">
+                        <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono cursor-help">
+                          account.region
+                        </span>
+                      </Tooltip>
+                    </div>
                     <input
                       type="text"
-                      value={formData.accountIdentifier || ''}
-                      onChange={(e) => setFormData({ ...formData, accountIdentifier: e.target.value })}
-                      placeholder="e.g. xy12345.us-east-1"
+                      value={formData.snowflakeAccount || formData.accountIdentifier || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          snowflakeAccount: e.target.value,
+                          accountIdentifier: e.target.value,
+                        })
+                      }
+                      placeholder="e.g. xy12345.us-east-1 or myorg-myaccount"
                       className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
                     />
                   </div>
-                  <div>
-                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
-                      Warehouse
-                    </label>
+                  <div className="col-span-5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                        Warehouse
+                      </label>
+                      <Tooltip side="top" content="Snowflake virtual warehouse (e.g. COMPUTE_WH)">
+                        <span className="text-[10px] text-slate-400 font-mono cursor-help">WH</span>
+                      </Tooltip>
+                    </div>
                     <input
                       type="text"
-                      value={formData.warehouse || ''}
-                      onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })}
+                      value={formData.snowflakeWarehouse || formData.warehouse || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          snowflakeWarehouse: e.target.value,
+                          warehouse: e.target.value,
+                        })
+                      }
                       placeholder="e.g. COMPUTE_WH"
                       className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
                     />
                   </div>
                 </div>
+
+                {/* Database, Schema & Role */}
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-4">
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                      Database (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.database}
+                      onChange={(e) => setFormData({ ...formData, database: e.target.value })}
+                      placeholder="e.g. ANALYTICS_DB"
+                      className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                      Schema (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.snowflakeSchema || ''}
+                      onChange={(e) => setFormData({ ...formData, snowflakeSchema: e.target.value })}
+                      placeholder="e.g. PUBLIC"
+                      className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                      Role (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.snowflakeRole || ''}
+                      onChange={(e) => setFormData({ ...formData, snowflakeRole: e.target.value })}
+                      placeholder="e.g. ACCOUNTADMIN"
+                      className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Authentication Method Selection */}
+                <div className="p-3.5 bg-sky-50/70 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-500/30 rounded-xl space-y-3 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center space-x-2 text-slate-800 dark:text-slate-200 font-semibold select-none text-xs">
+                      <Key className="w-3.5 h-3.5 text-sky-500" />
+                      <span>Snowflake Authentication</span>
+                    </label>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                      {formData.snowflakeAuthMethod === 'password'
+                        ? 'Password'
+                        : formData.snowflakeAuthMethod === 'keypair'
+                        ? 'Key-Pair RSA'
+                        : 'External Browser SSO'}
+                    </span>
+                  </div>
+
+                  {/* Auth Tabs */}
+                  <div className="grid grid-cols-3 gap-1 bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, snowflakeAuthMethod: 'externalbrowser' })}
+                      className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center space-x-1.5 transition cursor-pointer ${
+                        (formData.snowflakeAuthMethod || 'externalbrowser') === 'externalbrowser'
+                          ? 'bg-sky-500 text-white font-bold shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span className="truncate">Browser SSO</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, snowflakeAuthMethod: 'password' })}
+                      className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center space-x-1.5 transition cursor-pointer ${
+                        formData.snowflakeAuthMethod === 'password'
+                          ? 'bg-sky-500 text-white font-bold shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span className="truncate">Password</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, snowflakeAuthMethod: 'keypair' })}
+                      className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center space-x-1.5 transition cursor-pointer ${
+                        formData.snowflakeAuthMethod === 'keypair'
+                          ? 'bg-sky-500 text-white font-bold shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <FileKey className="w-3.5 h-3.5" />
+                      <span className="truncate">Key-Pair</span>
+                    </button>
+                  </div>
+
+                  {/* External Browser SSO Mode */}
+                  {(formData.snowflakeAuthMethod || 'externalbrowser') === 'externalbrowser' && (
+                    <div className="space-y-3 pt-1 animate-in fade-in duration-150">
+                      <div className="p-2.5 bg-sky-500/10 border border-sky-400/30 rounded-lg flex items-start space-x-2 text-xs text-sky-800 dark:text-sky-200">
+                        <Sparkles className="w-4 h-4 text-sky-500 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <p className="font-semibold">Zero-Credential Browser SSO (Recommended)</p>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                            When connecting, your default browser opens automatically to authenticate via Okta, Azure AD, Ping Identity, Google, or Snowflake Native SSO. db-nerd listens on localhost to securely retrieve the session token.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                          Snowflake Username / SSO Email
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.username}
+                          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                          placeholder="e.g. alex.chen@company.com or achen"
+                          className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Standard Password Mode */}
+                  {formData.snowflakeAuthMethod === 'password' && (
+                    <div className="space-y-3 pt-1 animate-in fade-in duration-150">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                            Snowflake Username
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.username}
+                            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                            placeholder="e.g. jdoe"
+                            className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                              Password
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setShowSnowflakePassword(!showSnowflakePassword)}
+                              className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center space-x-1 cursor-pointer"
+                            >
+                              {showSnowflakePassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                              <span>{showSnowflakePassword ? 'Hide' : 'Show'}</span>
+                            </button>
+                          </div>
+                          <input
+                            type={showSnowflakePassword ? 'text' : 'password'}
+                            value={formData.password || ''}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            placeholder="••••••••••••"
+                            className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Key-Pair RSA Authentication Mode */}
+                  {formData.snowflakeAuthMethod === 'keypair' && (
+                    <div className="space-y-3 pt-1 animate-in fade-in duration-150">
+                      <div>
+                        <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                          Snowflake Service Account Username
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.username}
+                          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                          placeholder="e.g. svc_pipeline_user"
+                          className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                            Private Key (PEM Format)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => pemFileInputRef.current?.click()}
+                            className="text-[10px] px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 hover:border-sky-500 rounded text-sky-600 dark:text-sky-400 font-medium flex items-center space-x-1 cursor-pointer transition shadow-2xs"
+                          >
+                            <FileKey className="w-3 h-3" />
+                            <span>Browse .pem File...</span>
+                          </button>
+                        </div>
+                        <textarea
+                          rows={4}
+                          value={formData.snowflakePrivateKey || ''}
+                          onChange={(e) => setFormData({ ...formData, snowflakePrivateKey: e.target.value })}
+                          placeholder="-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0... \n-----END RSA PRIVATE KEY-----"
+                          className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs resize-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                          Passphrase (Optional, for encrypted private key)
+                        </label>
+                        <input
+                          type="password"
+                          value={formData.snowflakePassphrase || ''}
+                          onChange={(e) => setFormData({ ...formData, snowflakePassphrase: e.target.value })}
+                          placeholder="Optional passphrase"
+                          className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* STANDARD (POSTGRES / MYSQL / REDIS) CONFIGURATION */
+              <div className="space-y-4">
+                {/* Host & Port */}
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-9">
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                      Host / Server Address
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.host}
+                      onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                      placeholder="localhost or db.cloud.internal"
+                      className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                      Port
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.port}
+                      onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value, 10) || 5432 })}
+                      className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Database / Keyspace Name */}
+                <div>
+                  <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                    {formData.engine === 'redis' ? 'Database Index (0-15)' : 'Database / Schema'}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.database}
+                    onChange={(e) => setFormData({ ...formData, database: e.target.value })}
+                    placeholder={formData.engine === 'redis' ? '0' : 'ecom_prod_db'}
+                    className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
+                  />
+                </div>
+
+                {/* User & Password */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                      Username / Role
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.username}
+                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                      placeholder="app_master"
+                      className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
+                      Password
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.password || ''}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="••••••••••••"
+                      className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
+                    />
+                  </div>
+                </div>
               </div>
             )}
-
-            {/* User & Password */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
-                  Username / Role
-                </label>
-                <input
-                  type="text"
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  placeholder="app_master"
-                  className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1.5 uppercase text-[10px] tracking-wider">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  value={formData.password || ''}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="••••••••••••"
-                  className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 transition-colors shadow-2xs"
-                />
-              </div>
-            </div>
 
             {/* TablePlus Safety Level Selector */}
             <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 shadow-2xs">
@@ -2342,7 +2647,8 @@ export const ConnectionModal = () => {
             </div>
 
             {/* TablePlus-grade SSH Bastion Tunnel (Zero-Trust Jump Host) Option */}
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 shadow-2xs">
+            {formData.engine !== 'snowflake' && (
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 shadow-2xs">
               <div className="flex items-center justify-between">
                 <label className="flex items-center space-x-2 text-slate-800 dark:text-slate-200 cursor-pointer font-semibold select-none text-xs">
                   <input
@@ -2526,6 +2832,7 @@ export const ConnectionModal = () => {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
 

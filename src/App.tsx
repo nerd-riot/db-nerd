@@ -1,17 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAppStore } from './stores/useAppStore';
 import { Titlebar } from './components/Titlebar';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Sidebar } from './components/Sidebar';
 import { TableGrid } from './components/TableGrid';
 import { SqlEditor } from './components/SqlEditor';
-import { Observability } from './components/Observability';
-import { ConnectionModal } from './components/ConnectionModal';
-import { OpenDatabaseModal } from './components/OpenDatabaseModal';
-import { QueryHistoryModal } from './components/QueryHistoryModal';
-import { RunningQueriesModal } from './components/RunningQueriesModal';
-import { SqlDiffModal } from './components/SqlDiffModal';
-import { SettingsModal } from './components/SettingsModal';
 import { TableSchemaView } from './components/TableSchemaView';
 import { DefaultWorkspaceView } from './components/DefaultWorkspaceView';
 import { AllTableStatsView } from './components/AllTableStatsView';
@@ -20,9 +13,18 @@ import { RightInspector } from './components/RightInspector';
 import { BottomPanel } from './components/BottomPanel';
 import { DisconnectedBanner } from './components/DisconnectedBanner';
 import { DisconnectedModal } from './components/DisconnectedModal';
-import { SafetyVerificationModal } from './components/SafetyVerificationModal';
-import { TableActionModal } from './components/TableActionModal';
 import { heartbeatService } from './services/heartbeatService';
+
+// Lazy-loaded heavy modals & secondary views to optimize startup RAM, CPU, and bundle size
+const Observability = lazy(() => import('./components/Observability').then((m) => ({ default: m.Observability })));
+const ConnectionModal = lazy(() => import('./components/ConnectionModal').then((m) => ({ default: m.ConnectionModal })));
+const OpenDatabaseModal = lazy(() => import('./components/OpenDatabaseModal').then((m) => ({ default: m.OpenDatabaseModal })));
+const QueryHistoryModal = lazy(() => import('./components/QueryHistoryModal').then((m) => ({ default: m.QueryHistoryModal })));
+const RunningQueriesModal = lazy(() => import('./components/RunningQueriesModal').then((m) => ({ default: m.RunningQueriesModal })));
+const SqlDiffModal = lazy(() => import('./components/SqlDiffModal').then((m) => ({ default: m.SqlDiffModal })));
+const SettingsModal = lazy(() => import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })));
+const SafetyVerificationModal = lazy(() => import('./components/SafetyVerificationModal').then((m) => ({ default: m.SafetyVerificationModal })));
+const TableActionModal = lazy(() => import('./components/TableActionModal').then((m) => ({ default: m.TableActionModal })));
 import { Tooltip } from './components/Tooltip';
 import { Table, Terminal, Activity, RotateCcw, Check, Columns, Plus, X, ChevronLeft, ChevronRight, CheckCircle2, ArrowRight, CopyPlus, Edit3, Copy, Code, AlertCircle, AlertTriangle, Info, Scissors, ClipboardPaste, Trash2, Database, SlidersHorizontal, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
 import {
@@ -713,7 +715,9 @@ export function App() {
                   ) : activeTabObj?.tableName === '__all_functions__' || activeTabObj?.title.startsWith('Functions.') ? (
                     <AllFunctionsView key={activeTabId} />
                   ) : (
-                    <Observability key={activeTabId} />
+                    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-slate-500 text-xs">Loading analytics...</div>}>
+                      <Observability key={activeTabId} />
+                    </Suspense>
                   )
                 )}
               </>
@@ -1136,15 +1140,17 @@ export function App() {
       )}
 
       {/* Global Modals */}
-      <ConnectionModal />
-      <OpenDatabaseModal />
-      <QueryHistoryModal />
-      <RunningQueriesModal />
-      <SqlDiffModal />
-      <SettingsModal />
-      <DisconnectedModal />
-      <SafetyVerificationModal />
-      <TableActionModal />
+      <Suspense fallback={null}>
+        <ConnectionModal />
+        <OpenDatabaseModal />
+        <QueryHistoryModal />
+        <RunningQueriesModal />
+        <SqlDiffModal />
+        <SettingsModal />
+        <DisconnectedModal />
+        <SafetyVerificationModal />
+        <TableActionModal />
+      </Suspense>
 
     </div>
   );
