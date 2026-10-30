@@ -202,8 +202,9 @@ jobs:
       - name: 📥 Install npm dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: 🛠️ Install create-dmg
-        run: brew install create-dmg || true
+      - name: 🛠️ Install dmgbuild & packaging tools
+        run: |
+          pip install dmgbuild ds-store mac-alias pillow
 
       - name: 🏗️ Build macOS Installer (.app, .dmg with Applications shortcut, .zip)
         run: node scripts/build-dist.js --mac --out-dir=./dist-releases

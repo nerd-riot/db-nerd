@@ -212,25 +212,84 @@ async function main() {
     }
     logSuccess(`Built application: ${appPath}`);
 
+    // Regenerate background matching current productName
+    try {
+      const bgGenScript = path.join(rootDir, 'scripts', 'generate_installer_backgrounds.py');
+      if (fs.existsSync(bgGenScript)) {
+        const pythonBin = [
+          path.join(userHome, '.local', 'share', 'uv', 'tools', 'dmgbuild', 'bin', 'python3'),
+          findTool('python3'),
+        ].find(p => p && fs.existsSync(p));
+        if (pythonBin) {
+          runCmd(`"${pythonBin}" "${bgGenScript}" "${productName}"`);
+        }
+      }
+    } catch (e) {
+      logWarn(`Failed to regenerate DMG background: ${e.message}`);
+    }
+
     // Create standard DMG with Applications symlink
     const dmgFileName = `${safeName}_${version}_aarch64.dmg`;
     const dmgDestPath = path.join(options.outDir, dmgFileName);
     if (fs.existsSync(dmgDestPath)) fs.unlinkSync(dmgDestPath);
 
-    log(`Packaging DMG with Applications shortcut...`);
-    const createDmg = findTool('create-dmg');
-    if (createDmg) {
-      runCmd(
-        `create-dmg --volname "${productName}" --app-drop-link 480 170 --skip-jenkins --overwrite "${dmgDestPath}" "${appPath}"`
-      );
+    log(`Packaging DMG with Applications shortcut (Airtame-style)...`);
+    const dmgBuild = [
+      findTool('dmgbuild'),
+      path.join(userHome, '.local', 'bin', 'dmgbuild'),
+      path.join(userHome, '.local', 'share', 'uv', 'tools', 'dmgbuild', 'bin', 'dmgbuild'),
+    ].find(p => p && fs.existsSync(p));
+
+    if (dmgBuild) {
+      log(`Using dmgbuild for native macOS layout, custom background, and hidden chrome...`);
+      const bgPath = path.join(rootDir, 'src-tauri', 'icons', 'dmg-background.png');
+      const iconPath = path.join(rootDir, 'src-tauri', 'icons', 'icon.icns');
+      const appBaseName = path.basename(appPath);
+
+      const settingsContent = `
+import os
+volume_name = ${JSON.stringify(productName)}
+files = [${JSON.stringify(appPath)}]
+symlinks = {"Applications": "/Applications"}
+icon_locations = {
+    ${JSON.stringify(appBaseName)}: (180, 210),
+    "Applications": (480, 210),
+}
+window_rect = ((140, 100), (660, 440))
+default_view = "icon-view"
+show_toolbar = False
+show_status_bar = False
+show_pathbar = False
+show_sidebar = False
+sidebar_width = 0
+icon_size = 120.0
+text_size = 13.0
+${fs.existsSync(bgPath) ? `background = ${JSON.stringify(bgPath)}` : ''}
+${fs.existsSync(iconPath) ? `icon = ${JSON.stringify(iconPath)}` : ''}
+`;
+      const tempSettingsFile = path.join(os.tmpdir(), `dmgbuild_settings_${Date.now()}.py`);
+      fs.writeFileSync(tempSettingsFile, settingsContent, 'utf-8');
+
+      try {
+        runCmd(`"${dmgBuild}" -s "${tempSettingsFile}" "${productName}" "${dmgDestPath}"`);
+      } finally {
+        if (fs.existsSync(tempSettingsFile)) fs.unlinkSync(tempSettingsFile);
+      }
     } else {
-      logWarn(`'create-dmg' not found in PATH, using native hdiutil fallback with Applications symlink...`);
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbnerd-dmg-'));
-      const stagedApp = path.join(tempDir, `${productName}.app`);
-      runCmd(`ditto "${appPath}" "${stagedApp}"`);
-      fs.symlinkSync('/Applications', path.join(tempDir, 'Applications'));
-      runCmd(`hdiutil create -volname "${productName}" -srcfolder "${tempDir}" -ov -format UDZO "${dmgDestPath}"`);
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      const createDmg = findTool('create-dmg');
+      if (createDmg) {
+        runCmd(
+          `create-dmg --volname "${productName}" --app-drop-link 480 210 --skip-jenkins --overwrite "${dmgDestPath}" "${appPath}"`
+        );
+      } else {
+        logWarn(`Neither 'dmgbuild' nor 'create-dmg' found, using native hdiutil fallback...`);
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbnerd-dmg-'));
+        const stagedApp = path.join(tempDir, `${productName}.app`);
+        runCmd(`ditto "${appPath}" "${stagedApp}"`);
+        fs.symlinkSync('/Applications', path.join(tempDir, 'Applications'));
+        runCmd(`hdiutil create -volname "${productName}" -srcfolder "${tempDir}" -ov -format UDZO "${dmgDestPath}"`);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
     }
     logSuccess(`Generated DMG: ${dmgDestPath}`);
     artifacts.push({ platform: 'macOS (ARM64)', name: dmgFileName, path: dmgDestPath });
