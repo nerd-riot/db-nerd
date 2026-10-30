@@ -66,6 +66,16 @@ export interface RealTableSummary {
   comment?: string;
 }
 
+export function normalizeSnowflakeAccount(raw?: string): string {
+  if (!raw) return '';
+  let s = raw.trim();
+  s = s.replace(/^https?:\/\//i, '');
+  s = s.split('/')[0].split('?')[0];
+  s = s.split(':')[0];
+  s = s.replace(/\.snowflakecomputing\.com$/i, '');
+  return s.trim();
+}
+
 export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => {
   const normalizedEngine = normalizeDatabaseEngine(profile.engine);
   // If user has default placeholder password and host is localhost without SSH, resolve to docker dev credentials
@@ -84,6 +94,8 @@ export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => 
     username = normalizedEngine === 'postgres' ? 'dev_user' : normalizedEngine === 'mysql' ? 'dev_user' : 'default';
   }
 
+  const rawSnowflakeAccount = profile.snowflakeAccount || profile.accountIdentifier || (normalizedEngine === 'snowflake' ? profile.host : '');
+
   return {
     engine: normalizedEngine,
     host: profile.host === '127.0.0.1' ? 'localhost' : (profile.host || 'localhost'),
@@ -99,7 +111,7 @@ export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => 
     use_ssh_key: profile.useSshKey,
     ssh_key_path: profile.sshKeyPath,
     ssh_passphrase: profile.sshPassphrase,
-    snowflake_account: profile.snowflakeAccount || profile.accountIdentifier,
+    snowflake_account: normalizeSnowflakeAccount(rawSnowflakeAccount),
     snowflake_warehouse: profile.snowflakeWarehouse || profile.warehouse,
     snowflake_schema: profile.snowflakeSchema,
     snowflake_role: profile.snowflakeRole,

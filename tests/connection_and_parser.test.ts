@@ -4,7 +4,7 @@ import { parseConnectionUrl, buildConnectionUrl } from '../src/utils/connectionU
 import { parseConnectionImportFile } from '../src/utils/connectionImport.ts';
 import { splitSqlStatements, getQueryToExecute, extractTableAndPkFromQuery } from '../src/utils/sqlParser.ts';
 import { analyzeSqlSafety, isReadOnlySql } from '../src/utils/sqlSafety.ts';
-import { profileToConfig } from '../src/services/dbService.ts';
+import { profileToConfig, normalizeSnowflakeAccount } from '../src/services/dbService.ts';
 
 describe('Connection URL Parser & Builder', () => {
   it('parses complex AWS Aurora PostgreSQL URLs with TablePlus query parameters', () => {
@@ -63,6 +63,30 @@ describe('Connection URL Parser & Builder', () => {
     assert.equal(parsed.snowflakeRole, 'ACCOUNTADMIN');
     assert.equal(parsed.snowflakeAuthMethod, 'externalbrowser');
     assert.equal(parsed.name, 'Data Warehouse');
+  });
+
+  it('normalizes Snowflake account identifiers with domains, protocol, or ports', () => {
+    assert.equal(normalizeSnowflakeAccount('swa87046-ct57250.snowflakecomputing.com'), 'swa87046-ct57250');
+    assert.equal(normalizeSnowflakeAccount('https://swa87046-ct57250.snowflakecomputing.com/'), 'swa87046-ct57250');
+    assert.equal(normalizeSnowflakeAccount('http://swa87046-ct57250.snowflakecomputing.com:443/console?t=1'), 'swa87046-ct57250');
+    assert.equal(normalizeSnowflakeAccount('xy12345.us-east-1'), 'xy12345.us-east-1');
+    assert.equal(normalizeSnowflakeAccount('xy12345.us-east-1.snowflakecomputing.com'), 'xy12345.us-east-1');
+    assert.equal(normalizeSnowflakeAccount('  swa87046-ct57250.snowflakecomputing.com  '), 'swa87046-ct57250');
+
+    const cfg = profileToConfig({
+      id: 'test-sf',
+      engine: 'snowflake',
+      host: 'swa87046-ct57250.snowflakecomputing.com',
+      port: 443,
+      username: 'khoa@goessor.com',
+      database: 'DEMO_DB',
+      snowflakeAccount: 'swa87046-ct57250.snowflakecomputing.com',
+      snowflakeWarehouse: 'COMPUTE_WH',
+      snowflakeAuthMethod: 'externalbrowser',
+      active: false,
+      latencyMs: 1.0,
+    });
+    assert.equal(cfg.snowflake_account, 'swa87046-ct57250');
   });
 });
 

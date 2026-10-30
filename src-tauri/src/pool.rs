@@ -275,17 +275,45 @@ pub async fn get_or_create_redis_connection(
         .map_err(|e| format!("Redis connection failed: {}", e))
 }
 
+pub fn normalize_snowflake_account(raw: &str) -> String {
+    let mut s = raw.trim();
+    if let Some(stripped) = s.strip_prefix("https://") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_prefix("http://") {
+        s = stripped;
+    }
+    if let Some(idx) = s.find('/') {
+        s = &s[..idx];
+    }
+    if let Some(idx) = s.find('?') {
+        s = &s[..idx];
+    }
+    if let Some(idx) = s.rfind(':') {
+        s = &s[..idx];
+    }
+    let s = s.trim();
+    let lower = s.to_lowercase();
+    const SUFFIX: &str = ".snowflakecomputing.com";
+    if lower.ends_with(SUFFIX) {
+        let trimmed_len = s.len() - SUFFIX.len();
+        &s[..trimmed_len]
+    } else {
+        s
+    }
+    .trim()
+    .to_string()
+}
+
 pub async fn get_or_create_snowflake_session(
     config: &DbConfig,
 ) -> Result<std::sync::Arc<snowflake_connector_rs::Session>, String> {
-    let account = config
+    let raw_account = config
         .snowflake_account
         .as_deref()
+        .filter(|s| !s.trim().is_empty())
         .or_else(|| {
             let h = config.host.trim();
-            if h.ends_with(".snowflakecomputing.com") {
-                Some(h.trim_end_matches(".snowflakecomputing.com"))
-            } else if !h.is_empty() && h != "localhost" && h != "127.0.0.1" {
+            if !h.is_empty() && h != "localhost" && h != "127.0.0.1" {
                 Some(h)
             } else {
                 None
@@ -293,11 +321,16 @@ pub async fn get_or_create_snowflake_session(
         })
         .ok_or_else(|| "Snowflake Account is required (e.g. 'xy12345.us-east-1' or 'myorg-myaccount')".to_string())?;
 
+    let account = normalize_snowflake_account(raw_account);
+    if account.is_empty() {
+        return Err("Snowflake Account is required (e.g. 'xy12345.us-east-1' or 'myorg-myaccount')".to_string());
+    }
+
     let username = config
         .username
         .as_deref()
         .filter(|u| !u.trim().is_empty())
-        .ok_or_else(|| "Snowflake Username / Email is required".to_string())?;
+        .ok_or_else(|| "Snowflake Username / SSO Email is required".to_string())?;
 
     let auth_method = config
         .snowflake_auth_method
@@ -341,7 +374,7 @@ pub async fn get_or_create_snowflake_session(
         session_config = session_config.with_role(role);
     }
 
-    let client_config = snowflake_connector_rs::ClientConfig::new(username, account, auth)
+    let client_config = snowflake_connector_rs::ClientConfig::new(username, &account, auth)
         .with_session(session_config);
 
     let key = format!(
@@ -440,10 +473,17 @@ pub async fn close_pool(config: &DbConfig) {
             }
         }
         "snowflake" => {
+            let acc = config
+                .snowflake_account
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| config.host.as_str());
+            let norm_acc = normalize_snowflake_account(acc);
+            let sf_prefix = format!("snowflake://{}@{}:", user, norm_acc);
             let mut write_guard = registry().snowflake_sessions.write().await;
             let keys_to_remove: Vec<String> = write_guard
                 .keys()
-                .filter(|k| k.starts_with(&target_prefix))
+                .filter(|k| k.starts_with(&sf_prefix))
                 .cloned()
                 .collect();
             for k in keys_to_remove {
@@ -459,6 +499,42 @@ pub async fn close_pool(config: &DbConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_snowflake_account() {
+        assert_eq!(
+            normalize_snowflake_account("swa87046-ct57250.snowflakecomputing.com"),
+            "swa87046-ct57250"
+        );
+        assert_eq!(
+            normalize_snowflake_account("https://swa87046-ct57250.snowflakecomputing.com/"),
+            "swa87046-ct57250"
+        );
+        assert_eq!(
+            normalize_snowflake_account("http://swa87046-ct57250.snowflakecomputing.com:443/console?test=1"),
+            "swa87046-ct57250"
+        );
+        assert_eq!(
+            normalize_snowflake_account("swa87046-ct57250"),
+            "swa87046-ct57250"
+        );
+        assert_eq!(
+            normalize_snowflake_account("xy12345.us-east-1"),
+            "xy12345.us-east-1"
+        );
+        assert_eq!(
+            normalize_snowflake_account("xy12345.us-east-1.snowflakecomputing.com"),
+            "xy12345.us-east-1"
+        );
+        assert_eq!(
+            normalize_snowflake_account("SWA87046-CT57250.SNOWFLAKECOMPUTING.COM"),
+            "SWA87046-CT57250"
+        );
+        assert_eq!(
+            normalize_snowflake_account("   swa87046-ct57250.snowflakecomputing.com   "),
+            "swa87046-ct57250"
+        );
+    }
 
     #[test]
     fn test_percent_encode_special_chars() {

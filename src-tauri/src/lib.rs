@@ -359,15 +359,20 @@ async fn test_connection(config: DbConfig) -> Result<TestConnectionResult, Strin
         },
         "snowflake" => match pool::get_or_create_snowflake_session(&config).await {
             Ok(session) => {
-                let version = match session.query("SELECT CURRENT_VERSION()").await {
+                let version = match session.query_as::<snowflake_connector_rs::DynamicRow, _>("SELECT CURRENT_VERSION()").await {
                     Ok(cursor) => {
                         let rows = cursor.collect_table().await.ok();
                         rows.and_then(|t| {
-                            if t.row_count() > 0 {
-                                Some("Snowflake Cloud Data Warehouse".to_string())
-                            } else {
-                                None
+                            if let Some(Ok(row)) = t.rows().next() {
+                                if let Ok(json_obj) = row.into_json_object() {
+                                    if let Some(val) = json_obj.values().next() {
+                                        if let Some(v_str) = val.as_str() {
+                                            return Some(format!("Snowflake {}", v_str));
+                                        }
+                                    }
+                                }
                             }
+                            Some("Snowflake Cloud Data Warehouse".to_string())
                         })
                     }
                     Err(_) => None,
@@ -377,7 +382,7 @@ async fn test_connection(config: DbConfig) -> Result<TestConnectionResult, Strin
                     success: true,
                     message: "Successfully authenticated to Snowflake!".into(),
                     latency_ms: (latency * 10.0).round() / 10.0,
-                    version: version.or_else(|| Some("Snowflake".into())),
+                    version: version.or_else(|| Some("Snowflake Cloud Data Warehouse".into())),
                 })
             }
             Err(e) => Ok(TestConnectionResult {

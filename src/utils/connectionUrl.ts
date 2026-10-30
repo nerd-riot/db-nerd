@@ -211,10 +211,11 @@ export function parseConnectionUrl(urlString: string): ParsedConnectionUrl {
     queryParams['sshKeyPath'] ||
     (useSshKey ? (name.toLowerCase().includes('vigo') ? '~/.ssh/vigo/id_rsa' : 'id_rsa') : undefined);
 
-  let snowflakeAccount = queryParams['account'] || queryParams['snowflakeAccount'];
-  if (!snowflakeAccount && host.includes('.snowflakecomputing.com')) {
-    snowflakeAccount = host.replace('.snowflakecomputing.com', '');
+  let rawSnowflakeAccount = queryParams['account'] || queryParams['snowflakeAccount'];
+  if (!rawSnowflakeAccount && host.includes('.snowflakecomputing.com')) {
+    rawSnowflakeAccount = host;
   }
+  const snowflakeAccount = cleanSnowflakeAccount(rawSnowflakeAccount);
   const snowflakeWarehouse = queryParams['warehouse'] || queryParams['snowflakeWarehouse'];
   const snowflakeSchema = queryParams['schema'] || queryParams['snowflakeSchema'];
   const snowflakeRole = queryParams['role'] || queryParams['snowflakeRole'];
@@ -253,6 +254,17 @@ export function parseConnectionUrl(urlString: string): ParsedConnectionUrl {
   };
 }
 
+function cleanSnowflakeAccount(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  let s = raw.trim();
+  s = s.replace(/^https?:\/\//i, '');
+  s = s.split('/')[0].split('?')[0];
+  s = s.split(':')[0];
+  s = s.replace(/\.snowflakecomputing\.com$/i, '');
+  const res = s.trim();
+  return res.length > 0 ? res : undefined;
+}
+
 /**
  * Serializes a ConnectionProfile into a TablePlus-compatible connection URL.
  */
@@ -268,8 +280,9 @@ export function serializeConnectionUrl(conn: ConnectionProfile): string {
   params.set('tLSMode', '0');
 
   if (conn.engine === 'snowflake') {
-    if (conn.snowflakeAccount || conn.accountIdentifier) {
-      params.set('account', (conn.snowflakeAccount || conn.accountIdentifier)!);
+    const normAcc = cleanSnowflakeAccount(conn.snowflakeAccount || conn.accountIdentifier);
+    if (normAcc) {
+      params.set('account', normAcc);
     }
     if (conn.snowflakeWarehouse || conn.warehouse) {
       params.set('warehouse', (conn.snowflakeWarehouse || conn.warehouse)!);

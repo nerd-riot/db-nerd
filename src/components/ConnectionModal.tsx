@@ -40,7 +40,7 @@ import { HeartbeatDot, HeartbeatColor } from './HeartbeatDot';
 import { BorderChase } from './BorderChase';
 import { parseConnectionUrl, serializeConnectionUrl, ParsedConnectionUrl } from '../utils/connectionUrl';
 import { parseConnectionFile, ImportedConnectionItem } from '../utils/connectionImport';
-import { testRealConnection } from '../services/dbService';
+import { testRealConnection, normalizeSnowflakeAccount } from '../services/dbService';
 import { Tooltip } from './Tooltip';
 import {
   ContextMenuContainer,
@@ -2306,6 +2306,17 @@ export const ConnectionModal = () => {
                           accountIdentifier: e.target.value,
                         })
                       }
+                      onBlur={(e) => {
+                        const raw = e.target.value;
+                        const cleaned = normalizeSnowflakeAccount(raw);
+                        if (cleaned && cleaned !== raw) {
+                          setFormData({
+                            ...formData,
+                            snowflakeAccount: cleaned,
+                            accountIdentifier: cleaned,
+                          });
+                        }
+                      }}
                       placeholder="e.g. xy12345.us-east-1 or myorg-myaccount"
                       className="w-full h-9 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
                     />
@@ -2965,8 +2976,21 @@ export const ConnectionModal = () => {
                   {isTesting && (
                     <BorderChase color="sky" dual={true} speed="fast" borderWidth={1.5} glow={true} />
                   )}
-                  <span className="relative z-1">{isTesting ? 'Testing...' : 'Test Connection'}</span>
+                  <span className="relative z-1">
+                    {isTesting
+                      ? formData.engine === 'snowflake' && (formData.snowflakeAuthMethod || 'externalbrowser') === 'externalbrowser'
+                        ? 'Waiting for Browser...'
+                        : 'Testing...'
+                      : 'Test Connection'}
+                  </span>
                 </button>
+
+                {isTesting && formData.engine === 'snowflake' && (formData.snowflakeAuthMethod || 'externalbrowser') === 'externalbrowser' && (
+                  <span className="text-xs text-sky-600 dark:text-sky-400 font-medium flex items-center space-x-1.5 animate-pulse">
+                    <Globe className="w-3.5 h-3.5 animate-spin" />
+                    <span>Browser SSO opened — complete login in browser</span>
+                  </span>
+                )}
 
                 {testSuccess && (
                   <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center space-x-1.5 animate-in fade-in duration-200">
