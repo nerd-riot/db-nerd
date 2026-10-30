@@ -1,6 +1,6 @@
 [package]
 name = "dbnerd"
-version = "0.1.0"
+version = "1.2.2"
 description = "A fast, lightweight, native-feel database client for developers"
 authors = ["Khoa Nguyen"]
 license = "MIT"

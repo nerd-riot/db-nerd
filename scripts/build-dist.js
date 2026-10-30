@@ -212,6 +212,17 @@ async function main() {
     }
     logSuccess(`Built application: ${appPath}`);
 
+    // Seal and sign the .app bundle with ad-hoc signature to satisfy macOS Gatekeeper integrity
+    log(`Sealing macOS bundle signature (ad-hoc codesign)...`);
+    try {
+      runCmd(`xattr -cr "${appPath}"`);
+      runCmd(`codesign --force --deep --sign - "${appPath}"`);
+      runCmd(`codesign --verify --deep --strict --verbose=2 "${appPath}"`);
+      logSuccess(`Successfully sealed and verified macOS bundle integrity.`);
+    } catch (csErr) {
+      logWarn(`Ad-hoc codesigning warning: ${csErr.message}`);
+    }
+
     // Regenerate background matching current productName
     try {
       const bgGenScript = path.join(rootDir, 'scripts', 'generate_installer_backgrounds.py');
