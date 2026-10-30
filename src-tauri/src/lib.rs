@@ -193,6 +193,8 @@ pub struct TableSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
@@ -1280,6 +1282,7 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                                 name: name.to_string(),
                                 count: format_compact_table_badge(est_rows, &total_size),
                                 schema,
+                                database: Some(config.database.clone()),
                                 kind,
                                 owner,
                                 estimated_rows: Some(est_rows),
@@ -1332,7 +1335,7 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                 WHERE TABLE_SCHEMA = DATABASE()
                 ORDER BY TABLE_NAME ASC;
             "#;
-            let res = execute_query(config, stats_sql.into()).await?;
+            let res = execute_query(config.clone(), stats_sql.into()).await?;
             let mut tables = Vec::new();
             for r in res.rows {
                 let name_opt = r
@@ -1383,6 +1386,7 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                         name: name.to_string(),
                         count: format_compact_table_badge(est_rows, &total_size),
                         schema,
+                        database: Some(config.database.clone()),
                         kind,
                         owner,
                         estimated_rows: Some(est_rows),
@@ -1461,6 +1465,7 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                 SELECT
                     TABLE_NAME AS table_name,
                     TABLE_SCHEMA AS schema_name,
+                    TABLE_CATALOG AS database_name,
                     TABLE_TYPE AS kind,
                     COALESCE(TABLE_OWNER, '') AS owner,
                     COALESCE(ROW_COUNT, 0) AS estimated_rows,
@@ -1468,7 +1473,7 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                     COALESCE(COMMENT, '') AS comment
                 FROM INFORMATION_SCHEMA.TABLES
                 WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA'
-                ORDER BY TABLE_NAME ASC;
+                ORDER BY TABLE_SCHEMA ASC, TABLE_NAME ASC;
             "#;
             let res = execute_query(config.clone(), sql.into()).await;
             if let Ok(res) = res {
@@ -1500,6 +1505,12 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                                 .or_else(|| r.get("TABLE_SCHEMA"))
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
+                            let database = r
+                                .get("database_name")
+                                .or_else(|| r.get("DATABASE_NAME"))
+                                .or_else(|| r.get("TABLE_CATALOG"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
                             let kind = r
                                 .get("kind")
                                 .or_else(|| r.get("KIND"))
@@ -1523,6 +1534,7 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                                 name: name.to_string(),
                                 count: format_compact_table_badge(est_rows, &total_size),
                                 schema,
+                                database,
                                 kind,
                                 owner,
                                 estimated_rows: Some(est_rows),

@@ -135,6 +135,8 @@ export interface TabItem {
   type: 'grid' | 'schema' | 'sql' | 'stats' | 'connection' | 'default';
   title: string;
   tableName?: string;
+  schema?: string;
+  database?: string;
   queryId?: number;
   sqlContent?: string;
   canClose?: boolean;
@@ -270,6 +272,7 @@ export interface RealTableSummary {
   name: string;
   count: string;
   schema?: string;
+  database?: string;
   kind?: string;
   owner?: string;
   estimated_rows?: number;

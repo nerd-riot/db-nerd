@@ -515,10 +515,10 @@ export const Sidebar = () => {
                       >
                         <div
                           onClick={() => {
-                            openTableGridTab(tbl.name);
+                            openTableGridTab(tbl.name, tbl.schema);
                           }}
                           onDoubleClick={() => {
-                            openTableGridTab(tbl.name);
+                            openTableGridTab(tbl.name, tbl.schema);
                           }}
                           onContextMenu={(e) => {
                             e.preventDefault();

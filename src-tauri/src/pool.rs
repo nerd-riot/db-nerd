@@ -410,6 +410,11 @@ pub async fn get_or_create_snowflake_session(
         .await
         .map_err(|e| format!("Snowflake session creation failed: {}", e))?;
 
+    // Activate all secondary roles so privileges across any role granted to the user are active.
+    // This resolves: "SQL compilation error: Object does not exist or not authorized.
+    // Your primary role ... or one of your secondary roles must have at least one privilege granted"
+    let _ = session.query("USE SECONDARY ROLES ALL;").await;
+
     let arc_session = std::sync::Arc::new(session);
 
     let mut write_guard = registry().snowflake_sessions.write().await;

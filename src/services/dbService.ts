@@ -54,6 +54,7 @@ export interface RealTableSummary {
   name: string;
   count: string;
   schema?: string;
+  database?: string;
   kind?: string;
   owner?: string;
   estimated_rows?: number;
@@ -739,6 +740,64 @@ export async function getRealTableSchema(
         indexes: [],
         foreignKeys: [],
         ddl,
+      };
+    } else if (normEngine === 'snowflake') {
+      const targetSchema = summary?.schema;
+      const schemaFilter = targetSchema ? `AND c.TABLE_SCHEMA = '${escapeSqlStringLiteral(targetSchema)}'` : '';
+      const colSql = `
+        SELECT
+          c.COLUMN_NAME AS name,
+          c.DATA_TYPE AS data_type,
+          (c.IS_NULLABLE = 'YES') AS is_nullable,
+          c.COLUMN_DEFAULT AS default_value,
+          COALESCE(c.COMMENT, '') AS comment
+        FROM INFORMATION_SCHEMA.COLUMNS c
+        WHERE c.TABLE_NAME = '${safeTable}'
+        ${schemaFilter}
+        ORDER BY c.ORDINAL_POSITION ASC;
+      `;
+
+      const quotedObj = targetSchema ? `"${targetSchema}"."${tableName}"` : `"${tableName}"`;
+      const ddlSql = `SELECT GET_DDL('TABLE', '${quotedObj}') AS ddl;`;
+
+      const [colRes, ddlRes] = await Promise.all([
+        executeRealQuery(profile, colSql),
+        executeRealQuery(profile, ddlSql),
+      ]);
+
+      if (!colRes.success || !colRes.rows || colRes.rows.length === 0) {
+        return null;
+      }
+
+      const columns: ColumnDefinition[] = colRes.rows.map((r: any) => ({
+        name: String(r.name || r.NAME || ''),
+        type: String(r.data_type || r.DATA_TYPE || 'VARCHAR'),
+        isNullable: Boolean(r.is_nullable ?? (r.IS_NULLABLE === 'YES')),
+        defaultValue: r.default_value !== null && r.default_value !== undefined ? String(r.default_value) : undefined,
+        isPrimaryKey: false,
+        isForeignKey: false,
+        comment: r.comment ? String(r.comment) : undefined,
+      }));
+
+      let ddl = '';
+      if (ddlRes.success && ddlRes.rows && ddlRes.rows.length > 0) {
+        const row0 = ddlRes.rows[0];
+        ddl = String(row0.ddl || row0.DDL || Object.values(row0)[0] || '');
+      }
+
+      const estRows = summary?.estimated_rows ?? 0;
+      const totalSize = summary?.total_size || '0 bytes';
+
+      return {
+        tableName,
+        schema: targetSchema || summary?.schema || 'PUBLIC',
+        engine: 'Snowflake Cloud Data Warehouse',
+        rowCount: `${estRows.toLocaleString()} rows`,
+        totalSize,
+        columns,
+        indexes: [],
+        foreignKeys: [],
+        ddl: ddl || `-- DDL for table: ${quotedObj}\n-- (Snowflake GET_DDL unavailable)`,
       };
     }
   } catch (e) {

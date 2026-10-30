@@ -95,6 +95,8 @@ export function calculatePaginationMeta(
  */
 export function buildPaginatedSelectSql(params: {
   tableName: string;
+  schema?: string;
+  database?: string;
   engine?: string;
   page: number;
   pageSize: number;
@@ -112,7 +114,16 @@ export function buildPaginatedSelectSql(params: {
     return 'KEYS *';
   }
 
-  const quotedTable = quoteIdentifier(params.tableName, normEngine);
+  let fullTableName = params.tableName;
+  if (!fullTableName.includes('.')) {
+    if (params.database && params.schema && (normEngine === 'snowflake' || normEngine === 'postgres')) {
+      fullTableName = `${params.database}.${params.schema}.${params.tableName}`;
+    } else if (params.schema && (normEngine === 'snowflake' || normEngine === 'postgres')) {
+      fullTableName = `${params.schema}.${params.tableName}`;
+    }
+  }
+
+  const quotedTable = quoteIdentifier(fullTableName, normEngine);
   const pageSize = Math.max(1, Math.min(MAX_GRID_PAGE_SIZE, Math.floor(params.pageSize || DEFAULT_GRID_PAGE_SIZE)));
   const offset = Math.max(0, Math.floor(params.page || 0) * pageSize);
 
@@ -130,6 +141,8 @@ export function buildPaginatedSelectSql(params: {
  */
 export function buildExactCountSql(params: {
   tableName: string;
+  schema?: string;
+  database?: string;
   engine?: string;
   whereClause?: string;
   whereText?: string;
@@ -143,7 +156,16 @@ export function buildExactCountSql(params: {
     return 'DBSIZE';
   }
 
-  const quotedTable = quoteIdentifier(params.tableName, normEngine);
+  let fullTableName = params.tableName;
+  if (!fullTableName.includes('.')) {
+    if (params.database && params.schema && (normEngine === 'snowflake' || normEngine === 'postgres')) {
+      fullTableName = `${params.database}.${params.schema}.${params.tableName}`;
+    } else if (params.schema && (normEngine === 'snowflake' || normEngine === 'postgres')) {
+      fullTableName = `${params.schema}.${params.tableName}`;
+    }
+  }
+
+  const quotedTable = quoteIdentifier(fullTableName, normEngine);
   const cleanWhere = sanitizeFilterClause(params.whereClause ?? params.whereText ?? '');
   const wherePart = cleanWhere ? ` WHERE ${cleanWhere}` : '';
   return `SELECT COUNT(*) AS total_count FROM ${quotedTable}${wherePart};`;

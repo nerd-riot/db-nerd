@@ -43,7 +43,7 @@ interface AppState {
   activeTabId: string;
   setActiveTabId: (id: string) => void;
   openNewQueryTab: (initialSql?: string) => void;
-  openTableGridTab: (tableName: string) => void;
+  openTableGridTab: (tableName: string, schema?: string) => void;
   openTableSchemaTab: (tableName: string) => void;
   openAllTableStatsTab: () => void;
   openAllFunctionsTab: () => void;
@@ -1402,14 +1402,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistSessionTabs(activeConnection.id, nextTabs, nextTabId, selectedTable, nextSqlStates);
   },
 
-  openTableGridTab: (tableName) => {
+  openTableGridTab: (tableName, schema) => {
     const { tabs, activeConnection, sqlTabStates } = get();
     if (!activeConnection || !activeConnection.id) {
       set({ isConnectionModalOpen: true });
       get().showToast('⚠️ Please connect to a database first (⌘K)');
       return;
     }
-    const existing = tabs.find((t) => t.type === 'grid' && t.tableName === tableName);
+    const existing = tabs.find((t) => t.type === 'grid' && t.tableName === tableName && (!schema || t.schema === schema));
     if (existing) {
       set({
         activeTabId: existing.id,
@@ -1420,11 +1420,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().setSelectedTable(tableName, true);
       persistSessionTabs(activeConnection.id, tabs, existing.id, tableName, sqlTabStates);
     } else {
+      const tabId = schema ? `tab-grid-${schema}-${tableName}` : `tab-grid-${tableName}`;
       const newTab: TabItem = {
-        id: `tab-grid-${tableName}`,
+        id: tabId,
         type: 'grid',
         title: tableName,
         tableName,
+        schema,
         canClose: true,
       };
       const nextTabs = [...tabs, newTab];
@@ -2631,14 +2633,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   fetchTableExactCount: async (tableName?: string, includeFilter = true) => {
-    const { activeConnection, selectedTable, filterWhereText, isFilterBarOpen, showToast } = get();
+    const { activeConnection, selectedTable, filterWhereText, isFilterBarOpen, showToast, liveTables } = get();
     const targetTable = tableName || selectedTable;
     if (!activeConnection?.id || !targetTable) return;
+
+    const summary = liveTables[activeConnection.id]?.find((t) => t.name === targetTable);
+    const tableSchema = summary?.schema;
+    const tableDatabase = summary?.database || (activeConnection.database && activeConnection.database !== '0' ? activeConnection.database : undefined);
 
     set({ gridIsCounting: true });
     try {
       const countSql = buildExactCountSql({
         tableName: targetTable,
+        schema: tableSchema,
+        database: tableDatabase,
         engine: activeConnection.engine,
         whereText: includeFilter && isFilterBarOpen ? filterWhereText : '',
       });
@@ -2698,6 +2706,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
+    const tabSchema = (activeTab?.type === 'grid' ? activeTab.schema : undefined);
+    const summary = liveTables[activeConnection.id]?.find((t) => t.name === targetTable && (!tabSchema || t.schema === tabSchema)) || liveTables[activeConnection.id]?.find((t) => t.name === targetTable);
+    const tableSchema = tabSchema || summary?.schema;
+    const tableDatabase = summary?.database || (activeConnection.database && activeConnection.database !== '0' ? activeConnection.database : undefined);
+
     const currentPage = pageOverride !== undefined ? pageOverride : gridPage;
     const currentPageSize = Math.max(1, Math.min(300, pageSizeOverride !== undefined ? pageSizeOverride : gridPageSize));
     const offset = Math.max(0, currentPage * currentPageSize);
@@ -2708,6 +2721,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const hasCustomFilter = Boolean(activeWhere) || Boolean(activeOrderBy);
       const sql = buildPaginatedSelectSql({
         tableName: targetTable,
+        schema: tableSchema,
+        database: tableDatabase,
         engine: activeConnection.engine,
         page: currentPage,
         pageSize: currentPageSize,
@@ -2720,6 +2735,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!res.success && hasCustomFilter && activeConnection.engine !== 'redis') {
         const fallbackSql = buildPaginatedSelectSql({
           tableName: targetTable,
+          schema: tableSchema,
+          database: tableDatabase,
           engine: activeConnection.engine,
           page: currentPage,
           pageSize: currentPageSize,

@@ -5,6 +5,7 @@ import { parseConnectionImportFile } from '../src/utils/connectionImport.ts';
 import { splitSqlStatements, getQueryToExecute, extractTableAndPkFromQuery } from '../src/utils/sqlParser.ts';
 import { analyzeSqlSafety, isReadOnlySql } from '../src/utils/sqlSafety.ts';
 import { profileToConfig, normalizeSnowflakeAccount } from '../src/services/dbService.ts';
+import { buildPaginatedSelectSql, buildExactCountSql } from '../src/modules/grid/pagination.ts';
 
 describe('Connection URL Parser & Builder', () => {
   it('parses complex AWS Aurora PostgreSQL URLs with TablePlus query parameters', () => {
@@ -87,6 +88,48 @@ describe('Connection URL Parser & Builder', () => {
       latencyMs: 1.0,
     });
     assert.equal(cfg.snowflake_account, 'swa87046-ct57250');
+  });
+
+  it('builds schema-qualified queries for Snowflake and PostgreSQL to prevent object not found errors', () => {
+    // 1. Snowflake with schema
+    const sfSql = buildPaginatedSelectSql({
+      tableName: 'ITEM_MASTER',
+      schema: 'PUBLIC',
+      engine: 'snowflake',
+      page: 0,
+      pageSize: 100,
+    });
+    assert.equal(sfSql, 'SELECT * FROM "PUBLIC"."ITEM_MASTER" LIMIT 100 OFFSET 0;');
+
+    // 2. Snowflake with database and schema
+    const sfDbSql = buildPaginatedSelectSql({
+      tableName: 'ITEM_MASTER',
+      schema: 'INVENTORY',
+      database: 'PROD_DB',
+      engine: 'snowflake',
+      page: 1,
+      pageSize: 50,
+    });
+    assert.equal(sfDbSql, 'SELECT * FROM "PROD_DB"."INVENTORY"."ITEM_MASTER" LIMIT 50 OFFSET 50;');
+
+    // 3. Exact count with schema and database
+    const sfCount = buildExactCountSql({
+      tableName: 'ITEM_MASTER',
+      schema: 'INVENTORY',
+      database: 'PROD_DB',
+      engine: 'snowflake',
+    });
+    assert.equal(sfCount, 'SELECT COUNT(*) AS total_count FROM "PROD_DB"."INVENTORY"."ITEM_MASTER";');
+
+    // 4. PostgreSQL with schema
+    const pgSql = buildPaginatedSelectSql({
+      tableName: 'users',
+      schema: 'auth',
+      engine: 'postgres',
+      page: 0,
+      pageSize: 25,
+    });
+    assert.equal(pgSql, 'SELECT * FROM "auth"."users" LIMIT 25 OFFSET 0;');
   });
 });
 
