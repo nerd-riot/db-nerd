@@ -1,6 +1,9 @@
-name: Release - SemVer & Release Notes
+name: Release & Multiplatform Build
 
 on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
     inputs:
       bump_type:
@@ -18,7 +21,7 @@ on:
         required: false
         type: string
       dry_run:
-        description: 'Dry run (calculate next version without publishing release)'
+        description: 'Dry run (build artifacts without publishing final release)'
         required: false
         default: false
         type: boolean
@@ -33,10 +36,15 @@ permissions:
   issues: read
 
 jobs:
-  release:
-    name: Create SemVer Tag & GitHub Release
+  prepare-release:
+    name: 🏷️ Calculate SemVer Tag & Draft Release
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, '[skip release]') && !contains(github.event.head_commit.message, '[skip ci]')"
+    outputs:
+      tag: ${{ steps.semver.outputs.next_tag }}
+      skip_release: ${{ steps.semver.outputs.skip_release }}
+      release_name: ${{ steps.release_notes.outputs.name }}
+      release_body: ${{ steps.release_notes.outputs.body }}
     
     steps:
       - name: 📥 Checkout repository
@@ -51,6 +59,15 @@ jobs:
         run: |
           set -e
 
+          # If triggered by a pushed tag directly
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_NAME="${{ github.ref_name }}"
+            echo "Triggered by tag push: ${TAG_NAME}"
+            echo "next_tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "skip_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Fetch all tags from remote
           git fetch --tags --force
 
@@ -60,15 +77,12 @@ jobs:
           echo "previous_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
 
           if [ -z "$LATEST_TAG" ]; then
-            # Initial baseline release tag (Best Practice: v1.0.0)
             NEXT_TAG="v1.0.0"
-            echo "No previous tags found. Initializing trunk baseline at ${NEXT_TAG}."
+            echo "No previous tags found. Initializing baseline at ${NEXT_TAG}."
           else
-            # Strip leading 'v'
             VERSION="${LATEST_TAG#v}"
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-            # Check trigger type
             EVENT_NAME="${{ github.event_name }}"
             MANUAL_BUMP="${{ github.event.inputs.bump_type }}"
             CUSTOM_TAG="${{ github.event.inputs.custom_tag }}"
@@ -79,14 +93,11 @@ jobs:
               elif [ "$MANUAL_BUMP" = "minor" ]; then
                 NEXT_TAG="v${MAJOR}.$((MINOR + 1)).0"
               elif [ "$MANUAL_BUMP" = "custom" ] && [ -n "$CUSTOM_TAG" ]; then
-                # Ensure custom tag starts with 'v'
                 [[ "$CUSTOM_TAG" =~ ^v ]] && NEXT_TAG="$CUSTOM_TAG" || NEXT_TAG="v$CUSTOM_TAG"
               else
-                # Default patch (v1.0.xx)
                 NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
               fi
             else
-              # Automated calculation from commit history since last tag
               COMMITS_SINCE_TAG=$(git log "${LATEST_TAG}..HEAD" --oneline || true)
 
               if [ -z "$COMMITS_SINCE_TAG" ]; then
@@ -95,13 +106,11 @@ jobs:
                 exit 0
               fi
 
-              # Inspect Conventional Commits
               if echo "$COMMITS_SINCE_TAG" | grep -qE 'BREAKING CHANGE|!:'; then
                 NEXT_TAG="v$((MAJOR + 1)).0.0"
               elif echo "$COMMITS_SINCE_TAG" | grep -qE '^[a-f0-9]+ feat(\(.*\))?:'; then
                 NEXT_TAG="v${MAJOR}.$((MINOR + 1)).0"
               else
-                # Patch bump (v1.0.xx pattern)
                 NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
               fi
             fi
@@ -132,44 +141,158 @@ jobs:
               });
               
               core.setOutput('name', res.data.name || `Release ${nextTag}`);
-              core.setOutput('body', res.data.body || `Automated Trunk-Based Release ${nextTag}`);
+              core.setOutput('body', res.data.body || `Automated Release ${nextTag}`);
             } catch (err) {
               console.warn('Failed to call generateReleaseNotes, using fallback template:', err.message);
               core.setOutput('name', `Release ${nextTag}`);
-              core.setOutput('body', `### 🚀 Release ${nextTag}\n\nAutomated Trunk-Based release generated from \`main\` branch.\n\n* Full Commits: https://github.com/${context.repo.owner}/${context.repo.repo}/commits/${nextTag}`);
+              core.setOutput('body', `### 🚀 Release ${nextTag}\n\nAutomated release generated from \`main\` branch.\n\n* Full Commits: https://github.com/${context.repo.owner}/${context.repo.repo}/commits/${nextTag}`);
             }
 
-      - name: 🚀 Publish GitHub Release & Tag
+      - name: 📦 Create Draft GitHub Release
         if: steps.semver.outputs.skip_release != 'true' && github.event.inputs.dry_run != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const nextTag = '${{ steps.semver.outputs.next_tag }}';
-            const releaseName = `${{ steps.release_notes.outputs.name }}` || `Release ${nextTag}`;
-            const releaseBody = `${{ steps.release_notes.outputs.body }}`;
-            
-            console.log(`Publishing Release ${nextTag} with name: "${releaseName}"...`);
-            
-            const release = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: nextTag,
-              target_commitish: 'main',
-              name: releaseName,
-              body: releaseBody,
-              draft: false,
-              prerelease: false,
-              generate_release_notes: false
-            });
-            
-            console.log(`Successfully created release: ${release.data.html_url}`);
-
-      - name: 📋 Dry Run Summary
-        if: github.event.inputs.dry_run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "================ DRY RUN SUMMARY ================"
-          echo "Next Tag: ${{ steps.semver.outputs.next_tag }}"
-          echo "Release Name: ${{ steps.release_notes.outputs.name }}"
-          echo "Release Body:"
-          echo "${{ steps.release_notes.outputs.body }}"
-          echo "================================================="
+          set -e
+          TAG="${{ steps.semver.outputs.next_tag }}"
+          TITLE="${{ steps.release_notes.outputs.name }}"
+          BODY="${{ steps.release_notes.outputs.body }}"
+
+          # If release for this tag already exists, skip creation
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, updating..."
+            gh release edit "$TAG" --title "$TITLE" --notes "$BODY" --draft
+          else
+            echo "Creating draft release for $TAG..."
+            gh release create "$TAG" --title "$TITLE" --notes "$BODY" --draft --target main
+          fi
+
+  build-macos:
+    name: 🍏 Build macOS (Apple Silicon ARM64)
+    needs: prepare-release
+    if: needs.prepare-release.outputs.skip_release != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 🟢 Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: 🦀 Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: ⚡ Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: 📥 Install npm dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: 🛠️ Install create-dmg
+        run: brew install create-dmg || true
+
+      - name: 🏗️ Build macOS Installer (.app, .dmg with Applications shortcut, .zip)
+        run: node scripts/build-dist.js --mac --out-dir=./dist-releases
+
+      - name: 📤 Upload Actions Artifacts (macOS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-assets
+          path: dist-releases/*
+          if-no-files-found: error
+
+      - name: 🚀 Upload Assets to Draft Release
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare-release.outputs.tag }}" dist-releases/* --clobber
+
+  build-windows:
+    name: 🪟 Build Windows (x64 NSIS + Standalone)
+    needs: prepare-release
+    if: needs.prepare-release.outputs.skip_release != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 🟢 Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: 🦀 Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: ⚡ Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: 📥 Install npm dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: 🏗️ Build Windows Installer (NSIS Setup + Standalone exe)
+        run: node scripts/build-dist.js --win --out-dir=./dist-releases
+
+      - name: 📤 Upload Actions Artifacts (Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-assets
+          path: dist-releases/*
+          if-no-files-found: error
+
+      - name: 🚀 Upload Assets to Draft Release
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare-release.outputs.tag }}" dist-releases/* --clobber
+
+  publish-release:
+    name: 🚀 Publish Official GitHub Release
+    needs: [prepare-release, build-macos, build-windows]
+    if: needs.prepare-release.outputs.skip_release != 'true' && github.event.inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 📢 Publish Draft Release to Public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          echo "Publishing release $TAG from draft..."
+          gh release edit "$TAG" --draft=false
+
+          RELEASE_URL=$(gh release view "$TAG" --json url -q .url)
+          echo "### 🚀 Successfully Published Release $TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "Direct URL: [$RELEASE_URL]($RELEASE_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "All macOS (.dmg, .zip) and Windows (.exe setup, .exe standalone) installer assets are attached." >> "$GITHUB_STEP_SUMMARY"
