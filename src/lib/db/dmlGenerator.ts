@@ -28,7 +28,7 @@ export function buildTruncateTableSql(
 ): string {
   const norm = normalizeDatabaseEngine(engine);
   const qualifiedTable =
-    norm === 'postgres' && schema && !tableName.includes('.')
+    (norm === 'postgres' || norm === 'snowflake') && schema && !tableName.includes('.')
       ? `${schema}.${tableName}`
       : tableName;
   const quotedTable = quoteIdentifier(qualifiedTable, engine);
@@ -71,7 +71,7 @@ export function buildDropTableSql(
 ): string {
   const norm = normalizeDatabaseEngine(engine);
   const qualifiedTable =
-    norm === 'postgres' && schema && !tableName.includes('.')
+    (norm === 'postgres' || norm === 'snowflake') && schema && !tableName.includes('.')
       ? `${schema}.${tableName}`
       : tableName;
   const quotedTable = quoteIdentifier(qualifiedTable, engine);
@@ -211,7 +211,7 @@ export function buildPendingTransactionSql(
   }
 
   const qualifiedTable =
-    norm === 'postgres' && schema && !tableName.includes('.')
+    (norm === 'postgres' || norm === 'snowflake') && schema && !tableName.includes('.')
       ? `${schema}.${tableName}`
       : tableName;
   const quotedTable = quoteIdentifier(qualifiedTable, engine);

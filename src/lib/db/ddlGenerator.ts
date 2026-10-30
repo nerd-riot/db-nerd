@@ -39,7 +39,7 @@ export function generateAlterTableStatements({
 }: BuildAlterTableSqlParams): string[] {
   const norm = normalizeDatabaseEngine(engine);
   const qualifiedTable =
-    norm === 'postgres' && schema && !tableName.includes('.')
+    (norm === 'postgres' || norm === 'snowflake') && schema && !tableName.includes('.')
       ? `${schema}.${tableName}`
       : tableName;
   const quotedTable = quoteIdentifier(qualifiedTable, engine);

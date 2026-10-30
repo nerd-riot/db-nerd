@@ -55,7 +55,7 @@ export const TableActionModal: React.FC = () => {
   const schema =
     liveSchemas[connId]?.[tableName]?.schema ||
     liveTables[connId]?.find((t) => t.name === tableName)?.schema ||
-    (engine === 'postgres' ? 'public' : undefined);
+    (engine === 'postgres' ? 'public' : engine === 'snowflake' ? 'PUBLIC' : undefined);
 
   const previewSql = isTruncate
     ? buildTruncateTableSql(tableName, engine, schema, { restartIdentity, cascade, ignoreFk })

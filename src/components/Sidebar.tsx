@@ -140,7 +140,7 @@ export const Sidebar = () => {
 
   // Context Menu state
   const [tableContextPos, setTableContextPos] = useState<ContextMenuPosition | null>(null);
-  const [targetTable, setTargetTable] = useState<string | null>(null);
+  const [targetTable, setTargetTable] = useState<{ name: string; schema?: string } | null>(null);
 
   const [queryContextPos, setQueryContextPos] = useState<ContextMenuPosition | null>(null);
   const [targetQuery, setTargetQuery] = useState<{ id: string; title?: string; sql: string } | null>(null);
@@ -475,7 +475,7 @@ export const Sidebar = () => {
 
                     return (
                       <Tooltip
-                        key={tbl.name}
+                        key={tbl.schema ? `${tbl.schema}.${tbl.name}` : tbl.name}
                         side="right"
                         delay={150}
                         content={
@@ -524,7 +524,7 @@ export const Sidebar = () => {
                             e.preventDefault();
                             e.stopPropagation();
                             setTableContextPos({ x: e.clientX, y: e.clientY });
-                            setTargetTable(tbl.name);
+                            setTargetTable({ name: tbl.name, schema: tbl.schema });
                           }}
                           className={`flex items-center justify-between px-2.5 py-1 rounded cursor-pointer text-xs font-mono transition-colors group ${
                             isSelected
@@ -841,14 +841,14 @@ export const Sidebar = () => {
           }}
           width={240}
         >
-          <ContextMenuHeader title={`Table: ${targetTable}`} />
+          <ContextMenuHeader title={`Table: ${targetTable.schema ? `${targetTable.schema}.${targetTable.name}` : targetTable.name}`} />
           <ContextMenuItem
             icon={<TableIcon className="w-3.5 h-3.5 text-sky-400" />}
             label="Open Data (Grid)"
             shortcut="↵"
             onClick={() => {
-              setSelectedTable(targetTable);
-              openTableGridTab(targetTable);
+              setSelectedTable(targetTable.name);
+              openTableGridTab(targetTable.name, targetTable.schema);
               setTableViewMode('data');
             }}
           />
@@ -856,8 +856,8 @@ export const Sidebar = () => {
             icon={<Columns className="w-3.5 h-3.5 text-indigo-400" />}
             label="Open Structure (Schema)"
             onClick={() => {
-              setSelectedTable(targetTable);
-              openTableSchemaTab(targetTable);
+              setSelectedTable(targetTable.name);
+              openTableSchemaTab(targetTable.name, targetTable.schema);
             }}
           />
           <ContextMenuItem
@@ -865,7 +865,7 @@ export const Sidebar = () => {
             label="Reload Table Data"
             shortcut="⌘R"
             onClick={() => {
-              reloadData(targetTable);
+              reloadData(targetTable.name);
             }}
           />
           <ContextMenuItem
@@ -874,7 +874,8 @@ export const Sidebar = () => {
             shortcut="⌘E"
             onClick={() => {
               const limit = settings.defaultQueryLimit || 100;
-              openNewQueryTab(`SELECT * FROM ${targetTable} LIMIT ${limit};`);
+              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
+              openNewQueryTab(`SELECT * FROM ${qualified} LIMIT ${limit};`);
             }}
           />
           <ContextMenuDivider />
@@ -882,8 +883,9 @@ export const Sidebar = () => {
             icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
             label="Copy Table Name"
             onClick={() => {
-              navigator.clipboard.writeText(targetTable);
-              showToast(`📋 Copied "${targetTable}"`);
+              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : targetTable.name;
+              navigator.clipboard.writeText(qualified);
+              showToast(`📋 Copied "${qualified}"`);
             }}
           />
           <ContextMenuItem
@@ -891,16 +893,17 @@ export const Sidebar = () => {
             label="Copy SELECT Query"
             onClick={() => {
               const limit = settings.defaultQueryLimit || 100;
-              const query = `SELECT * FROM ${targetTable} LIMIT ${limit};`;
+              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
+              const query = `SELECT * FROM ${qualified} LIMIT ${limit};`;
               navigator.clipboard.writeText(query);
-              showToast(`📋 Copied SELECT query for "${targetTable}"`);
+              showToast(`📋 Copied SELECT query for "${targetTable.name}"`);
             }}
           />
           <ContextMenuItem
             icon={<Code className="w-3.5 h-3.5 text-slate-400" />}
             label="Copy INSERT Template"
             onClick={() => {
-              const schema = getTableSchema(targetTable);
+              const schema = getTableSchema(targetTable.name);
               const cols: ColumnDefinition[] = schema?.columns && schema.columns.length > 0
                 ? schema.columns
                 : [
@@ -910,7 +913,7 @@ export const Sidebar = () => {
                   ];
               
               const insertCols = cols.filter((c) => !c.defaultValue?.includes('generated always'));
-              const colNames = insertCols.map((c) => c.name).join(', ');
+              const colNames = insertCols.map((c) => `"${c.name}"`).join(', ');
               const valPlaceholders = insertCols
                 .map((c) => {
                   const type = (c.type || '').toLowerCase();
@@ -923,26 +926,28 @@ export const Sidebar = () => {
                 })
                 .join(', ');
               
-              const insertSql = `INSERT INTO ${targetTable} (${colNames})\nVALUES (${valPlaceholders});`;
+              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
+              const insertSql = `INSERT INTO ${qualified} (${colNames})\nVALUES (${valPlaceholders});`;
               navigator.clipboard.writeText(insertSql);
-              showToast(`📋 Copied INSERT template for "${targetTable}"`);
+              showToast(`📋 Copied INSERT template for "${targetTable.name}"`);
             }}
           />
           <ContextMenuItem
             icon={<Database className="w-3.5 h-3.5 text-slate-400" />}
             label="Copy CREATE TABLE DDL"
             onClick={() => {
-              const schema = getTableSchema(targetTable);
+              const schema = getTableSchema(targetTable.name);
               let ddlSql = schema?.ddl;
+              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
               if (!ddlSql) {
                 const cols = schema?.columns || [];
                 const colDefs = cols
                   .map((c) => `  "${c.name}" ${c.type.toUpperCase()}${c.isPrimaryKey ? ' PRIMARY KEY' : ''}${c.isNullable ? '' : ' NOT NULL'}`)
                   .join(',\n');
-                ddlSql = `CREATE TABLE "${targetTable}" (\n${colDefs}\n);`;
+                ddlSql = `CREATE TABLE ${qualified} (\n${colDefs}\n);`;
               }
               navigator.clipboard.writeText(ddlSql.trim());
-              showToast(`📋 Copied CREATE TABLE DDL for "${targetTable}"`);
+              showToast(`📋 Copied CREATE TABLE DDL for "${targetTable.name}"`);
             }}
           />
           <ContextMenuDivider />
@@ -951,7 +956,7 @@ export const Sidebar = () => {
             label="Truncate Table..."
             danger
             onClick={() => {
-              openTableActionModal('truncate', targetTable);
+              openTableActionModal('truncate', targetTable.name);
             }}
           />
           <ContextMenuItem
@@ -959,7 +964,7 @@ export const Sidebar = () => {
             label="Drop Table..."
             danger
             onClick={() => {
-              openTableActionModal('delete', targetTable);
+              openTableActionModal('delete', targetTable.name);
             }}
           />
         </ContextMenuContainer>

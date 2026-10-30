@@ -326,6 +326,38 @@ export async function getRealFunctions(profile: ConnectionProfile): Promise<Func
           definition: String(r.definition || ''),
         }));
       }
+    } else if (normEngine === 'snowflake') {
+      const sql = `
+        SELECT
+          FUNCTION_NAME AS name,
+          FUNCTION_SCHEMA AS schema,
+          'function' AS kind,
+          COALESCE(FUNCTION_OWNER, '') AS owner,
+          '--' AS estimated_row,
+          '--' AS total_size,
+          '--' AS data_size,
+          '--' AS index_size,
+          COALESCE(COMMENT, '--') AS comment,
+          '' AS definition
+        FROM INFORMATION_SCHEMA.FUNCTIONS
+        WHERE FUNCTION_SCHEMA != 'INFORMATION_SCHEMA'
+        ORDER BY FUNCTION_SCHEMA ASC, FUNCTION_NAME ASC;
+      `;
+      const res = await executeRealQuery(profile, sql);
+      if (res.success && res.rows && res.rows.length > 0) {
+        return res.rows.map((r: any) => ({
+          name: String(r.name || r.NAME || ''),
+          schema: String(r.schema || r.SCHEMA || 'PUBLIC'),
+          kind: String(r.kind || r.KIND || 'function'),
+          owner: String(r.owner || r.OWNER || 'snowflake'),
+          estimated_row: '--',
+          total_size: '--',
+          data_size: '--',
+          index_size: '--',
+          comment: String(r.comment || r.COMMENT || '--'),
+          definition: String(r.definition || r.DEFINITION || ''),
+        }));
+      }
     }
     return [];
   } catch (e) {
@@ -743,7 +775,9 @@ export async function getRealTableSchema(
       };
     } else if (normEngine === 'snowflake') {
       const targetSchema = summary?.schema;
+      const targetDb = summary?.database || (profile.database && profile.database !== '0' ? profile.database : undefined);
       const schemaFilter = targetSchema ? `AND c.TABLE_SCHEMA = '${escapeSqlStringLiteral(targetSchema)}'` : '';
+      const dbFilter = targetDb ? `AND c.TABLE_CATALOG = '${escapeSqlStringLiteral(targetDb)}'` : '';
       const colSql = `
         SELECT
           c.COLUMN_NAME AS name,
@@ -754,35 +788,67 @@ export async function getRealTableSchema(
         FROM INFORMATION_SCHEMA.COLUMNS c
         WHERE c.TABLE_NAME = '${safeTable}'
         ${schemaFilter}
+        ${dbFilter}
         ORDER BY c.ORDINAL_POSITION ASC;
       `;
 
-      const quotedObj = targetSchema ? `"${targetSchema}"."${tableName}"` : `"${tableName}"`;
-      const ddlSql = `SELECT GET_DDL('TABLE', '${quotedObj}') AS ddl;`;
+      const quotedObj = targetDb && targetSchema
+        ? `"${targetDb}"."${targetSchema}"."${tableName}"`
+        : targetSchema
+        ? `"${targetSchema}"."${tableName}"`
+        : `"${tableName}"`;
 
-      const [colRes, ddlRes] = await Promise.all([
+      const ddlSql = `SELECT GET_DDL('TABLE', '${quotedObj}') AS ddl;`;
+      const pkSql = `SHOW PRIMARY KEYS IN ${quotedObj};`;
+
+      const [colRes, ddlRes, pkRes] = await Promise.all([
         executeRealQuery(profile, colSql),
-        executeRealQuery(profile, ddlSql),
+        executeRealQuery(profile, ddlSql).catch(() => ({ success: false, rows: [] } as any)),
+        executeRealQuery(profile, pkSql).catch(() => ({ success: false, rows: [] } as any)),
       ]);
 
       if (!colRes.success || !colRes.rows || colRes.rows.length === 0) {
         return null;
       }
 
-      const columns: ColumnDefinition[] = colRes.rows.map((r: any) => ({
-        name: String(r.name || r.NAME || ''),
-        type: String(r.data_type || r.DATA_TYPE || 'VARCHAR'),
-        isNullable: Boolean(r.is_nullable ?? (r.IS_NULLABLE === 'YES')),
-        defaultValue: r.default_value !== null && r.default_value !== undefined ? String(r.default_value) : undefined,
-        isPrimaryKey: false,
-        isForeignKey: false,
-        comment: r.comment ? String(r.comment) : undefined,
-      }));
+      const pkCols = new Set<string>();
+      if (pkRes.success && pkRes.rows && pkRes.rows.length > 0) {
+        for (const r of pkRes.rows) {
+          const colName = String(r.column_name || r.COLUMN_NAME || '');
+          if (colName) pkCols.add(colName.toLowerCase());
+        }
+      }
+
+      const columns: ColumnDefinition[] = colRes.rows.map((r: any) => {
+        const name = String(r.name || r.NAME || '');
+        return {
+          name,
+          type: String(r.data_type || r.DATA_TYPE || 'VARCHAR'),
+          isNullable: Boolean(r.is_nullable ?? (r.IS_NULLABLE === 'YES')),
+          defaultValue: r.default_value !== null && r.default_value !== undefined ? String(r.default_value) : undefined,
+          isPrimaryKey: pkCols.has(name.toLowerCase()),
+          isForeignKey: false,
+          comment: r.comment ? String(r.comment) : undefined,
+        };
+      });
 
       let ddl = '';
       if (ddlRes.success && ddlRes.rows && ddlRes.rows.length > 0) {
         const row0 = ddlRes.rows[0];
         ddl = String(row0.ddl || row0.DDL || Object.values(row0)[0] || '');
+      }
+
+      if (!ddl) {
+        const ddlLines = columns.map((c) => {
+          const nullStr = c.isNullable ? '' : ' NOT NULL';
+          const defStr = c.defaultValue ? ` DEFAULT ${c.defaultValue}` : '';
+          return `  "${c.name}" ${c.type}${nullStr}${defStr}`;
+        });
+        const pkColsArr = columns.filter((c) => c.isPrimaryKey).map((c) => `"${c.name}"`);
+        if (pkColsArr.length > 0) {
+          ddlLines.push(`  PRIMARY KEY (${pkColsArr.join(', ')})`);
+        }
+        ddl = `-- DDL for table: ${quotedObj}\nCREATE TABLE ${quotedObj} (\n${ddlLines.join(',\n')}\n);`;
       }
 
       const estRows = summary?.estimated_rows ?? 0;
@@ -797,7 +863,7 @@ export async function getRealTableSchema(
         columns,
         indexes: [],
         foreignKeys: [],
-        ddl: ddl || `-- DDL for table: ${quotedObj}\n-- (Snowflake GET_DDL unavailable)`,
+        ddl,
       };
     }
   } catch (e) {

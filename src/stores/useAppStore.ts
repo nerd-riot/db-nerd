@@ -44,7 +44,7 @@ interface AppState {
   setActiveTabId: (id: string) => void;
   openNewQueryTab: (initialSql?: string) => void;
   openTableGridTab: (tableName: string, schema?: string) => void;
-  openTableSchemaTab: (tableName: string) => void;
+  openTableSchemaTab: (tableName: string, schema?: string) => void;
   openAllTableStatsTab: () => void;
   openAllFunctionsTab: () => void;
   closeTab: (id: string) => void;
@@ -67,7 +67,7 @@ interface AppState {
   fetchLiveTables: (conn?: ConnectionProfile) => Promise<void>;
 
   liveSchemas: Record<string, Record<string, TableSchemaInfo>>;
-  fetchLiveTableSchema: (tableName: string, conn?: ConnectionProfile) => Promise<void>;
+  fetchLiveTableSchema: (tableName: string, conn?: ConnectionProfile, schemaOverride?: string) => Promise<void>;
 
   liveFunctions: Record<string, FunctionItem[]>;
   fetchLiveFunctions: (conn?: ConnectionProfile) => Promise<void>;
@@ -164,7 +164,7 @@ interface AppState {
   resetPending: () => void;
 
   selectedTable: string;
-  setSelectedTable: (tbl: string, pageReset?: boolean) => void;
+  setSelectedTable: (tbl: string, pageReset?: boolean, schemaOverride?: string) => void;
 
   isSidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
@@ -865,13 +865,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   liveSchemas: {},
-  fetchLiveTableSchema: async (tableName, conn) => {
+  fetchLiveTableSchema: async (tableName, conn, schemaOverride) => {
     if (!tableName || tableName.startsWith('__')) return;
     const targetConn = conn || get().activeConnection;
     if (!targetConn || !targetConn.id) return;
-    const summary = get().liveTables[targetConn.id]?.find((t) => t.name === tableName);
+    const summary = get().liveTables[targetConn.id]?.find((t) => t.name === tableName && (!schemaOverride || t.schema === schemaOverride))
+      || get().liveTables[targetConn.id]?.find((t) => t.name === tableName);
     try {
-      const cacheKey = `${targetConn.id}:${targetConn.database || 'default'}:${tableName}`;
+      const targetSchema = schemaOverride || summary?.schema;
+      const cacheKey = `${targetConn.id}:${targetConn.database || 'default'}:${targetSchema || 'default'}:${tableName}`;
       const schemaInfo = await metadataCache.schemas.getOrFetch(cacheKey, () =>
         getRealTableSchema(targetConn, tableName, summary)
       );
@@ -1417,7 +1419,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedTable: tableName,
         tableViewMode: 'data',
       });
-      get().setSelectedTable(tableName, true);
+      get().setSelectedTable(tableName, true, schema);
       persistSessionTabs(activeConnection.id, tabs, existing.id, tableName, sqlTabStates);
     } else {
       const tabId = schema ? `tab-grid-${schema}-${tableName}` : `tab-grid-${tableName}`;
@@ -1437,14 +1439,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedTable: tableName,
         tableViewMode: 'data',
       });
-      get().setSelectedTable(tableName, true);
+      get().setSelectedTable(tableName, true, schema);
       persistSessionTabs(activeConnection.id, nextTabs, newTab.id, tableName, sqlTabStates);
     }
   },
 
-  openTableSchemaTab: (tableName) => {
-    get().setSelectedTable(tableName);
-    get().openTableGridTab(tableName);
+  openTableSchemaTab: (tableName, schema) => {
+    get().setSelectedTable(tableName, true, schema);
+    get().openTableGridTab(tableName, schema);
     set({ tableViewMode: 'structure' });
   },
 
@@ -2510,11 +2512,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { success: true };
   },
 
-  setSelectedTable: (tbl, pageReset = true) => {
+  setSelectedTable: (tbl, pageReset = true, schemaOverride?: string) => {
     const { truncatedTables, liveTables, activeConnection } = get();
     const isMock = isMockConnection(activeConnection);
     const targetRows = isMock ? getDefaultRowsForTable(tbl, truncatedTables[tbl]) : [];
-    const liveSummary = liveTables[activeConnection?.id]?.find((t) => t.name === tbl);
+    const liveSummary = liveTables[activeConnection?.id]?.find((t) => t.name === tbl && (!schemaOverride || t.schema === schemaOverride))
+      || liveTables[activeConnection?.id]?.find((t) => t.name === tbl);
     const initialEst = liveSummary?.estimated_rows && liveSummary.estimated_rows > 0 ? liveSummary.estimated_rows : null;
     const targetPage = pageReset ? 0 : get().gridPage;
 
@@ -2531,7 +2534,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     // Asynchronously fetch live rows & schema metadata from database
     get().reloadData(tbl, targetPage);
-    get().fetchLiveTableSchema(tbl);
+    get().fetchLiveTableSchema(tbl, undefined, schemaOverride);
   },
 
   isReloading: false,

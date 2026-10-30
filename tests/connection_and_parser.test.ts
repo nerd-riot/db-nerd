@@ -6,6 +6,8 @@ import { splitSqlStatements, getQueryToExecute, extractTableAndPkFromQuery } fro
 import { analyzeSqlSafety, isReadOnlySql } from '../src/utils/sqlSafety.ts';
 import { profileToConfig, normalizeSnowflakeAccount } from '../src/services/dbService.ts';
 import { buildPaginatedSelectSql, buildExactCountSql } from '../src/modules/grid/pagination.ts';
+import { buildTruncateTableSql, buildDropTableSql, buildPendingTransactionSql } from '../src/lib/db/dmlGenerator.ts';
+import { generateAlterTableStatements } from '../src/lib/db/ddlGenerator.ts';
 
 describe('Connection URL Parser & Builder', () => {
   it('parses complex AWS Aurora PostgreSQL URLs with TablePlus query parameters', () => {
@@ -130,6 +132,41 @@ describe('Connection URL Parser & Builder', () => {
       pageSize: 25,
     });
     assert.equal(pgSql, 'SELECT * FROM "auth"."users" LIMIT 25 OFFSET 0;');
+
+    // 5. Snowflake TRUNCATE and DROP with schema
+    const sfTruncate = buildTruncateTableSql('ITEM_MASTER', 'snowflake', 'PUBLIC');
+    assert.equal(sfTruncate, 'DELETE FROM "PUBLIC"."ITEM_MASTER";');
+
+    const sfDrop = buildDropTableSql('ITEM_MASTER', 'snowflake', 'INVENTORY');
+    assert.equal(sfDrop, 'DROP TABLE IF EXISTS "INVENTORY"."ITEM_MASTER";');
+
+    // 6. Snowflake Transactional DML statements with schema
+    const sfDml = buildPendingTransactionSql(
+      [
+        { id: 1, name: 'Item A', rowState: 'inserted' } as any,
+        { id: 2, name: 'Item B Updated', dirtyFields: { name: true } } as any,
+        { id: 3, rowState: 'deleted' } as any,
+      ],
+      'ITEM_MASTER',
+      'snowflake',
+      'id',
+      'PUBLIC'
+    );
+    assert.ok(sfDml.includes('BEGIN TRANSACTION;'));
+    assert.ok(sfDml.includes('INSERT INTO "PUBLIC"."ITEM_MASTER" ("id", "name") VALUES (1, \'Item A\');'));
+    assert.ok(sfDml.includes('UPDATE "PUBLIC"."ITEM_MASTER" SET "name" = \'Item B Updated\' WHERE "id" = 2;'));
+    assert.ok(sfDml.includes('DELETE FROM "PUBLIC"."ITEM_MASTER" WHERE "id" = 3;'));
+    assert.ok(sfDml.includes('COMMIT;'));
+
+    // 7. Snowflake ALTER TABLE DDL statements with schema
+    const sfAlter = generateAlterTableStatements({
+      tableName: 'ITEM_MASTER',
+      originalColumns: [{ name: 'old_col', type: 'varchar' }],
+      currentColumns: [{ name: 'old_col', type: 'varchar', _isDeleted: true }],
+      engine: 'snowflake',
+      schema: 'PUBLIC',
+    });
+    assert.equal(sfAlter[0], 'ALTER TABLE "PUBLIC"."ITEM_MASTER" DROP COLUMN "old_col";');
   });
 });
 
