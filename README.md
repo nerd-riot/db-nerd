@@ -214,6 +214,27 @@ To ensure enterprise-grade stability under continuous daily usage, DBNerd underw
 
 ---
 
+## 📦 Download & Install
+
+### macOS (Apple Silicon M1/M2/M3/M4)
+
+**Via Homebrew (Recommended):**
+```bash
+brew install --cask nerd-riot/tap/dbnerd
+```
+> *Installed via Homebrew Cask, DBNerd automatically bypasses macOS Gatekeeper quarantine (`xattr -cr`), launching immediately without security prompts.*
+
+**Direct Downloads:**
+- [Download DBNerd DMG (Apple Silicon)](https://github.com/nerd-riot/db-nerd/releases/download/v1.2.2/DBNerd_1.2.2_aarch64.dmg)
+- [Download DBNerd ZIP Archive](https://github.com/nerd-riot/db-nerd/releases/download/v1.2.2/DBNerd_1.2.2_macOS_aarch64.zip)
+
+### Windows 11 / 10 (x64)
+
+- [Download Windows Installer (Setup.exe)](https://github.com/nerd-riot/db-nerd/releases/download/v1.2.2/DBNerd_1.2.2_Windows_x64_Setup.exe)
+- [Download Windows Standalone (Portable .exe)](https://github.com/nerd-riot/db-nerd/releases/download/v1.2.2/DBNerd_1.2.2_Windows_x64_standalone.exe)
+
+---
+
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
