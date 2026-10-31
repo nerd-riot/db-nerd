@@ -377,12 +377,14 @@ pub async fn get_or_create_snowflake_session(
     let client_config = snowflake_connector_rs::ClientConfig::new(username, &account, auth)
         .with_session(session_config);
 
+    let schema_str = config.snowflake_schema.as_deref().unwrap_or_default();
     let key = format!(
-        "snowflake://{}@{}:{}/{}?auth={}&wh={}&role={}&h={:016x}",
+        "snowflake://{}@{}:{}/{}/{}?auth={}&wh={}&role={}&h={:016x}",
         username,
         account,
         config.port,
         config.database.trim(),
+        schema_str,
         auth_method,
         config.snowflake_warehouse.as_deref().unwrap_or_default(),
         config.snowflake_role.as_deref().unwrap_or_default(),
@@ -414,6 +416,16 @@ pub async fn get_or_create_snowflake_session(
     // This resolves: "SQL compilation error: Object does not exist or not authorized.
     // Your primary role ... or one of your secondary roles must have at least one privilege granted"
     let _ = session.query("USE SECONDARY ROLES ALL;").await;
+
+    // Explicitly set database and schema context on session initialization
+    if !config.database.trim().is_empty() {
+        let db = config.database.trim();
+        if let Some(schema) = config.snowflake_schema.as_deref().filter(|s| !s.trim().is_empty()) {
+            let _ = session.query(format!("USE SCHEMA \"{}\".\"{}\";", db, schema)).await;
+        } else {
+            let _ = session.query(format!("USE DATABASE \"{}\";", db)).await;
+        }
+    }
 
     let arc_session = std::sync::Arc::new(session);
 

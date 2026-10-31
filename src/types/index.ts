@@ -182,6 +182,7 @@ export interface SqlTabState {
   error?: string;
   queryResults?: SqlQueryResultItem[];
   activeResultId?: string;
+  activeSchema?: string;
   executionProgress?: {
     current: number;
     total: number;

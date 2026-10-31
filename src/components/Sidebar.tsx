@@ -140,7 +140,7 @@ export const Sidebar = () => {
 
   // Context Menu state
   const [tableContextPos, setTableContextPos] = useState<ContextMenuPosition | null>(null);
-  const [targetTable, setTargetTable] = useState<{ name: string; schema?: string } | null>(null);
+  const [targetTable, setTargetTable] = useState<{ name: string; schema?: string; database?: string } | null>(null);
 
   const [queryContextPos, setQueryContextPos] = useState<ContextMenuPosition | null>(null);
   const [targetQuery, setTargetQuery] = useState<{ id: string; title?: string; sql: string } | null>(null);
@@ -524,7 +524,7 @@ export const Sidebar = () => {
                             e.preventDefault();
                             e.stopPropagation();
                             setTableContextPos({ x: e.clientX, y: e.clientY });
-                            setTargetTable({ name: tbl.name, schema: tbl.schema });
+                            setTargetTable({ name: tbl.name, schema: tbl.schema, database: tbl.database });
                           }}
                           className={`flex items-center justify-between px-2.5 py-1 rounded cursor-pointer text-xs font-mono transition-colors group ${
                             isSelected
@@ -539,6 +539,11 @@ export const Sidebar = () => {
                               }`}
                             />
                             <span className="truncate">{tbl.name}</span>
+                            {tbl.schema && tbl.schema !== 'public' && tbl.schema !== 'PUBLIC' && (
+                              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-200/80 dark:bg-slate-850 text-slate-500 dark:text-slate-400 shrink-0 font-medium border border-slate-300/40 dark:border-slate-700/60">
+                                {tbl.schema}
+                              </span>
+                            )}
                           </div>
                         <div className="flex items-center space-x-1.5 flex-shrink-0">
                           {tbl.total_size && displayBadge !== tbl.total_size && (
@@ -868,88 +873,102 @@ export const Sidebar = () => {
               reloadData(targetTable.name);
             }}
           />
-          <ContextMenuItem
-            icon={<Terminal className="w-3.5 h-3.5 text-amber-400" />}
-            label="Query in New Tab"
-            shortcut="⌘E"
-            onClick={() => {
-              const limit = settings.defaultQueryLimit || 100;
-              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
-              openNewQueryTab(`SELECT * FROM ${qualified} LIMIT ${limit};`);
-            }}
-          />
-          <ContextMenuDivider />
-          <ContextMenuItem
-            icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
-            label="Copy Table Name"
-            onClick={() => {
-              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : targetTable.name;
-              navigator.clipboard.writeText(qualified);
-              showToast(`📋 Copied "${qualified}"`);
-            }}
-          />
-          <ContextMenuItem
-            icon={<FileCode className="w-3.5 h-3.5 text-slate-400" />}
-            label="Copy SELECT Query"
-            onClick={() => {
-              const limit = settings.defaultQueryLimit || 100;
-              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
-              const query = `SELECT * FROM ${qualified} LIMIT ${limit};`;
-              navigator.clipboard.writeText(query);
-              showToast(`📋 Copied SELECT query for "${targetTable.name}"`);
-            }}
-          />
-          <ContextMenuItem
-            icon={<Code className="w-3.5 h-3.5 text-slate-400" />}
-            label="Copy INSERT Template"
-            onClick={() => {
-              const schema = getTableSchema(targetTable.name);
-              const cols: ColumnDefinition[] = schema?.columns && schema.columns.length > 0
-                ? schema.columns
-                : [
-                    { name: 'id', type: 'integer', isNullable: false },
-                    { name: 'name', type: 'varchar', isNullable: false },
-                    { name: 'created_at', type: 'timestamp', isNullable: false },
-                  ];
-              
-              const insertCols = cols.filter((c) => !c.defaultValue?.includes('generated always'));
-              const colNames = insertCols.map((c) => `"${c.name}"`).join(', ');
-              const valPlaceholders = insertCols
-                .map((c) => {
-                  const type = (c.type || '').toLowerCase();
-                  if (type.includes('int') || type.includes('serial')) return '1';
-                  if (type.includes('bool')) return 'TRUE';
-                  if (type.includes('json')) return "'{}'::jsonb";
-                  if (type.includes('time') || type.includes('date')) return "'2026-10-22 18:30:00'";
-                  if (type.includes('num') || type.includes('float') || type.includes('dec')) return '99.99';
-                  return "'sample_value'";
-                })
-                .join(', ');
-              
-              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
-              const insertSql = `INSERT INTO ${qualified} (${colNames})\nVALUES (${valPlaceholders});`;
-              navigator.clipboard.writeText(insertSql);
-              showToast(`📋 Copied INSERT template for "${targetTable.name}"`);
-            }}
-          />
-          <ContextMenuItem
-            icon={<Database className="w-3.5 h-3.5 text-slate-400" />}
-            label="Copy CREATE TABLE DDL"
-            onClick={() => {
-              const schema = getTableSchema(targetTable.name);
-              let ddlSql = schema?.ddl;
-              const qualified = targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
-              if (!ddlSql) {
-                const cols = schema?.columns || [];
-                const colDefs = cols
-                  .map((c) => `  "${c.name}" ${c.type.toUpperCase()}${c.isPrimaryKey ? ' PRIMARY KEY' : ''}${c.isNullable ? '' : ' NOT NULL'}`)
-                  .join(',\n');
-                ddlSql = `CREATE TABLE ${qualified} (\n${colDefs}\n);`;
+          {(() => {
+            const getQualified = () => {
+              if (activeConnection?.engine === 'snowflake') {
+                if (targetTable.database && targetTable.schema) {
+                  return `"${targetTable.database}"."${targetTable.schema}"."${targetTable.name}"`;
+                }
+                if (targetTable.schema) {
+                  return `"${targetTable.schema}"."${targetTable.name}"`;
+                }
+                return `"${targetTable.name}"`;
               }
-              navigator.clipboard.writeText(ddlSql.trim());
-              showToast(`📋 Copied CREATE TABLE DDL for "${targetTable.name}"`);
-            }}
-          />
+              return targetTable.schema ? `"${targetTable.schema}"."${targetTable.name}"` : `"${targetTable.name}"`;
+            };
+            const qualified = getQualified();
+            return (
+              <>
+                <ContextMenuItem
+                  icon={<Terminal className="w-3.5 h-3.5 text-amber-400" />}
+                  label="Query in New Tab"
+                  shortcut="⌘E"
+                  onClick={() => {
+                    const limit = settings.defaultQueryLimit || 100;
+                    openNewQueryTab(`SELECT * FROM ${qualified} LIMIT ${limit};`);
+                  }}
+                />
+                <ContextMenuDivider />
+                <ContextMenuItem
+                  icon={<Copy className="w-3.5 h-3.5 text-slate-400" />}
+                  label="Copy Table Name"
+                  onClick={() => {
+                    navigator.clipboard.writeText(qualified);
+                    showToast(`📋 Copied "${qualified}"`);
+                  }}
+                />
+                <ContextMenuItem
+                  icon={<FileCode className="w-3.5 h-3.5 text-slate-400" />}
+                  label="Copy SELECT Query"
+                  onClick={() => {
+                    const limit = settings.defaultQueryLimit || 100;
+                    const query = `SELECT * FROM ${qualified} LIMIT ${limit};`;
+                    navigator.clipboard.writeText(query);
+                    showToast(`📋 Copied SELECT query for "${targetTable.name}"`);
+                  }}
+                />
+                <ContextMenuItem
+                  icon={<Code className="w-3.5 h-3.5 text-slate-400" />}
+                  label="Copy INSERT Template"
+                  onClick={() => {
+                    const schema = getTableSchema(targetTable.name);
+                    const cols: ColumnDefinition[] = schema?.columns && schema.columns.length > 0
+                      ? schema.columns
+                      : [
+                          { name: 'id', type: 'integer', isNullable: false },
+                          { name: 'name', type: 'varchar', isNullable: false },
+                          { name: 'created_at', type: 'timestamp', isNullable: false },
+                        ];
+                    
+                    const insertCols = cols.filter((c) => !c.defaultValue?.includes('generated always'));
+                    const colNames = insertCols.map((c) => `"${c.name}"`).join(', ');
+                    const valPlaceholders = insertCols
+                      .map((c) => {
+                        const type = (c.type || '').toLowerCase();
+                        if (type.includes('int') || type.includes('serial')) return '1';
+                        if (type.includes('bool')) return 'TRUE';
+                        if (type.includes('json')) return "'{}'::jsonb";
+                        if (type.includes('time') || type.includes('date')) return "'2026-10-22 18:30:00'";
+                        if (type.includes('num') || type.includes('float') || type.includes('dec')) return '99.99';
+                        return "'sample_value'";
+                      })
+                      .join(', ');
+                    
+                    const insertSql = `INSERT INTO ${qualified} (${colNames})\nVALUES (${valPlaceholders});`;
+                    navigator.clipboard.writeText(insertSql);
+                    showToast(`📋 Copied INSERT template for "${targetTable.name}"`);
+                  }}
+                />
+                <ContextMenuItem
+                  icon={<Database className="w-3.5 h-3.5 text-slate-400" />}
+                  label="Copy CREATE TABLE DDL"
+                  onClick={() => {
+                    const schema = getTableSchema(targetTable.name);
+                    let ddlSql = schema?.ddl;
+                    if (!ddlSql) {
+                      const cols = schema?.columns || [];
+                      const colDefs = cols
+                        .map((c) => `  "${c.name}" ${c.type.toUpperCase()}${c.isPrimaryKey ? ' PRIMARY KEY' : ''}${c.isNullable ? '' : ' NOT NULL'}`)
+                        .join(',\n');
+                      ddlSql = `CREATE TABLE ${qualified} (\n${colDefs}\n);`;
+                    }
+                    navigator.clipboard.writeText(ddlSql.trim());
+                    showToast(`📋 Copied CREATE TABLE DDL for "${targetTable.name}"`);
+                  }}
+                />
+              </>
+            );
+          })()}
           <ContextMenuDivider />
           <ContextMenuItem
             icon={<Sparkles className="w-3.5 h-3.5 text-rose-400" />}

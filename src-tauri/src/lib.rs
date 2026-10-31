@@ -1152,10 +1152,77 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
         }
         "snowflake" => {
             let session = pool::get_or_create_snowflake_session(&config).await?;
-            let cursor = session
-                .query_as::<snowflake_connector_rs::DynamicRow, _>(query)
-                .await
-                .map_err(|e| format!("Snowflake query error: {}", e))?;
+
+            // If a schema is specified on the query config, ensure session is explicitly set to that schema
+            if let Some(schema) = config.snowflake_schema.as_deref().filter(|s| !s.trim().is_empty()) {
+                let schema_trimmed = schema.trim();
+                if !config.database.trim().is_empty() {
+                    let _ = session.query(format!("USE SCHEMA \"{}\".\"{}\";", config.database.trim(), schema_trimmed)).await;
+                } else {
+                    let _ = session.query(format!("USE SCHEMA \"{}\";", schema_trimmed)).await;
+                }
+            }
+
+            let mut cursor_res = session
+                .query_as::<snowflake_connector_rs::DynamicRow, _>(query.clone())
+                .await;
+
+            // Auto-recovery for Snowflake 002003 compilation error (table does not exist in active/default schema)
+            if let Err(err) = &cursor_res {
+                let err_str = err.to_string();
+                if err_str.contains("002003") && (err_str.contains("does not exist or not authorized") || err_str.contains("Object")) {
+                    if let Some(start_idx) = err_str.find("Object '") {
+                        let rest = &err_str[start_idx + 8..];
+                        if let Some(end_idx) = rest.find('\'') {
+                            let missing_object = &rest[..end_idx];
+                            // If missing_object is unqualified (no dot separator), find its actual schema
+                            if !missing_object.contains('.') {
+                                let clean_obj = missing_object.trim().replace('"', "").replace('\'', "''");
+                                let lookup_sql = if !config.database.trim().is_empty() {
+                                    format!(
+                                        "SELECT TABLE_SCHEMA, TABLE_CATALOG FROM \"{}\".INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = UPPER('{}') LIMIT 1;",
+                                        config.database.trim(),
+                                        clean_obj
+                                    )
+                                } else {
+                                    format!(
+                                        "SELECT TABLE_SCHEMA, TABLE_CATALOG FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = UPPER('{}') LIMIT 1;",
+                                        clean_obj
+                                    )
+                                };
+                                if let Ok(lookup_cursor) = session.query_as::<snowflake_connector_rs::DynamicRow, _>(lookup_sql).await {
+                                    if let Ok(lookup_table) = lookup_cursor.collect_table().await {
+                                        if let Some(Ok(row)) = lookup_table.rows().next() {
+                                            if let Ok(json_map) = row.into_json_object() {
+                                                let found_schema = json_map.get("TABLE_SCHEMA")
+                                                    .or_else(|| json_map.get("table_schema"))
+                                                    .and_then(|v| v.as_str());
+                                                let found_catalog = json_map.get("TABLE_CATALOG")
+                                                    .or_else(|| json_map.get("table_catalog"))
+                                                    .and_then(|v| v.as_str())
+                                                    .or_else(|| if !config.database.trim().is_empty() { Some(config.database.trim()) } else { None });
+
+                                                if let Some(s_name) = found_schema {
+                                                    let use_sql = if let Some(c_name) = found_catalog {
+                                                        format!("USE SCHEMA \"{}\".\"{}\";", c_name, s_name)
+                                                    } else {
+                                                        format!("USE SCHEMA \"{}\";", s_name)
+                                                    };
+                                                    let _ = session.query(use_sql).await;
+                                                    // Re-execute user query now that session points to the table's schema
+                                                    cursor_res = session.query_as::<snowflake_connector_rs::DynamicRow, _>(query).await;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let cursor = cursor_res.map_err(|e| format!("Snowflake query error: {}", e))?;
 
             let mut columns = Vec::new();
             for col in cursor.schema().columns() {

@@ -80,6 +80,7 @@ export const SqlEditor: React.FC = () => {
     activeTabId,
     sqlTabStates,
     setSqlTabQuery,
+    setSqlTabSchema,
     runSqlQuery,
     cancelSqlQuery,
     setActiveQueryResultTab,
@@ -131,6 +132,7 @@ export const SqlEditor: React.FC = () => {
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1, loc: 0 });
   const [queryLimit, setQueryLimit] = useState<string>('No limit');
   const [isLimitMenuOpen, setIsLimitMenuOpen] = useState(false);
+  const [isSchemaMenuOpen, setIsSchemaMenuOpen] = useState(false);
   const [isBeautifyMenuOpen, setIsBeautifyMenuOpen] = useState(false);
   const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -145,6 +147,7 @@ export const SqlEditor: React.FC = () => {
 
   const runMenuRef = useRef<HTMLDivElement>(null);
   const limitMenuRef = useRef<HTMLDivElement>(null);
+  const schemaMenuRef = useRef<HTMLDivElement>(null);
   const beautifyMenuRef = useRef<HTMLDivElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
@@ -181,6 +184,17 @@ export const SqlEditor: React.FC = () => {
     rowsCount: 0,
     isExecuting: false,
   };
+
+  const availableSchemas = useMemo(() => {
+    if (!activeConnection?.id || !liveTables[activeConnection.id]) return [];
+    const set = new Set<string>();
+    for (const t of liveTables[activeConnection.id]) {
+      if (t.schema && t.schema.trim()) set.add(t.schema.trim());
+    }
+    return Array.from(set).sort();
+  }, [activeConnection?.id, liveTables]);
+
+  const activeSchema = tabState.activeSchema || activeConnection?.snowflakeSchema || (availableSchemas.length > 0 ? availableSchemas[0] : '');
 
   // Live timer for long running query execution (matches TablePlus Waiting: X.X s)
   useEffect(() => {
@@ -219,6 +233,9 @@ export const SqlEditor: React.FC = () => {
       }
       if (limitMenuRef.current && !limitMenuRef.current.contains(e.target as Node)) {
         setIsLimitMenuOpen(false);
+      }
+      if (schemaMenuRef.current && !schemaMenuRef.current.contains(e.target as Node)) {
+        setIsSchemaMenuOpen(false);
       }
       if (beautifyMenuRef.current && !beautifyMenuRef.current.contains(e.target as Node)) {
         setIsBeautifyMenuOpen(false);
@@ -483,6 +500,7 @@ export const SqlEditor: React.FC = () => {
       isSelection: target.isSelection,
       statementIndex: target.statementIndex,
       totalStatements: target.totalStatements,
+      schemaOverride: activeSchema,
     });
   };
 
@@ -494,7 +512,7 @@ export const SqlEditor: React.FC = () => {
     }
     if (!viewRef.current) return;
     const currentCode = viewRef.current.state.doc.toString();
-    runSqlQuery(activeTabId, currentCode, { mode: 'all' });
+    runSqlQuery(activeTabId, currentCode, { mode: 'all', schemaOverride: activeSchema });
   };
 
   const handleCancel = () => {
@@ -1129,8 +1147,49 @@ export const SqlEditor: React.FC = () => {
             )}
           </div>
 
-          {/* Right: [ No limit ⌵ ] [ Beautify ⌘I ⌵ ] [ Run Current ⌘↵ ⌵ ] */}
+          {/* Right: [ schema: COMMON ⌵ ] [ No limit ⌵ ] [ Beautify ⌘I ⌵ ] [ Run Current ⌘↵ ⌵ ] */}
           <div className="flex items-center space-x-2">
+            {/* Schema Selector (Snowflake & Multi-Schema Engines) */}
+            {availableSchemas.length > 0 && (
+              <div className="relative" ref={schemaMenuRef}>
+                <Tooltip side="bottom" content="Active database schema" disabled={isSchemaMenuOpen}>
+                  <div className="inline-flex items-center bg-slate-200/90 dark:bg-[#343538] hover:bg-slate-300 dark:hover:bg-[#404145] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/10 rounded-md text-xs font-medium transition shadow-xs overflow-hidden h-6.5">
+                    <button
+                      onClick={() => setIsSchemaMenuOpen(!isSchemaMenuOpen)}
+                      className="px-2.5 py-0.5 flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <span className="text-[10px] text-slate-500 font-mono">schema:</span>
+                      <span className="font-mono font-bold text-sky-600 dark:text-sky-400">{activeSchema || 'public'}</span>
+                      <ChevronDown className="w-3 h-3 text-slate-400" />
+                    </button>
+                  </div>
+                </Tooltip>
+
+                {isSchemaMenuOpen && (
+                  <div className="absolute right-0 top-7.5 w-48 bg-white dark:bg-[#1f2023] border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 py-1 text-slate-800 dark:text-slate-200 font-sans text-xs animate-in fade-in zoom-in-95 duration-100 max-h-60 overflow-y-auto">
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                      Schemas ({availableSchemas.length})
+                    </div>
+                    {availableSchemas.map((sch) => (
+                      <button
+                        key={sch}
+                        onClick={() => {
+                          setSqlTabSchema(activeTabId, sch);
+                          setIsSchemaMenuOpen(false);
+                        }}
+                        className={`w-full px-3 py-1.5 flex items-center justify-between hover:bg-sky-500 hover:text-white dark:hover:bg-sky-600 transition text-left cursor-pointer font-mono ${
+                          activeSchema === sch ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 font-bold' : ''
+                        }`}
+                      >
+                        <span className="truncate">{sch}</span>
+                        {activeSchema === sch && <Check className="w-3.5 h-3.5 shrink-0 text-sky-500" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Limit Selector */}
             <div className="relative" ref={limitMenuRef}>
               <Tooltip side="bottom" content="Query result limit" disabled={isLimitMenuOpen}>

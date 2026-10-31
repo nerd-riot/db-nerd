@@ -56,7 +56,8 @@ interface AppState {
 
   sqlTabStates: Record<string, SqlTabState>;
   setSqlTabQuery: (tabId: string, query: string) => void;
-  runSqlQuery: (tabId: string, customQuery?: string, meta?: { mode?: 'current' | 'all' | 'selection'; isSelection?: boolean; statementIndex?: number; totalStatements?: number }) => Promise<void>;
+  setSqlTabSchema: (tabId: string, schema: string) => void;
+  runSqlQuery: (tabId: string, customQuery?: string, meta?: { mode?: 'current' | 'all' | 'selection'; isSelection?: boolean; statementIndex?: number; totalStatements?: number; schemaOverride?: string }) => Promise<void>;
   cancelSqlQuery: (tabId: string) => void;
   setActiveQueryResultTab: (tabId: string, resultId: string) => void;
   closeQueryResultTab: (tabId: string, resultId: string) => void;
@@ -809,6 +810,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
+  setSqlTabSchema: (tabId, schema) => {
+    set((state) => {
+      const nextSqlStates = {
+        ...state.sqlTabStates,
+        [tabId]: {
+          ...(state.sqlTabStates[tabId] || {
+            tabId,
+            query: '',
+            results: [],
+            columns: [],
+            durationMs: 0,
+            rowsCount: 0,
+          }),
+          activeSchema: schema,
+        },
+      };
+      persistSessionTabs(state.activeConnection.id, state.tabs, state.activeTabId, state.selectedTable, nextSqlStates);
+      return { sqlTabStates: nextSqlStates };
+    });
+  },
+
   liveDatabases: {},
   fetchLiveDatabases: async (conn) => {
     const targetConn = conn || get().activeConnection;
@@ -1195,7 +1217,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       try {
-        const res = await executeRealQuery(activeConn, currentStmt.trimmedText);
+        const targetSchema = meta?.schemaOverride || currentState?.activeSchema || get().tabs.find((t) => t.id === tabId)?.schema || (get().selectedTable ? get().liveTables[activeConn?.id]?.find((t) => t.name === get().selectedTable)?.schema : undefined);
+        const res = await executeRealQuery(activeConn, currentStmt.trimmedText, targetSchema);
         let duration = res.duration_ms || +(performance.now() - startMs).toFixed(1) || 1.1;
         let isSuccess = res.success && !res.error;
         let rawRows = isSuccess ? res.rows : (res.error ? [{ error: res.error }] : []);
@@ -1380,6 +1403,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       canClose: true,
     };
 
+    const defaultSchema = (selectedTable ? get().liveTables[activeConnection.id]?.find((t) => t.name === selectedTable)?.schema : undefined) || activeConnection.snowflakeSchema || undefined;
+
     const nextTabs = [...tabs, newTab];
     const nextSqlStates: Record<string, SqlTabState> = {
       ...sqlTabStates,
@@ -1392,6 +1417,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rowsCount: 0,
         executedAt: '',
         isExecuting: false,
+        activeSchema: defaultSchema,
       },
     };
 

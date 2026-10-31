@@ -172,7 +172,11 @@ export async function closeRealConnection(profile: ConnectionProfile): Promise<v
   }
 }
 
-export async function executeRealQuery(profile: ConnectionProfile, query: string): Promise<RealQueryResult> {
+export async function executeRealQuery(
+  profile: ConnectionProfile,
+  query: string,
+  schemaOverride?: string
+): Promise<RealQueryResult> {
   const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
   if (!isTauri) {
     return {
@@ -186,6 +190,9 @@ export async function executeRealQuery(profile: ConnectionProfile, query: string
   }
   try {
     const config = profileToConfig(profile);
+    if (schemaOverride && schemaOverride.trim()) {
+      config.snowflake_schema = schemaOverride.trim();
+    }
     const res = await invoke<RealQueryResult>('execute_query', { config, query });
     return res;
   } catch (err: any) {
