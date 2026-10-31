@@ -494,7 +494,7 @@ pub async fn close_pool(config: &DbConfig) {
                 .snowflake_account
                 .as_deref()
                 .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| config.host.as_str());
+                .unwrap_or(config.host.as_str());
             let norm_acc = normalize_snowflake_account(acc);
             let sf_prefix = format!("snowflake://{}@{}:", user, norm_acc);
             let mut write_guard = registry().snowflake_sessions.write().await;
