@@ -107,6 +107,7 @@ export interface ConnectionProfile {
   connectionStatus?: 'connected' | 'connecting' | 'failed';
   lastError?: string;
   safeMode?: SafetyMode;
+  isHeartbeat?: boolean;
 }
 
 export interface HeartbeatMetrics {

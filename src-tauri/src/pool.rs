@@ -17,6 +17,7 @@ struct PoolRegistry {
     mysql_pools: RwLock<HashMap<String, MySqlPool>>,
     redis_clients: RwLock<HashMap<String, redis::Client>>,
     snowflake_sessions: RwLock<HashMap<String, std::sync::Arc<snowflake_connector_rs::Session>>>,
+    snowflake_init_mutex: tokio::sync::Mutex<()>,
 }
 
 static POOL_REGISTRY: OnceLock<PoolRegistry> = OnceLock::new();
@@ -27,6 +28,7 @@ fn registry() -> &'static PoolRegistry {
         mysql_pools: RwLock::new(HashMap::new()),
         redis_clients: RwLock::new(HashMap::new()),
         snowflake_sessions: RwLock::new(HashMap::new()),
+        snowflake_init_mutex: tokio::sync::Mutex::new(()),
     })
 }
 
@@ -377,26 +379,48 @@ pub async fn get_or_create_snowflake_session(
     let client_config = snowflake_connector_rs::ClientConfig::new(username, &account, auth)
         .with_session(session_config);
 
-    let schema_str = config.snowflake_schema.as_deref().unwrap_or_default();
+    let wh = config.snowflake_warehouse.as_deref().unwrap_or_default().trim();
+    let role = config.snowflake_role.as_deref().unwrap_or_default().trim();
+    let cred_hash = {
+        let mut hasher = DefaultHasher::new();
+        config.password.as_deref().unwrap_or_default().hash(&mut hasher);
+        config.snowflake_private_key.as_deref().unwrap_or_default().hash(&mut hasher);
+        hasher.finish()
+    };
+
+    // Stable session key based purely on authentication identity (User + Account + Auth + Role + Warehouse).
+    // MUST NOT depend on database or schema, so that query switches across schemas/databases NEVER trigger a new SSO login!
     let key = format!(
-        "snowflake://{}@{}:{}/{}/{}?auth={}&wh={}&role={}&h={:016x}",
+        "snowflake://{}@{}:{}?auth={}&wh={}&role={}&h={:016x}",
         username,
         account,
         config.port,
-        config.database.trim(),
-        schema_str,
         auth_method,
-        config.snowflake_warehouse.as_deref().unwrap_or_default(),
-        config.snowflake_role.as_deref().unwrap_or_default(),
-        {
-            let mut hasher = DefaultHasher::new();
-            config.password.as_deref().unwrap_or_default().hash(&mut hasher);
-            config.snowflake_private_key.as_deref().unwrap_or_default().hash(&mut hasher);
-            hasher.finish()
-        }
+        wh,
+        role,
+        cred_hash
     );
 
-    // Fast read check
+    // 1. Fast read check (O(1) read lock - avoids acquiring mutex if already authenticated)
+    {
+        let read_guard = registry().snowflake_sessions.read().await;
+        if let Some(session) = read_guard.get(&key) {
+            return Ok(session.clone());
+        }
+    }
+
+    // If this is a background heartbeat ping, do NOT trigger interactive browser SSO!
+    if config.is_heartbeat.unwrap_or(false) {
+        return Err("Snowflake session not authenticated (background heartbeat skipped browser SSO)".to_string());
+    }
+
+    // 2. Mutual exclusion lock for session creation.
+    // Serializes concurrent callers (get_tables, get_databases, get_functions, queries)
+    // so that external browser SSO is invoked EXACTLY ONCE!
+    let _init_guard = registry().snowflake_init_mutex.lock().await;
+
+    // 3. Double-check cache inside lock:
+    // If another thread was creating the session while we were waiting, it is now ready!
     {
         let read_guard = registry().snowflake_sessions.read().await;
         if let Some(session) = read_guard.get(&key) {
@@ -413,8 +437,6 @@ pub async fn get_or_create_snowflake_session(
         .map_err(|e| format!("Snowflake session creation failed: {}", e))?;
 
     // Activate all secondary roles so privileges across any role granted to the user are active.
-    // This resolves: "SQL compilation error: Object does not exist or not authorized.
-    // Your primary role ... or one of your secondary roles must have at least one privilege granted"
     let _ = session.query("USE SECONDARY ROLES ALL;").await;
 
     // Explicitly set database and schema context on session initialization
@@ -438,6 +460,51 @@ pub async fn get_or_create_snowflake_session(
     write_guard.insert(key, arc_session.clone());
 
     Ok(arc_session)
+}
+
+/// Evicts any cached Snowflake session for the given configuration if session/token expired.
+pub async fn evict_snowflake_session(config: &DbConfig) {
+    let raw_account = config
+        .snowflake_account
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            let h = config.host.trim();
+            if !h.is_empty() && h != "localhost" && h != "127.0.0.1" {
+                Some(h)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    let account = normalize_snowflake_account(raw_account);
+    let username = config.username.as_deref().unwrap_or_default().trim();
+    let auth_method = config
+        .snowflake_auth_method
+        .as_deref()
+        .unwrap_or("externalbrowser")
+        .to_lowercase();
+    let wh = config.snowflake_warehouse.as_deref().unwrap_or_default().trim();
+    let role = config.snowflake_role.as_deref().unwrap_or_default().trim();
+    let cred_hash = {
+        let mut hasher = DefaultHasher::new();
+        config.password.as_deref().unwrap_or_default().hash(&mut hasher);
+        config.snowflake_private_key.as_deref().unwrap_or_default().hash(&mut hasher);
+        hasher.finish()
+    };
+    let key = format!(
+        "snowflake://{}@{}:{}?auth={}&wh={}&role={}&h={:016x}",
+        username,
+        account,
+        config.port,
+        auth_method,
+        wh,
+        role,
+        cred_hash
+    );
+
+    let mut write_guard = registry().snowflake_sessions.write().await;
+    write_guard.remove(&key);
 }
 
 /// Closes cached connection pools and SSH tunnels matching the given configuration.

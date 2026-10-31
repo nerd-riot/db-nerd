@@ -32,6 +32,7 @@ export interface DbConfigPayload {
   snowflake_auth_method?: string;
   snowflake_private_key?: string;
   snowflake_passphrase?: string;
+  is_heartbeat?: boolean;
 }
 
 export interface RealQueryResult {
@@ -119,6 +120,7 @@ export const profileToConfig = (profile: ConnectionProfile): DbConfigPayload => 
     snowflake_auth_method: profile.snowflakeAuthMethod || 'externalbrowser',
     snowflake_private_key: profile.snowflakePrivateKey,
     snowflake_passphrase: profile.snowflakePassphrase,
+    is_heartbeat: profile.isHeartbeat,
   };
 };
 
@@ -334,6 +336,9 @@ export async function getRealFunctions(profile: ConnectionProfile): Promise<Func
         }));
       }
     } else if (normEngine === 'snowflake') {
+      const fromClause = profile.database && profile.database.trim()
+        ? `"${escapeSqlStringLiteral(profile.database.trim())}".INFORMATION_SCHEMA.FUNCTIONS`
+        : 'INFORMATION_SCHEMA.FUNCTIONS';
       const sql = `
         SELECT
           FUNCTION_NAME AS name,
@@ -346,7 +351,7 @@ export async function getRealFunctions(profile: ConnectionProfile): Promise<Func
           '--' AS index_size,
           COALESCE(COMMENT, '--') AS comment,
           '' AS definition
-        FROM INFORMATION_SCHEMA.FUNCTIONS
+        FROM ${fromClause}
         WHERE FUNCTION_SCHEMA != 'INFORMATION_SCHEMA'
         ORDER BY FUNCTION_SCHEMA ASC, FUNCTION_NAME ASC;
       `;
@@ -785,6 +790,9 @@ export async function getRealTableSchema(
       const targetDb = summary?.database || (profile.database && profile.database !== '0' ? profile.database : undefined);
       const schemaFilter = targetSchema ? `AND c.TABLE_SCHEMA = '${escapeSqlStringLiteral(targetSchema)}'` : '';
       const dbFilter = targetDb ? `AND c.TABLE_CATALOG = '${escapeSqlStringLiteral(targetDb)}'` : '';
+      const fromClause = targetDb && targetDb.trim()
+        ? `"${escapeSqlStringLiteral(targetDb.trim())}".INFORMATION_SCHEMA.COLUMNS`
+        : 'INFORMATION_SCHEMA.COLUMNS';
       const colSql = `
         SELECT
           c.COLUMN_NAME AS name,
@@ -792,7 +800,7 @@ export async function getRealTableSchema(
           (c.IS_NULLABLE = 'YES') AS is_nullable,
           c.COLUMN_DEFAULT AS default_value,
           COALESCE(c.COMMENT, '') AS comment
-        FROM INFORMATION_SCHEMA.COLUMNS c
+        FROM ${fromClause} c
         WHERE c.TABLE_NAME = '${safeTable}'
         ${schemaFilter}
         ${dbFilter}

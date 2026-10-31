@@ -166,6 +166,8 @@ pub struct DbConfig {
     pub snowflake_private_key: Option<String>,
     #[serde(default)]
     pub snowflake_passphrase: Option<String>,
+    #[serde(default)]
+    pub is_heartbeat: Option<bool>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -1161,6 +1163,8 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 } else {
                     let _ = session.query(format!("USE SCHEMA \"{}\";", schema_trimmed)).await;
                 }
+            } else if !config.database.trim().is_empty() {
+                let _ = session.query(format!("USE DATABASE \"{}\";", config.database.trim())).await;
             }
 
             let mut cursor_res = session
@@ -1222,11 +1226,30 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                 }
             }
 
-            let cursor = cursor_res.map_err(|e| format!("Snowflake query error: {}", e))?;
+            let cursor = match cursor_res {
+                Ok(c) => c,
+                Err(e) => {
+                    let err_str = e.to_string();
+                    let lower = err_str.to_lowercase();
+                    if err_str.contains("390114")
+                        || err_str.contains("390112")
+                        || err_str.contains("390111")
+                        || lower.contains("token has expired")
+                        || lower.contains("session no longer exists")
+                    {
+                        pool::evict_snowflake_session(&config).await;
+                    }
+                    return Err(format!("Snowflake query error: {}", e));
+                }
+            };
 
             let mut columns = Vec::new();
-            for col in cursor.schema().columns() {
-                columns.push(col.name().to_string());
+            for (i, col) in cursor.schema().columns().iter().enumerate() {
+                let mut col_name = col.name().to_string();
+                if columns.contains(&col_name) {
+                    col_name = format!("{}_{}", col_name, i);
+                }
+                columns.push(col_name);
             }
 
             let typed_table = cursor
@@ -1237,19 +1260,21 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
             let mut json_rows = Vec::with_capacity(typed_table.row_count().min(MAX_RESULT_ROWS));
             for row_res in typed_table.rows() {
                 let dyn_row = row_res.map_err(|e| format!("Snowflake decode error: {}", e))?;
-                match dyn_row.into_json_object() {
-                    Ok(mut map) => {
-                        for (_, val) in map.iter_mut() {
-                            if let serde_json::Value::String(s) = val {
-                                *s = truncate_cell_string(s.clone());
-                            }
-                        }
-                        json_rows.push(serde_json::Value::Object(map));
-                        if json_rows.len() >= MAX_RESULT_ROWS {
-                            break;
-                        }
+                let mut map = serde_json::Map::new();
+                for (i, (col, val)) in dyn_row.schema().columns().iter().zip(dyn_row.values().iter()).enumerate() {
+                    let mut col_key = col.name().to_string();
+                    if map.contains_key(&col_key) {
+                        col_key = format!("{}_{}", col_key, i);
                     }
-                    Err(e) => return Err(format!("Snowflake formatting error: {}", e)),
+                    let json_val = match val.clone().into_json_value() {
+                        serde_json::Value::String(s) => serde_json::Value::String(truncate_cell_string(s)),
+                        other => other,
+                    };
+                    map.insert(col_key, json_val);
+                }
+                json_rows.push(serde_json::Value::Object(map));
+                if json_rows.len() >= MAX_RESULT_ROWS {
+                    break;
                 }
             }
 
@@ -1528,21 +1553,38 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
             Ok(summaries)
         }
         "snowflake" => {
-            let sql = r#"
-                SELECT
-                    TABLE_NAME AS table_name,
-                    TABLE_SCHEMA AS schema_name,
-                    TABLE_CATALOG AS database_name,
-                    TABLE_TYPE AS kind,
-                    COALESCE(TABLE_OWNER, '') AS owner,
-                    COALESCE(ROW_COUNT, 0) AS estimated_rows,
-                    COALESCE(BYTES, 0) AS total_bytes,
-                    COALESCE(COMMENT, '') AS comment
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA'
-                ORDER BY TABLE_SCHEMA ASC, TABLE_NAME ASC;
-            "#;
-            let res = execute_query(config.clone(), sql.into()).await;
+            let sql = if !config.database.trim().is_empty() {
+                format!(r#"
+                    SELECT
+                        TABLE_NAME AS table_name,
+                        TABLE_SCHEMA AS schema_name,
+                        TABLE_CATALOG AS database_name,
+                        TABLE_TYPE AS kind,
+                        COALESCE(TABLE_OWNER, '') AS owner,
+                        COALESCE(ROW_COUNT, 0) AS estimated_rows,
+                        COALESCE(BYTES, 0) AS total_bytes,
+                        COALESCE(COMMENT, '') AS comment
+                    FROM "{database}".INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA'
+                    ORDER BY TABLE_SCHEMA ASC, TABLE_NAME ASC;
+                "#, database = config.database.trim().replace('"', ""))
+            } else {
+                r#"
+                    SELECT
+                        TABLE_NAME AS table_name,
+                        TABLE_SCHEMA AS schema_name,
+                        TABLE_CATALOG AS database_name,
+                        TABLE_TYPE AS kind,
+                        COALESCE(TABLE_OWNER, '') AS owner,
+                        COALESCE(ROW_COUNT, 0) AS estimated_rows,
+                        COALESCE(BYTES, 0) AS total_bytes,
+                        COALESCE(COMMENT, '') AS comment
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA'
+                    ORDER BY TABLE_SCHEMA ASC, TABLE_NAME ASC;
+                "#.to_string()
+            };
+            let res = execute_query(config.clone(), sql).await;
             if let Ok(res) = res {
                 if res.success && !res.rows.is_empty() {
                     let mut tables = Vec::new();
@@ -1622,7 +1664,12 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
             }
 
             // Fallback: SHOW TABLES
-            if let Ok(res) = execute_query(config, "SHOW TABLES;".into()).await {
+            let show_sql = if !config.database.trim().is_empty() {
+                format!("SHOW TABLES IN DATABASE \"{}\";", config.database.trim().replace('"', ""))
+            } else {
+                "SHOW TABLES;".to_string()
+            };
+            if let Ok(res) = execute_query(config, show_sql).await {
                 let mut tables = Vec::new();
                 for r in res.rows {
                     let name_opt = r
@@ -1630,11 +1677,22 @@ async fn get_tables(config: DbConfig) -> Result<Vec<TableSummary>, String> {
                         .or_else(|| r.get("NAME"))
                         .and_then(|v| v.as_str());
                     if let Some(name) = name_opt {
+                        let schema = r
+                            .get("schema_name")
+                            .or_else(|| r.get("SCHEMA_NAME"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let kind = r
+                            .get("kind")
+                            .or_else(|| r.get("KIND"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("TABLE")
+                            .to_string();
                         tables.push(TableSummary {
                             name: name.to_string(),
                             count: "0".into(),
-                            schema: r.get("schema_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            kind: Some("TABLE".into()),
+                            schema,
+                            kind: Some(kind),
                             ..Default::default()
                         });
                     }

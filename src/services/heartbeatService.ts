@@ -121,7 +121,7 @@ class HeartbeatService {
     const start = performance.now();
 
     try {
-      const res = await testRealConnection(activeConn);
+      const res = await testRealConnection({ ...activeConn, isHeartbeat: true });
       const latency = res.latency_ms > 0 ? res.latency_ms : +(performance.now() - start).toFixed(1);
 
       if (res.success) {
